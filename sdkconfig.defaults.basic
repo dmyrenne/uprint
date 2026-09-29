@@ -1,0 +1,3 @@
+# Variante basic: jedes ESP32-S3 ab 4 MB Flash, PSRAM wird nicht genutzt, Dateien nur auf microSD
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-basic.csv"

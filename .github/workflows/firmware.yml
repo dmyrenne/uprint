@@ -1,4 +1,4 @@
-# Baut die Firmware mit ESP-IDF und veröffentlicht sie.
+# Baut die Firmware mit ESP-IDF für alle Board-Varianten und veröffentlicht sie.
 #   Push auf main, Pull Request -> bauen, .bin-Dateien als Artefakt am Workflow-Lauf
 #   Tag v1.2.3                  -> zusätzlich GitHub-Release mit den .bin-Dateien
 #                                  und Web-Flasher auf GitHub Pages aktualisieren
@@ -18,7 +18,7 @@ env:
   IDF_VERSION: v6.1
 
 jobs:
-  build:
+  version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -26,33 +26,44 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0          # Tags für git describe
-
       - id: version
-        name: Version bestimmen
         run: |
           # v1.2.3 -> 1.2.3, zwischen Releases z. B. 1.2.3-4-gabc1234
           VERSION=$(git describe --tags --always)
           echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Bauen
+  build:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant: [n16r8, basic]
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Bauen (${{ matrix.variant }})
         uses: espressif/esp-idf-ci-action@v1.2.0
         with:
           esp_idf_version: ${{ env.IDF_VERSION }}
           target: esp32s3
-          extra_docker_args: -e UPRINT_VERSION=${{ steps.version.outputs.version }}
-          command: idf.py build && idf.py merge-bin -o uprint-factory.bin
+          extra_docker_args: -e UPRINT_VERSION=${{ env.VERSION }}
+          command: >-
+            idf.py -DUPRINT_VARIANT=${{ matrix.variant }} -B build build &&
+            idf.py -DUPRINT_VARIANT=${{ matrix.variant }} -B build merge-bin -o uprint-factory.bin
 
       - name: Dateien sammeln
         run: |
           mkdir dist
           # OTA-Update über die Weboberfläche
-          cp build/uprint.bin dist/uprint-${{ steps.version.outputs.version }}-ota.bin
+          cp build/uprint.bin "dist/uprint-$VERSION-${{ matrix.variant }}-ota.bin"
           # Erstinstallation ab Adresse 0x0 (Bootloader, Partitionstabelle, App)
-          cp build/uprint-factory.bin dist/uprint-${{ steps.version.outputs.version }}-factory.bin
+          cp build/uprint-factory.bin "dist/uprint-$VERSION-${{ matrix.variant }}-factory.bin"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: uprint-${{ steps.version.outputs.version }}
+          name: uprint-${{ env.VERSION }}-${{ matrix.variant }}
           path: dist/
           if-no-files-found: error
 
@@ -65,8 +76,9 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: uprint-${{ needs.build.outputs.version }}
+          pattern: uprint-*
           path: dist
+          merge-multiple: true
 
       - uses: softprops/action-gh-release@v3
         with:
@@ -75,7 +87,7 @@ jobs:
 
   flasher:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -86,33 +98,36 @@ jobs:
     concurrency:
       group: pages
       cancel-in-progress: false
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/download-artifact@v8
         with:
-          name: uprint-${{ needs.build.outputs.version }}
+          pattern: uprint-*
           path: dist
+          merge-multiple: true
 
       - name: Seite zusammenstellen
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
         run: |
           mkdir -p site/firmware site/fonts
           cp flasher/index.html site/
           cp main/www/fonts/*.woff2 main/www/fonts/OFL-*.txt site/fonts/
-          cp "dist/uprint-$VERSION-factory.bin" site/firmware/uprint-factory.bin
-          # Manifest für ESP Web Tools
-          cat > site/manifest.json <<EOF
+          # Je Variante ein Image und ein Manifest für ESP Web Tools
+          for v in n16r8 basic; do
+            cp "dist/uprint-$VERSION-$v-factory.bin" "site/firmware/uprint-$v-factory.bin"
+            cat > "site/manifest-$v.json" <<EOF
           {
-            "name": "µprint",
+            "name": "µprint ($v)",
             "version": "$VERSION",
             "new_install_prompt_erase": true,
             "builds": [
-              { "chipFamily": "ESP32-S3", "parts": [{ "path": "firmware/uprint-factory.bin", "offset": 0 }] }
+              { "chipFamily": "ESP32-S3", "parts": [{ "path": "firmware/uprint-$v-factory.bin", "offset": 0 }] }
             ]
           }
           EOF
+          done
 
       - uses: actions/configure-pages@v6
 

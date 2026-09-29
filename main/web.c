@@ -19,6 +19,7 @@
 #include "esp_timer.h"
 #include "printer.h"
 #include "settings.h"
+#include "variant.h"
 #include "storage.h"
 #include "web.h"
 #include "wifi.h"
@@ -164,13 +165,18 @@ static esp_err_t files_get(httpd_req_t *req)
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr_chunk(req, "{\"volumes\":[");
+    bool first_vol = true;
     for (int v = 0; v < STORAGE_COUNT; v++) {
+        if (!storage_present(v)) {
+            continue;
+        }
         uint64_t total, avail;
         bool ready = storage_usage(v, &total, &avail) == ESP_OK;
         snprintf(item, sizeof(item),
                  "%s{\"id\":\"%s\",\"label\":\"%s\",\"ready\":%s,\"total\":%llu,\"free\":%llu}",
-                 v ? "," : "", storage_id(v), storage_label(v), ready ? "true" : "false", total, avail);
+                 first_vol ? "" : ",", storage_id(v), storage_label(v), ready ? "true" : "false", total, avail);
         httpd_resp_sendstr_chunk(req, item);
+        first_vol = false;
     }
     httpd_resp_sendstr_chunk(req, "],\"files\":[");
 
@@ -489,9 +495,9 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     snprintf(body, sizeof(body),
              "{\"hostname\":\"%s\",\"ap_password\":\"%s\",\"baud\":%d,\"pause_lift\":%d,\"cancel_lift\":%d"
              ",\"park_x\":%d,\"park_y\":%d,\"sd_mosi\":%d,\"sd_miso\":%d,\"sd_sclk\":%d,\"sd_cs\":%d"
-             ",\"reboot_required\":%s,\"version\":\"%s\"}",
+             ",\"reboot_required\":%s,\"version\":\"%s\",\"variant\":\"%s\"}",
              host, pass, c.baud, c.pause_lift, c.cancel_lift, c.park_x, c.park_y,
-             c.sd_mosi, c.sd_miso, c.sd_sclk, c.sd_cs, settings_reboot_required() ? "true" : "false", version);
+             c.sd_mosi, c.sd_miso, c.sd_sclk, c.sd_cs, settings_reboot_required() ? "true" : "false", version, uprint_variant());
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
 }
@@ -654,6 +660,13 @@ static esp_err_t ota_post(httpd_req_t *req)
     esp_app_desc_t desc;
     if (esp_ota_get_partition_description(part, &desc) != ESP_OK || strcmp(desc.project_name, "uprint") != 0) {
         return send_error(req, "400 Bad Request", "Das ist keine uprint-Firmware");
+    }
+    // Eine Firmware für ein anderes Board würde nicht starten (Flash-Größe, PSRAM, Partitionen)
+    uprint_desc_t id;
+    if (!uprint_read_desc(part, &id) || strcmp(id.variant, uprint_variant()) != 0) {
+        static char msg[128];
+        snprintf(msg, sizeof(msg), "Falsche Variante: dieses Gerät braucht die Firmware \"%s\"", uprint_variant());
+        return send_error(req, "400 Bad Request", msg);
     }
     err = esp_ota_set_boot_partition(part);
     if (err != ESP_OK) {

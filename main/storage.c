@@ -6,6 +6,7 @@
 #include "driver/spi_common.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_partition.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "wear_levelling.h"
@@ -19,12 +20,13 @@ typedef struct {
     const char *id;
     const char *label;
     const char *mount;
+    bool present;
     bool ready;
 } volume_t;
 
 static volume_t s_vol[STORAGE_COUNT] = {
-    [STORAGE_SD]    = {"sd",    "SD-Karte",          "/sdcard", false},
-    [STORAGE_FLASH] = {"flash", "Interner Speicher", "/flash",  false},
+    [STORAGE_SD]    = {"sd",    "SD-Karte",          "/sdcard", true,  false},
+    [STORAGE_FLASH] = {"flash", "Interner Speicher", "/flash",  false, false},
 };
 
 static esp_err_t mount_sd(void)
@@ -87,7 +89,10 @@ static esp_err_t mount_flash(void)
 
 esp_err_t storage_init(void)
 {
-    s_vol[STORAGE_FLASH].ready = mount_flash() == ESP_OK;
+    // Den internen Speicher gibt es nur, wenn die Partitionstabelle eine Partition "storage" hat
+    s_vol[STORAGE_FLASH].present =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage") != NULL;
+    s_vol[STORAGE_FLASH].ready = s_vol[STORAGE_FLASH].present && mount_flash() == ESP_OK;
     s_vol[STORAGE_SD].ready = mount_sd() == ESP_OK;
 
     bool any = false;
@@ -100,6 +105,11 @@ esp_err_t storage_init(void)
         }
     }
     return any ? ESP_OK : ESP_FAIL;
+}
+
+bool storage_present(storage_vol_t vol)
+{
+    return vol < STORAGE_COUNT && s_vol[vol].present;
 }
 
 bool storage_ready(storage_vol_t vol)

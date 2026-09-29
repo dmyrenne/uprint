@@ -9,11 +9,14 @@ laufen. μprint funktioniert mit Druckern mit Marlin- oder Prusa-Firmware und US
 
 ## Was du brauchst
 
-- Ein **ESP32-S3-Board mit 16 MB Flash und 8 MB PSRAM**. Achte beim Kauf auf die Bezeichnung **N16R8**, andere
-  Varianten starten mit der fertigen Firmware nicht.
+- Ein **ESP32-S3-Board** mit mindestens 4 MB Flash.
 - Einen **USB-OTG-Adapter** von der USB-Buchse des Boards auf USB-A, damit du das Druckerkabel anstecken kannst.
 - Ein **5-V-Netzteil** für das Board.
-- Optional ein **microSD-Modul** für große Dateien. Ohne Karte stehen knapp 12 MB interner Speicher zur Verfügung.
+- Ein **microSD-Modul** mit FAT32-formatierter Karte für deine Dateien.
+
+Für die meisten Boards gibt es die Firmware **Basic**, Dateien liegen dann auf der microSD-Karte. Hast du ein Board
+mit der Bezeichnung **N16R8** (16 MB Flash, 8 MB PSRAM), nimm die gleichnamige Variante: Sie bietet zusätzlich
+knapp 12 MB internen Speicher, dort ist die SD-Karte optional.
 
 Das SD-Modul kommt standardmäßig an diese Pins, andere lassen sich später in den Einstellungen wählen:
 
@@ -32,8 +35,8 @@ Am einfachsten geht das mit dem Web-Flasher direkt im Browser, ganz ohne Softwar
 1. Öffne [dmyrenne.github.io/uprint](https://dmyrenne.github.io/uprint/) in **Chrome oder Edge** am Computer.
    Firefox und Safari unterstützen das nötige WebSerial leider nicht.
 2. Schließe das Board mit einem USB-Datenkabel an die `UART`- bzw. `COM`-Buchse an.
-3. Klicke auf **Installieren**, wähle im Dialog den seriellen Port des Boards und bestätige beim ersten Mal das
-   Löschen des Geräts. Nach etwa einer Minute ist die Firmware drauf.
+3. Wähle dein Board (**Basic** oder **N16R8**), klicke auf **Installieren**, wähle im Dialog den seriellen Port des
+   Boards und bestätige beim ersten Mal das Löschen des Geräts. Nach etwa einer Minute ist die Firmware drauf.
 
 Findet der Browser das Board nicht, halte die Taste `BOOT` gedrückt, drücke kurz `RESET` und lass `BOOT` wieder los.
 Danach klappt die Verbindung. Nach dem Aufspielen einmal `RESET` drücken.
@@ -53,8 +56,8 @@ wohin der Kopf danach fährt, Hostname, WLAN-Passwort des Access Points und die 
 ## Aktualisieren
 
 Neue Versionen erscheinen unter [Releases](https://github.com/dmyrenne/uprint/releases). Zum Aktualisieren brauchst du
-kein Kabel: Lade die Datei `uprint-…-ota.bin` herunter und installiere sie in μprint unter
-**Einstellungen → Firmware**. μprint startet danach neu, deine Einstellungen, das WLAN und alle Dateien bleiben
+kein Kabel: Lade die Datei `uprint-…-ota.bin` für deine Variante herunter (`basic` oder `n16r8` im Namen) und
+installiere sie in μprint unter **Einstellungen → Firmware**. Welche Variante installiert ist, steht dort ebenfalls. μprint startet danach neu, deine Einstellungen, das WLAN und alle Dateien bleiben
 erhalten. Alternativ kannst du auch einfach den Web-Flasher noch einmal benutzen, dann aber ohne das Gerät zu löschen.
 
 ## Selbst bauen
@@ -64,9 +67,8 @@ v6.1. Die übrigen Abhängigkeiten lädt der Build automatisch:
 
     git clone https://github.com/dmyrenne/uprint.git
     cd uprint
-    idf.py set-target esp32s3
-    idf.py build
-    idf.py -p <port> flash
+    idf.py -DUPRINT_VARIANT=basic -B build-basic build          # oder n16r8
+    idf.py -DUPRINT_VARIANT=basic -B build-basic -p <port> flash
 
-`build/uprint.bin` lässt sich anschließend auch über **Einstellungen → Firmware** einspielen. Jeder Tag `v*` im Repo
+`build-basic/uprint.bin` lässt sich anschließend auch über **Einstellungen → Firmware** einspielen. Jeder Tag `v*` im Repo
 baut über GitHub Actions automatisch ein Release und aktualisiert den Web-Flasher.

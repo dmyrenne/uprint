@@ -312,7 +312,7 @@
         <span class="ota-name" id="otaName"></span>
       </div>
       <div class="bar" id="otaBar" hidden><i></i></div>
-      <p class="hint" id="otaHint" data-i18n="ota.hint"></p>
+      <p class="hint" id="otaHint"></p>
       <input type="file" id="otaFile" accept=".bin" hidden>
     </div>
   </details>
@@ -547,7 +547,7 @@ function renderUpload() {
   const ready = readyVols(), anyFree = ready.some((v) => v.free > 0);
   $('drop').classList.toggle('disabled', !anyFree || uploading);
   $('dropTitle').textContent = pick ? pick.name : t('drop.title');
-  $('dropSub').textContent = pick ? fmtSize(pick.size) : anyFree ? t('drop.sub') : t('drop.full');
+  $('dropSub').textContent = pick ? fmtSize(pick.size) : anyFree ? t('drop.sub') : t(ready.length ? 'drop.full' : 'drop.noStorage');
   $('upForm').hidden = !pick;
   if (!pick) return;
 
@@ -751,7 +751,8 @@ $('rebootBtn').onclick = async () => {
 // ---------- Firmware-Update ----------
 let otaFile = null, otaBusy = false;
 function renderOta() {
-  $('otaVersion').textContent = settings ? t('ota.version', { v: settings.version }) : '';
+  $('otaVersion').textContent = settings ? t('ota.version', { v: settings.version, variant: settings.variant }) : '';
+  if (!otaBusy) $('otaHint').textContent = t('ota.hint', { variant: settings ? settings.variant : '…' });
   $('otaName').textContent = otaFile ? otaFile.name + ' · ' + fmtSize(otaFile.size) : '';
   $('otaPick').disabled = otaBusy;
   $('otaBtn').disabled = !otaFile || otaBusy || offline || active();
@@ -775,7 +776,6 @@ $('otaBtn').onclick = async () => {
     otaFile = null;
   } catch (e) { say(t('ota.failed', { msg: e.message }), true); }
   otaBusy = false;
-  $('otaHint').textContent = t('ota.hint');
   renderOta();
 };
 

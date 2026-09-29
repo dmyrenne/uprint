@@ -19,6 +19,8 @@ typedef enum {
 esp_err_t storage_init(void);
 
 bool storage_ready(storage_vol_t vol);
+// false, wenn die Firmware-Variante diesen Speicher nicht hat (z. B. kein interner Dateispeicher)
+bool storage_present(storage_vol_t vol);
 const char *storage_mount(storage_vol_t vol);
 const char *storage_id(storage_vol_t vol);      // "sd", "flash" (für die API)
 const char *storage_label(storage_vol_t vol);   // für die Anzeige
