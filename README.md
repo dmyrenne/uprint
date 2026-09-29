@@ -50,8 +50,20 @@ die neue Adresse an, und ab dann erreichst du μprint in deinem Netz unter http:
 Jetzt noch den Drucker per USB an das Board anstecken. Sobald er verbunden ist, wird der Status oben rechts blau.
 Datei hochladen, in der Liste anklicken, auf **Drucken** – fertig.
 
-Unter **Einstellungen** findest du alles Weitere: wie weit die Düse beim Pausieren und Abbrechen angehoben wird,
+Unter **Einstellungen** findest du alles Weitere: einen eigenen Namen für das Gerät (praktisch, wenn du mehrere
+hast), wie weit die Düse beim Pausieren und Abbrechen angehoben wird,
 wohin der Kopf danach fährt, Hostname, WLAN-Passwort des Access Points und die Pins der SD-Karte.
+
+## Aus dem Slicer drucken
+
+μprint versteht die Schnittstellen von PrusaLink und OctoPrint. Damit schickt dein Slicer den G-Code direkt an den
+Drucker. In **PrusaSlicer** legst du dazu einen physischen Drucker an: Host-Typ **PrusaLink**, Hostname
+`uprint.local` und als API-Schlüssel den Wert aus μprint unter **Einstellungen → Slicer**. Über „Durchsuchen“ findet
+PrusaSlicer μprint auch selbst im Netz. **OrcaSlicer** und andere Slicer nutzen den Host-Typ **OctoPrint** mit
+denselben Angaben. Beim Hochladen kannst du wählen, ob der Druck gleich startet.
+
+Binären G-Code (`.bgcode`) kann μprint nicht drucken. Falls dein Druckerprofil ihn nutzt, schalte ihn in den
+Druckereinstellungen des Slicers ab.
 
 ## Aktualisieren
 

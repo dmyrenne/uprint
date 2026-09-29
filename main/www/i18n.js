@@ -6,6 +6,7 @@ const I18N = {
   de: {
     'lang': 'Sprache',
     'tagline': 'USB-Druckserver',
+    'tagline.named': 'µprint · USB-Druckserver',
 
     'state.disconnected': 'Kein Drucker',
     'state.connecting': 'Verbinde …',
@@ -29,6 +30,7 @@ const I18N = {
     'upload.running': 'Lade hoch … {pct} %',
     'upload.done': '„{name}“ hochgeladen ({speed}/s).',
     'upload.failed': 'Upload fehlgeschlagen: {msg}',
+    'upload.cancelled': 'Upload abgebrochen.',
     'upload.badType': 'Nur .gcode, .gco oder .g',
     'confirm.overwrite': '„{name}“ gibt es auf {vol} schon. Überschreiben?',
 
@@ -76,6 +78,17 @@ const I18N = {
 
     'h.settings': 'Einstellungen',
     'modified': 'geändert',
+    'set.device': 'Gerät',
+    'set.device_name': 'Gerätename',
+    'set.device.hint': 'Steht oben statt „µprint“ und bei der Druckersuche im Slicer. So lassen sich mehrere Geräte auseinanderhalten.',
+    'set.slicer': 'Slicer',
+    'set.api_key': 'API-Schlüssel',
+    'copy': 'Kopieren',
+    'set.api_new': 'Neu erzeugen',
+    'set.api_copied': 'API-Schlüssel kopiert.',
+    'set.api_renewed': 'Neuer API-Schlüssel erzeugt. Bitte auch im Slicer eintragen.',
+    'confirm.api_new': 'Neuen API-Schlüssel erzeugen? Slicer mit dem alten Schlüssel können dann nicht mehr senden.',
+    'set.slicer.hint.html': 'In <b>PrusaSlicer</b>: Physischen Drucker hinzufügen, Host-Typ <b>PrusaLink</b>, Hostname <code>{host}.local</code>, Autorisierung „API-Schlüssel“. <b>OrcaSlicer</b> und andere: Host-Typ <b>OctoPrint</b>. Dann lässt sich G-Code direkt hochladen und drucken.',
     'set.printer': 'Drucker',
     'set.baud': 'Baudrate',
     'set.baud.hint': 'Prusa MK3S: 115200. Gilt ab der nächsten Verbindung mit dem Drucker.',
@@ -136,6 +149,7 @@ const I18N = {
   en: {
     'lang': 'Language',
     'tagline': 'USB print server',
+    'tagline.named': 'µprint · USB print server',
 
     'state.disconnected': 'No printer',
     'state.connecting': 'Connecting …',
@@ -159,6 +173,7 @@ const I18N = {
     'upload.running': 'Uploading … {pct} %',
     'upload.done': '“{name}” uploaded ({speed}/s).',
     'upload.failed': 'Upload failed: {msg}',
+    'upload.cancelled': 'Upload cancelled.',
     'upload.badType': 'Only .gcode, .gco or .g',
     'confirm.overwrite': '“{name}” already exists on {vol}. Overwrite?',
 
@@ -206,6 +221,17 @@ const I18N = {
 
     'h.settings': 'Settings',
     'modified': 'modified',
+    'set.device': 'Device',
+    'set.device_name': 'Device name',
+    'set.device.hint': 'Shown at the top instead of “µprint” and when a slicer searches for printers, so you can tell several devices apart.',
+    'set.slicer': 'Slicer',
+    'set.api_key': 'API key',
+    'copy': 'Copy',
+    'set.api_new': 'Regenerate',
+    'set.api_copied': 'API key copied.',
+    'set.api_renewed': 'New API key created. Update it in your slicer too.',
+    'confirm.api_new': 'Create a new API key? Slicers using the old key won’t be able to send anymore.',
+    'set.slicer.hint.html': 'In <b>PrusaSlicer</b>: add a physical printer, host type <b>PrusaLink</b>, hostname <code>{host}.local</code>, authorization “API key”. <b>OrcaSlicer</b> and others: host type <b>OctoPrint</b>. You can then upload and print G-code directly.',
     'set.printer': 'Printer',
     'set.baud': 'Baud rate',
     'set.baud.hint': 'Prusa MK3S: 115200. Applies from the next connection to the printer.',

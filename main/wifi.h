@@ -11,6 +11,9 @@
  */
 esp_err_t wifi_init(void);
 
+// Gerätename aus den Einstellungen im mDNS übernehmen (sichtbar z. B. bei der Druckersuche im Slicer)
+void wifi_apply_device_name(void);
+
 typedef struct {
     bool configured;     // Zugangsdaten gespeichert
     bool connected;      // mit dem WLAN verbunden und IP erhalten

@@ -34,7 +34,8 @@
          border-bottom: 1px solid var(--line); flex-wrap: wrap; position: sticky; top: 0; z-index: 5; }
   .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .brand svg { width: 36px; height: 36px; border-radius: 9px; background: var(--ink); cursor: pointer; flex: none; }
-  h1 { font-size: 22px; line-height: 1; margin: 0; font-weight: 700; letter-spacing: -.03em; }
+  h1 { font-size: 22px; line-height: 1; margin: 0; font-weight: 700; letter-spacing: -.03em; min-width: 0; }
+  #devName { display: block; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   h1 small { display: block; white-space: nowrap; font: 500 10px/1.3 var(--mono); letter-spacing: .02em; color: var(--muted); margin-top: 4px; }
   .stats { display: flex; gap: 28px; flex-wrap: wrap; }
   .stat b { display: block; font: 600 18px/1.2 var(--mono); letter-spacing: -.02em; white-space: nowrap; }
@@ -100,6 +101,8 @@
   .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .pick { display: flex; gap: 6px; }
   .pick select { flex: 1; min-width: 0; }
+  .pick input { flex: 1; min-width: 0; }
+  .pick button { white-space: nowrap; }
   .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
   .hint.bad { color: var(--warn); }
   .derived { font-size: 12px; background: var(--accent-soft); color: var(--ink); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
@@ -157,6 +160,8 @@
   .job-sub { font: 500 12px var(--mono); color: var(--muted); margin-top: 4px; }
   .job-sub.bad { color: var(--warn); }
   .job-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  #apiKey { font: 500 12px var(--mono); }
+  .hint code { font: 500 11px var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
   .ota { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
   .ota .sub { margin: 0 0 6px; }
   .ota-name { font: 500 12px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
@@ -186,7 +191,7 @@
 <header class="top">
   <div class="brand">
     <svg id="mark" viewBox="0 0 34 34" role="img" aria-label="μprint"></svg>
-    <h1>µprint<small data-i18n="tagline"></small></h1>
+    <h1><span id="devName">µprint</span><small id="tagline" data-i18n="tagline"></small></h1>
   </div>
   <div class="stats" id="stats"></div>
   <div class="spacer"></div>
@@ -235,6 +240,7 @@
       </div>
       <div class="row" style="margin-top:10px">
         <button type="button" class="primary" id="upBtn" data-i18n="upload"></button>
+        <button type="button" id="upCancel" data-i18n="cancel"></button>
       </div>
       <p class="hint" id="upHint"></p>
       <div class="bar" id="upBar" hidden><i></i></div>
@@ -268,6 +274,16 @@
   <details class="card" id="setBox">
     <summary><span data-i18n="h.settings"></span><span class="badge" id="setBadge" data-i18n="modified" hidden></span></summary>
     <form id="setForm" class="grid" autocomplete="off" onsubmit="return false">
+      <p class="sub full" data-i18n="set.device"></p>
+      <label class="full"><span data-i18n="set.device_name"></span><input type="text" name="device_name" maxlength="32" placeholder="µprint"></label>
+      <p class="hint full" data-i18n="set.device.hint"></p>
+
+      <p class="sub full" data-i18n="set.slicer"></p>
+      <label class="full"><span data-i18n="set.api_key"></span>
+        <span class="pick"><input type="text" id="apiKey" readonly spellcheck="false"><button type="button" id="apiCopy" data-i18n="copy"></button><button type="button" id="apiNew" data-i18n="set.api_new"></button></span>
+      </label>
+      <p class="hint full" id="slicerHint"></p>
+
       <p class="sub full" data-i18n="set.printer"></p>
       <label class="full"><span data-i18n="set.baud"></span><select name="baud"></select></label>
       <p class="hint full" data-i18n="set.baud.hint"></p>
@@ -323,7 +339,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let st = null, offline = false, volumes = [], files = [], wifi = null, nets = [];
-let pick = null, uploading = false, upPct = 0;
+let pick = null, uploading = false, upPct = 0, upXhr = null;
 let selKey = null;   // ausgewählte Datei: "<speicher>/<name>"
 const fileKey = (f) => f.storage + '/' + f.name;
 const selected = () => files.find((f) => fileKey(f) === selKey) || null;
@@ -570,10 +586,12 @@ function renderUpload() {
 }
 $('target').onchange = renderUpload;
 
-// Schickt eine Datei als Rohdaten und meldet den Fortschritt (0–100)
-function sendRaw(url, file, onProgress) {
+// Schickt eine Datei als Rohdaten und meldet den Fortschritt (0–100).
+// onStart bekommt die Anfrage, damit sie sich abbrechen lässt; abgebrochen -> Fehler mit .aborted
+function sendRaw(url, file, onProgress, onStart) {
   return new Promise((resolve, reject) => {
     const x = new XMLHttpRequest();
+    if (onStart) onStart(x);
     x.open('POST', url);
     x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total * 100); };
     x.onload = () => {
@@ -582,6 +600,7 @@ function sendRaw(url, file, onProgress) {
       reject(new Error(j.error || x.statusText));
     };
     x.onerror = () => reject(new Error(t('err.network')));
+    x.onabort = () => reject(Object.assign(new Error(t('upload.cancelled')), { aborted: true }));
     x.send(file);
   });
 }
@@ -593,13 +612,21 @@ $('upBtn').onclick = async () => {
   uploading = true; upPct = 0; renderUpload();
   const t0 = performance.now();
   try {
-    await sendRaw('/api/upload' + fileQuery({ storage, name: f.name }), f, (p) => { upPct = p; renderUpload(); });
+    await sendRaw('/api/upload' + fileQuery({ storage, name: f.name }), f, (p) => { upPct = p; renderUpload(); }, (x) => { upXhr = x; });
     say(t('upload.done', { name: f.name, speed: fmtSize(f.size / ((performance.now() - t0) / 1000)) }));
     pick = null;
     selKey = storage + '/' + f.name;   // frisch hochgeladene Datei gleich auswählen
-  } catch (e) { say(t('upload.failed', { msg: e.message }), true); }
-  uploading = false;
+  } catch (e) {
+    if (e.aborted) say(t('upload.cancelled'));
+    else say(t('upload.failed', { msg: e.message }), true);
+  }
+  uploading = false; upXhr = null;
   await loadFiles();
+};
+// Während des Uploads: Übertragung abbrechen (µprint verwirft die halbe Datei), sonst die Auswahl verwerfen
+$('upCancel').onclick = () => {
+  if (upXhr) { upXhr.abort(); return; }
+  pick = null; renderUpload();
 };
 
 $('drop').onclick = () => $('file').click();
@@ -706,7 +733,7 @@ $('wifiForget').onclick = async () => {
 async function pollWifi() { await loadWifi(); setTimeout(pollWifi, 4000); }
 
 // ---------- Einstellungen ----------
-const SET_KEYS = ['baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y', 'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
+const SET_KEYS = ['device_name', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y', 'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm');
 let settings = null;
@@ -726,7 +753,7 @@ function renderSettings() {
   $('setSave').disabled = !mod;
   $('setRevert').disabled = !mod;
   $('rebootBox').hidden = !settings || !settings.reboot_required;
-  renderOta();
+  renderOta(); renderSlicer(); renderName();
 }
 async function loadSettings() {
   try { settings = await api('GET', '/api/settings'); } catch { return; }
@@ -746,6 +773,33 @@ $('setRevert').onclick = () => { writeSettings(settings); renderSettings(); say(
 $('rebootBtn').onclick = async () => {
   if (!confirm(t('confirm.reboot'))) return;
   try { await api('POST', '/api/reboot'); say(t('set.rebooting')); } catch (e) { say(e.message, true); }
+};
+
+// ---------- Gerätename ----------
+// Gespeicherter Name oben und im Browser-Tab; ohne Namen wie gewohnt „µprint“
+function renderName() {
+  const name = settings && settings.device_name;
+  $('devName').textContent = name || 'µprint';
+  $('tagline').textContent = t(name ? 'tagline.named' : 'tagline');
+  document.title = name ? name + ' · μprint' : 'μprint';
+}
+
+// ---------- Slicer-Anbindung ----------
+function renderSlicer() {
+  if (!settings) return;
+  $('apiKey').value = settings.api_key;
+  $('slicerHint').innerHTML = t('set.slicer.hint.html', { host: settings.hostname });   // Hostname ist a–z, 0–9, -
+}
+$('apiCopy').onclick = async () => {
+  const k = $('apiKey');
+  // Die Zwischenablage-API gibt es nur über HTTPS; sonst der klassische Weg
+  try { await navigator.clipboard.writeText(k.value); } catch { k.select(); document.execCommand('copy'); }
+  say(t('set.api_copied'));
+};
+$('apiNew').onclick = async () => {
+  if (!confirm(t('confirm.api_new'))) return;
+  try { settings = await api('POST', '/api/settings/apikey'); renderSettings(); say(t('set.api_renewed')); }
+  catch (e) { say(e.message, true); }
 };
 
 // ---------- Firmware-Update ----------
@@ -785,7 +839,7 @@ $('lang').value = LANG;
 $('lang').onchange = () => {
   LANG = $('lang').value;
   try { localStorage.setItem('uprint-lang', LANG); } catch {}
-  applyI18n(); renderStatus(); renderVolumes(); renderUpload(); renderWifi();
+  applyI18n(); renderName(); renderStatus(); renderVolumes(); renderUpload(); renderWifi();
   if (settings) { const cur = readSettings(); writeSettings({ ...settings, ...cur, baud: +cur.baud }); }
 };
 

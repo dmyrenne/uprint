@@ -10,6 +10,8 @@ extern "C" {
 
 // Alle Einstellungen von uprint; sie liegen im NVS und werden über die Weboberfläche geändert.
 typedef struct {
+    // Anzeigename des Geräts, leer = "µprint" (sofort wirksam)
+    char device_name[33];
     // Netzwerk (wirksam nach Neustart)
     char hostname[33];
     char ap_password[64];
@@ -25,6 +27,8 @@ typedef struct {
     int sd_miso;
     int sd_sclk;
     int sd_cs;
+    // Schlüssel für Slicer (PrusaLink/OctoPrint-API), wird beim ersten Start erzeugt
+    char api_key[33];
 } settings_t;
 
 void settings_init(void);
@@ -35,6 +39,9 @@ esp_err_t settings_update(const settings_t *in, const char **error);
 
 // true, wenn gespeicherte Werte erst nach einem Neustart gelten
 bool settings_reboot_required(void);
+
+// Erzeugt einen neuen API-Schlüssel und speichert ihn
+esp_err_t settings_new_api_key(void);
 
 #ifdef __cplusplus
 }

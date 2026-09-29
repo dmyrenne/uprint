@@ -1,8 +1,11 @@
 #include <ctype.h>
+#include <stdio.h>
 #include <stddef.h>
 #include <string.h>
 
 #include "esp_log.h"
+#include "bootloader_random.h"
+#include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "nvs.h"
@@ -55,6 +58,14 @@ void settings_init(void)
         if (nvs_get_str(nvs, "hostname", s_cur.hostname, &len) != ESP_OK) {
             strlcpy(s_cur.hostname, DEFAULTS.hostname, sizeof(s_cur.hostname));
         }
+        len = sizeof(s_cur.device_name);
+        if (nvs_get_str(nvs, "device_name", s_cur.device_name, &len) != ESP_OK) {
+            s_cur.device_name[0] = '\0';
+        }
+        len = sizeof(s_cur.api_key);
+        if (nvs_get_str(nvs, "api_key", s_cur.api_key, &len) != ESP_OK) {
+            s_cur.api_key[0] = '\0';
+        }
         len = sizeof(s_cur.ap_password);
         if (nvs_get_str(nvs, "ap_password", s_cur.ap_password, &len) != ESP_OK) {
             strlcpy(s_cur.ap_password, DEFAULTS.ap_password, sizeof(s_cur.ap_password));
@@ -68,6 +79,12 @@ void settings_init(void)
         nvs_close(nvs);
     }
     s_boot = s_cur;
+    if (strlen(s_cur.api_key) != 32) {
+        // Erster Start: WLAN läuft noch nicht, daher Entropiequelle des Bootloaders zuschalten
+        bootloader_random_enable();
+        settings_new_api_key();
+        bootloader_random_disable();
+    }
     ESP_LOGI(TAG, "Hostname %s, %d Baud, SD MOSI=%d MISO=%d SCLK=%d CS=%d", s_cur.hostname, s_cur.baud,
              s_cur.sd_mosi, s_cur.sd_miso, s_cur.sd_sclk, s_cur.sd_cs);
 }
@@ -87,6 +104,11 @@ static bool pin_usable(int pin)
 
 static const char *validate(const settings_t *s)
 {
+    for (const unsigned char *p = (const unsigned char *)s->device_name; *p; p++) {
+        if (*p < 0x20 || *p == 0x7f) {
+            return "Gerätename: keine Steuerzeichen";
+        }
+    }
     size_t len = strlen(s->hostname);
     if (len == 0 || len > 32) {
         return "Hostname: 1–32 Zeichen";
@@ -144,6 +166,12 @@ esp_err_t settings_update(const settings_t *in, const char **error)
     if (err == ESP_OK) {
         err = nvs_set_str(nvs, "ap_password", in->ap_password);
     }
+    if (err == ESP_OK) {
+        err = nvs_set_str(nvs, "api_key", in->api_key);
+    }
+    if (err == ESP_OK) {
+        err = nvs_set_str(nvs, "device_name", in->device_name);
+    }
     for (size_t i = 0; err == ESP_OK && i < sizeof(INT_FIELDS) / sizeof(INT_FIELDS[0]); i++) {
         err = nvs_set_i32(nvs, INT_FIELDS[i].key, INT_AT(in, &INT_FIELDS[i]));
     }
@@ -170,4 +198,33 @@ bool settings_reboot_required(void)
     return strcmp(cur.hostname, s_boot.hostname) != 0 || strcmp(cur.ap_password, s_boot.ap_password) != 0 ||
            cur.sd_mosi != s_boot.sd_mosi || cur.sd_miso != s_boot.sd_miso ||
            cur.sd_sclk != s_boot.sd_sclk || cur.sd_cs != s_boot.sd_cs;
+}
+
+esp_err_t settings_new_api_key(void)
+{
+    uint8_t raw[16];
+    char key[33];
+    esp_fill_random(raw, sizeof(raw));
+    for (int i = 0; i < 16; i++) {
+        snprintf(key + 2 * i, 3, "%02x", raw[i]);
+    }
+
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err == ESP_OK) {
+        err = nvs_set_str(nvs, "api_key", key);
+        if (err == ESP_OK) {
+            err = nvs_commit(nvs);
+        }
+        nvs_close(nvs);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "API-Schlüssel nicht gespeichert: %s", esp_err_to_name(err));
+        return err;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    strlcpy(s_cur.api_key, key, sizeof(s_cur.api_key));
+    xSemaphoreGive(s_lock);
+    ESP_LOGI(TAG, "Neuer API-Schlüssel erzeugt");
+    return ESP_OK;
 }

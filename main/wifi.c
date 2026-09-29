@@ -292,8 +292,11 @@ esp_err_t wifi_init(void)
 
     if (mdns_init() == ESP_OK) {
         mdns_hostname_set(s_hostname);
-        mdns_instance_name_set("uprint");
         mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+        // PrusaSlicer und andere Slicer suchen Drucker über _octoprint._tcp
+        mdns_txt_item_t txt[] = {{"path", "/"}, {"api", "0.1"}, {"version", "1.10.0"}};
+        mdns_service_add(NULL, "_octoprint", "_tcp", 80, txt, sizeof(txt) / sizeof(txt[0]));
+        wifi_apply_device_name();
     } else {
         ESP_LOGW(TAG, "mDNS nicht verfügbar");
     }
@@ -420,4 +423,14 @@ int wifi_scan(wifi_network_t *out, int max)
     free(recs);
     qsort(out, count, sizeof(*out), by_rssi);
     return count;
+}
+
+void wifi_apply_device_name(void)
+{
+    settings_t cfg;
+    settings_get(&cfg);
+    const char *name = cfg.device_name[0] ? cfg.device_name : "µprint";
+    mdns_instance_name_set(name);
+    mdns_service_instance_name_set("_http", "_tcp", name);
+    mdns_service_instance_name_set("_octoprint", "_tcp", name);
 }
