@@ -1,40 +1,72 @@
 # μprint
 
-μprint macht aus einem ESP32-S3 einen Druckserver für 3D-Drucker mit Marlin- oder Prusa-Firmware.
-G-Code lädst du im Browser hoch. μprint speichert ihn auf einer microSD-Karte oder im internen Speicher und schickt
-ihn über USB an den Drucker. Starten, Pausieren und Abbrechen gehen über die Weboberfläche, ein PC muss nicht laufen.
+μprint macht aus einem ESP32-S3 einen kleinen Druckserver für deinen 3D-Drucker. Du lädst G-Code im Browser hoch,
+μprint speichert ihn auf einer microSD-Karte oder im internen Speicher und schickt ihn über USB an den Drucker.
+Starten, Pausieren und Abbrechen erledigst du ebenfalls im Browser, am Rechner oder am Handy. Ein PC muss dafür nicht
+laufen. μprint funktioniert mit Druckern mit Marlin- oder Prusa-Firmware und USB-Anschluss, zum Beispiel dem Prusa MK3S.
 
 ![μprint während eines Drucks](docs/screenshot.png)
 
-## Installation
+## Was du brauchst
 
-Du brauchst:
+- Ein **ESP32-S3-Board mit 16 MB Flash und 8 MB PSRAM**. Achte beim Kauf auf die Bezeichnung **N16R8**, andere
+  Varianten starten mit der fertigen Firmware nicht.
+- Einen **USB-OTG-Adapter** von der USB-Buchse des Boards auf USB-A, damit du das Druckerkabel anstecken kannst.
+- Ein **5-V-Netzteil** für das Board.
+- Optional ein **microSD-Modul** für große Dateien. Ohne Karte stehen knapp 12 MB interner Speicher zur Verfügung.
 
-- ein ESP32-S3-Board mit 16 MB Flash und 8 MB PSRAM (Variante **N16R8**)
-- einen USB-OTG-Adapter für die USB-Buchse des Boards, an die später der Drucker kommt
-- ein 5-V-Netzteil für das Board
-- optional ein microSD-Modul (MOSI 11, MISO 13, SCLK 12, CS 10)
+Das SD-Modul kommt standardmäßig an diese Pins, andere lassen sich später in den Einstellungen wählen:
 
-Firmware aufspielen:
+| SD-Modul | MOSI | MISO | SCLK | CS |
+| --- | --- | --- | --- | --- |
+| ESP32-S3 | GPIO11 | GPIO13 | GPIO12 | GPIO10 |
 
-1. [dmyrenne.github.io/uprint](https://dmyrenne.github.io/uprint/) in Chrome oder Edge öffnen.
-2. Das Board per USB an den Computer anschließen und auf **Installieren** klicken.
+Die meisten Boards haben zwei USB-Buchsen. Die eine (meist `UART` oder `COM`) nutzt du zum Aufspielen der Firmware,
+an die andere (meist `USB` oder `OTG`) kommt später der Drucker. Damit der Drucker dort erkannt wird, muss die Buchse
+5 V liefern. Bei vielen Boards ist dafür eine kleine Lötbrücke zu schließen, oft mit `USB-OTG` beschriftet.
 
-Ohne Browser geht es mit [esptool](https://docs.espressif.com/projects/esptool/) und der Datei
-`uprint-…-factory.bin` von den [Releases](https://github.com/dmyrenne/uprint/releases):
+## Firmware aufspielen
 
-    esptool --chip esp32s3 write-flash 0x0 uprint-…-factory.bin
+Am einfachsten geht das mit dem Web-Flasher direkt im Browser, ganz ohne Software-Installation:
 
-## Ersteinrichtung
+1. Öffne [dmyrenne.github.io/uprint](https://dmyrenne.github.io/uprint/) in **Chrome oder Edge** am Computer.
+   Firefox und Safari unterstützen das nötige WebSerial leider nicht.
+2. Schließe das Board mit einem USB-Datenkabel an die `UART`- bzw. `COM`-Buchse an.
+3. Klicke auf **Installieren**, wähle im Dialog den seriellen Port des Boards und bestätige beim ersten Mal das
+   Löschen des Geräts. Nach etwa einer Minute ist die Firmware drauf.
 
-1. Mit dem WLAN **uprint** verbinden (Passwort `uprint123`) und http://192.168.4.1 öffnen.
-2. Unter **WLAN** das eigene Netz wählen und verbinden. Danach ist μprint unter http://uprint.local erreichbar.
-3. Den Drucker per USB an das Board anschließen. Der Status oben rechts wird blau, sobald er verbunden ist.
+Findet der Browser das Board nicht, halte die Taste `BOOT` gedrückt, drücke kurz `RESET` und lass `BOOT` wieder los.
+Danach klappt die Verbindung. Nach dem Aufspielen einmal `RESET` drücken.
 
-Kommt keine Verbindung zum Drucker zustande, liefert die USB-Buchse vermutlich keine 5 V. Bei vielen Boards muss dafür
-eine Lötbrücke geschlossen werden, oft mit `USB-OTG` beschriftet.
+## Einrichten
 
-## Update
+Nach dem Start öffnet μprint ein eigenes WLAN namens **uprint** (Passwort `uprint123`). Verbinde dich damit und öffne
+http://192.168.4.1. Unter **WLAN** wählst du dein Heimnetz aus und gibst das Passwort ein. Die Seite zeigt dir danach
+die neue Adresse an, und ab dann erreichst du μprint in deinem Netz unter http://uprint.local.
 
-Die Datei `uprint-…-ota.bin` von den [Releases](https://github.com/dmyrenne/uprint/releases) laden und in μprint unter
-**Einstellungen → Firmware** installieren. Einstellungen und Dateien bleiben erhalten.
+Jetzt noch den Drucker per USB an das Board anstecken. Sobald er verbunden ist, wird der Status oben rechts blau.
+Datei hochladen, in der Liste anklicken, auf **Drucken** – fertig.
+
+Unter **Einstellungen** findest du alles Weitere: wie weit die Düse beim Pausieren und Abbrechen angehoben wird,
+wohin der Kopf danach fährt, Hostname, WLAN-Passwort des Access Points und die Pins der SD-Karte.
+
+## Aktualisieren
+
+Neue Versionen erscheinen unter [Releases](https://github.com/dmyrenne/uprint/releases). Zum Aktualisieren brauchst du
+kein Kabel: Lade die Datei `uprint-…-ota.bin` herunter und installiere sie in μprint unter
+**Einstellungen → Firmware**. μprint startet danach neu, deine Einstellungen, das WLAN und alle Dateien bleiben
+erhalten. Alternativ kannst du auch einfach den Web-Flasher noch einmal benutzen, dann aber ohne das Gerät zu löschen.
+
+## Selbst bauen
+
+Wer die Firmware selbst kompilieren möchte, braucht [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/)
+v6.1. Die übrigen Abhängigkeiten lädt der Build automatisch:
+
+    git clone https://github.com/dmyrenne/uprint.git
+    cd uprint
+    idf.py set-target esp32s3
+    idf.py build
+    idf.py -p <port> flash
+
+`build/uprint.bin` lässt sich anschließend auch über **Einstellungen → Firmware** einspielen. Jeder Tag `v*` im Repo
+baut über GitHub Actions automatisch ein Release und aktualisiert den Web-Flasher.
