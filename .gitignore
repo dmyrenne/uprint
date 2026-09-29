@@ -1,0 +1,5 @@
+build/
+managed_components/
+# enthält WLAN-Zugangsdaten
+sdkconfig
+sdkconfig.old

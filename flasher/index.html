@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>μprint · Web-Flasher</title>
+<!-- Flashen über WebSerial mit ESP Web Tools (https://esphome.github.io/esp-web-tools/) -->
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  @font-face { font-family: 'Space Grotesk'; src: url(fonts/space-grotesk.woff2) format('woff2'); font-weight: 300 700; font-display: swap; }
+  @font-face { font-family: 'JetBrains Mono'; src: url(fonts/jetbrains-mono.woff2) format('woff2'); font-weight: 100 800; font-display: swap; }
+  :root {
+    --sans: 'Space Grotesk', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --bg: #f3f4f6; --panel: #ffffff; --ink: #0c0d10; --muted: #71737c; --line: #e3e4e8; --line-strong: #c9cbd2;
+    --accent: #2340ff; --accent-soft: #e8ebff; --accent-ink: #ffffff; --warn: #d4380d; --warn-bg: #fff1eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0c0f; --panel: #121318; --ink: #eceef3; --muted: #8b8e99; --line: #23252d; --line-strong: #353843;
+      --accent: #7187ff; --accent-soft: #1b2146; --accent-ink: #0b0c0f; --warn: #ff8a66; --warn-bg: #2d1710;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.55 var(--sans); background: var(--bg); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+  a { color: inherit; text-decoration-color: var(--accent); text-underline-offset: 2px; }
+  a:hover { color: var(--accent); }
+  code { font: 500 12px var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+  .top { display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand svg { width: 36px; height: 36px; border-radius: 9px; background: var(--ink); cursor: pointer; flex: none; }
+  h1 { font-size: 22px; line-height: 1; margin: 0; font-weight: 700; letter-spacing: -.03em; }
+  h1 small { display: block; font: 500 10px/1.3 var(--mono); letter-spacing: .02em; color: var(--muted); margin-top: 4px; }
+  .spacer { flex: 1; }
+  select { font: 400 12px var(--sans); color: var(--ink); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px; padding: 4px 8px; }
+
+  main { max-width: 760px; margin: 0 auto; padding: 20px 24px; display: grid; gap: 16px; counter-reset: sec; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px 20px; }
+  h2 { display: flex; align-items: baseline; gap: 10px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 12px; }
+  h2::before { counter-increment: sec; content: counter(sec, decimal-leading-zero); font: 500 11px var(--mono); color: var(--accent); }
+  p { margin: 0 0 10px; }
+  ol, ul { margin: 0; padding-left: 20px; }
+  li + li { margin-top: 6px; }
+  .muted { color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+
+  .install { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 6px 0 4px; }
+  button { font: 600 15px var(--sans); border: 1px solid var(--ink); background: var(--ink); color: var(--panel);
+           border-radius: 99px; padding: 10px 24px; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
+  button:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .version { font: 500 12px var(--mono); color: var(--muted); }
+  .note { font-size: 13px; border-radius: 6px; padding: 8px 11px; background: var(--warn-bg); color: var(--warn); }
+  .ok { background: var(--accent-soft); color: var(--ink); }
+  .foot { max-width: 760px; margin: 0 auto; padding: 4px 24px 24px; font-size: 12px; color: var(--muted); }
+  @media (max-width: 600px) { .top, main, .foot { padding-left: 16px; padding-right: 16px; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg id="mark" viewBox="0 0 34 34" role="img" aria-label="μprint"></svg>
+    <h1>µprint<small data-i18n="tagline"></small></h1>
+  </div>
+  <div class="spacer"></div>
+  <select id="lang" data-i18n-aria="lang"></select>
+</header>
+
+<main>
+  <section class="card">
+    <h2 data-i18n="h.need"></h2>
+    <ul>
+      <li data-i18n-html="need.board.html"></li>
+      <li data-i18n-html="need.browser.html"></li>
+      <li data-i18n="need.cable"></li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2 data-i18n="h.install"></h2>
+    <ol>
+      <li data-i18n-html="step.port.html"></li>
+      <li data-i18n="step.click"></li>
+      <li data-i18n="step.erase"></li>
+    </ol>
+    <div class="install" style="margin-top:16px">
+      <esp-web-install-button manifest="manifest.json">
+        <button slot="activate" data-i18n="install"></button>
+        <div slot="unsupported" class="note" data-i18n="unsupported"></div>
+        <div slot="not-allowed" class="note" data-i18n="notAllowed"></div>
+      </esp-web-install-button>
+      <span class="version" id="version"></span>
+    </div>
+    <p class="hint" data-i18n-html="boot.html"></p>
+  </section>
+
+  <section class="card">
+    <h2 data-i18n="h.setup"></h2>
+    <ol>
+      <li data-i18n-html="setup.ap.html"></li>
+      <li data-i18n-html="setup.open.html"></li>
+      <li data-i18n="setup.wifi"></li>
+      <li data-i18n-html="setup.printer.html"></li>
+    </ol>
+    <p class="hint" data-i18n-html="setup.update.html"></p>
+  </section>
+</main>
+<footer class="foot" data-i18n-html="footer.html"></footer>
+
+<script>
+const REPO = 'https://github.com/dmyrenne/uprint';
+const LANGS = { de: 'Deutsch', en: 'English' };
+const I18N = {
+  de: {
+    'lang': 'Sprache',
+    'tagline': 'Web-Flasher',
+    'h.need': 'Das brauchst du',
+    'need.board.html': 'Ein <b>ESP32-S3</b> mit <b>16 MB Flash und 8 MB Octal-PSRAM</b> (Modulbezeichnung N16R8). Andere Varianten starten mit diesem Image nicht.',
+    'need.browser.html': 'Einen Browser mit WebSerial: <b>Chrome, Edge oder Opera</b> am Computer. Firefox, Safari und Handys können das nicht.',
+    'need.cable': 'Ein USB-Datenkabel (reine Ladekabel funktionieren nicht).',
+    'h.install': 'Firmware installieren',
+    'step.port.html': 'Das Board per USB an den Computer anschließen. Hat es zwei USB-Buchsen, die zum Programmieren nehmen, meist mit <code>UART</code> oder <code>COM</code> beschriftet.',
+    'step.click': 'Auf „Installieren“ klicken und im Dialog des Browsers den seriellen Port des Boards wählen.',
+    'step.erase': 'Bei der ersten Installation „Gerät löschen“ bestätigen. Danach dauert das Schreiben etwa eine Minute.',
+    'install': 'Installieren',
+    'version': 'Version {v}',
+    'unsupported': 'Dieser Browser unterstützt kein WebSerial. Bitte Chrome, Edge oder Opera am Computer verwenden.',
+    'notAllowed': 'WebSerial funktioniert nur über HTTPS.',
+    'boot.html': 'Findet der Browser das Board nicht oder bricht die Verbindung ab: die Taste <code>BOOT</code> gedrückt halten, kurz <code>RESET</code> (bzw. <code>RST</code>/<code>EN</code>) drücken, <code>BOOT</code> loslassen und erneut auf „Installieren“ klicken. Nach dem Flashen einmal <code>RESET</code> drücken.',
+    'h.setup': 'Einrichten',
+    'setup.ap.html': 'Nach dem Start öffnet µprint den WLAN-Access-Point <b>uprint</b>, Passwort <code>uprint123</code>.',
+    'setup.open.html': 'Mit diesem WLAN verbinden und <a href="http://192.168.4.1" target="_blank" rel="noopener">http://192.168.4.1</a> öffnen.',
+    'setup.wifi': 'Unter „WLAN“ das eigene Netz wählen und verbinden. Danach ist µprint im eigenen Netz unter http://uprint.local erreichbar.',
+    'setup.printer.html': 'Den Drucker per USB an den <b>USB-Host-Port</b> des ESP32-S3 anschließen (native USB-Buchse, GPIO19/20, meist mit <code>USB</code> oder <code>OTG</code> beschriftet). Der Port muss 5 V liefern; bei manchen Boards ist dafür eine Lötbrücke zu schließen.',
+    'setup.update.html': 'Spätere Updates brauchen kein Kabel: die Datei <code>uprint-…-ota.bin</code> von den <a href="{repo}/releases" target="_blank" rel="noopener">Releases</a> in µprint unter „Einstellungen → Firmware“ installieren. Weitere Hinweise zu Hardware und Verdrahtung stehen in der <a href="{repo}#readme" target="_blank" rel="noopener">Anleitung</a>.',
+    'footer.html': 'µprint by Daniel Myrenne · <a href="{repo}" target="_blank" rel="noopener">GitHub</a> · Flashen mit <a href="https://esphome.github.io/esp-web-tools/" target="_blank" rel="noopener">ESP Web Tools</a>',
+  },
+  en: {
+    'lang': 'Language',
+    'tagline': 'web flasher',
+    'h.need': 'What you need',
+    'need.board.html': 'An <b>ESP32-S3</b> with <b>16 MB flash and 8 MB octal PSRAM</b> (module variant N16R8). Other variants won’t boot this image.',
+    'need.browser.html': 'A browser with WebSerial: <b>Chrome, Edge or Opera</b> on a computer. Firefox, Safari and phones don’t support it.',
+    'need.cable': 'A USB data cable (charge-only cables won’t work).',
+    'h.install': 'Install the firmware',
+    'step.port.html': 'Connect the board to your computer via USB. If it has two USB ports, use the one for programming, usually labelled <code>UART</code> or <code>COM</code>.',
+    'step.click': 'Click “Install” and pick the board’s serial port in the browser dialog.',
+    'step.erase': 'On the first install, confirm “Erase device”. Writing then takes about a minute.',
+    'install': 'Install',
+    'version': 'Version {v}',
+    'unsupported': 'This browser doesn’t support WebSerial. Please use Chrome, Edge or Opera on a computer.',
+    'notAllowed': 'WebSerial only works over HTTPS.',
+    'boot.html': 'If the browser can’t find the board or the connection drops: hold <code>BOOT</code>, briefly press <code>RESET</code> (or <code>RST</code>/<code>EN</code>), release <code>BOOT</code> and click “Install” again. Press <code>RESET</code> once after flashing.',
+    'h.setup': 'Set up',
+    'setup.ap.html': 'After starting, µprint opens the Wi-Fi access point <b>uprint</b>, password <code>uprint123</code>.',
+    'setup.open.html': 'Connect to it and open <a href="http://192.168.4.1" target="_blank" rel="noopener">http://192.168.4.1</a>.',
+    'setup.wifi': 'Under “Wi-Fi”, choose your network and connect. µprint is then reachable at http://uprint.local on your network.',
+    'setup.printer.html': 'Connect the printer via USB to the ESP32-S3’s <b>USB host port</b> (native USB, GPIO19/20, usually labelled <code>USB</code> or <code>OTG</code>). The port has to supply 5 V; some boards need a solder bridge closed for that.',
+    'setup.update.html': 'Later updates need no cable: install <code>uprint-…-ota.bin</code> from the <a href="{repo}/releases" target="_blank" rel="noopener">releases</a> in µprint under “Settings → Firmware”. More on hardware and wiring is in the <a href="{repo}#readme" target="_blank" rel="noopener">documentation</a>.',
+    'footer.html': 'µprint by Daniel Myrenne · <a href="{repo}" target="_blank" rel="noopener">GitHub</a> · flashing with <a href="https://esphome.github.io/esp-web-tools/" target="_blank" rel="noopener">ESP Web Tools</a>',
+  },
+};
+function pickLang() {
+  try { const l = localStorage.getItem('uprint-lang'); if (l in I18N) return l; } catch {}
+  for (const l of navigator.languages || [navigator.language]) { const b = String(l).slice(0, 2).toLowerCase(); if (b in I18N) return b; }
+  return 'en';
+}
+let LANG = pickLang(), VERSION = '';
+const t = (k, v = {}) => (I18N[LANG][k] ?? I18N.de[k] ?? k).replace(/\{(\w+)\}/g, (m, x) => (x in v ? v[x] : m));
+function applyI18n() {
+  document.documentElement.lang = LANG;
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  for (const el of document.querySelectorAll('[data-i18n-html]')) el.innerHTML = t(el.dataset.i18nHtml, { repo: REPO });
+  for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t(el.dataset.i18nAria));
+  document.getElementById('version').textContent = VERSION ? t('version', { v: VERSION }) : '';
+}
+const langSel = document.getElementById('lang');
+for (const [c, n] of Object.entries(LANGS)) langSel.add(new Option(n, c));
+langSel.value = LANG;
+langSel.onchange = () => { LANG = langSel.value; try { localStorage.setItem('uprint-lang', LANG); } catch {} applyI18n(); };
+applyI18n();
+fetch('manifest.json').then((r) => r.json()).then((m) => { VERSION = m.version; applyI18n(); }).catch(() => {});
+
+// Logo wie in µprint: ein Gefäß aus Schichtlinien, bei jedem Laden (und Klick) neu
+function drawMark() {
+  let s = Math.random() * 2 ** 32 >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const a = .6 + rnd() * 1.2, b = 1.5 + rnd() * 3, pa = rnd() * 6.3, pb = rnd() * 6.3, w = .55 + rnd() * .3, amp = .12 + rnd() * .14;
+  const r = (f) => Math.max(.18, Math.min(1, w + amp * Math.sin(f * Math.PI * a + pa) + amp * .5 * Math.sin(f * Math.PI * b + pb)));
+  const out = [];
+  for (let i = 0; i < 11; i++) {
+    const y = 28 - i * 2.2, half = r(i / 10) * 12, top = i === 10;
+    out.push(`<path d="M${(17 - half).toFixed(1)} ${y.toFixed(1)}H${(17 + half).toFixed(1)}" fill="none" stroke-linecap="round" stroke="${top ? 'var(--accent)' : 'var(--panel)'}" stroke-width="${top ? 1.6 : .9}" opacity="${top ? 1 : .8}"/>`);
+  }
+  document.getElementById('mark').innerHTML = out.join('');
+}
+document.getElementById('mark').onclick = drawMark;
+drawMark();
+</script>
+</body>
+</html>

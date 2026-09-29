@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>μprint</title>
+<style>
+  /* Schriften liegen im Firmware-Image unter /fonts (SIL Open Font License), damit alles auch ohne Internet läuft */
+  @font-face { font-family: 'Space Grotesk'; src: url(fonts/space-grotesk.woff2) format('woff2'); font-weight: 300 700; font-display: swap; }
+  @font-face { font-family: 'JetBrains Mono'; src: url(fonts/jetbrains-mono.woff2) format('woff2'); font-weight: 100 800; font-display: swap; }
+  :root {
+    --sans: 'Space Grotesk', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --bg: #f3f4f6; --panel: #ffffff; --field: #ffffff; --ink: #0c0d10; --muted: #71737c; --line: #e3e4e8; --line-strong: #c9cbd2;
+    --accent: #2340ff; --accent-soft: #e8ebff; --accent-ink: #ffffff; --warn: #d4380d; --warn-bg: #fff1eb;
+    --dot: #d9dbe1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0c0f; --panel: #121318; --field: #0b0c0f; --ink: #eceef3; --muted: #8b8e99; --line: #23252d; --line-strong: #353843;
+      --accent: #7187ff; --accent-soft: #1b2146; --accent-ink: #0b0c0f; --warn: #ff8a66; --warn-bg: #2d1710;
+      --dot: #1e2027;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font: 14px/1.45 var(--sans); background: var(--bg); color: var(--ink);
+         min-height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+  a { color: inherit; text-decoration-color: var(--accent); text-underline-offset: 2px; }
+  a:hover { color: var(--accent); }
+
+  /* ---------- Kopfzeile ---------- */
+  .top { display: flex; align-items: center; gap: 12px 32px; padding: 12px 24px; background: var(--panel);
+         border-bottom: 1px solid var(--line); flex-wrap: wrap; position: sticky; top: 0; z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .brand svg { width: 36px; height: 36px; border-radius: 9px; background: var(--ink); cursor: pointer; flex: none; }
+  h1 { font-size: 22px; line-height: 1; margin: 0; font-weight: 700; letter-spacing: -.03em; }
+  h1 small { display: block; white-space: nowrap; font: 500 10px/1.3 var(--mono); letter-spacing: .02em; color: var(--muted); margin-top: 4px; }
+  .stats { display: flex; gap: 28px; flex-wrap: wrap; }
+  .stat b { display: block; font: 600 18px/1.2 var(--mono); letter-spacing: -.02em; white-space: nowrap; }
+  .stat span { font-size: 11px; color: var(--muted); }
+  .spacer { flex: 1; }
+  .head-right { display: flex; align-items: center; gap: 10px; }
+  .head-right select { width: auto; padding: 4px 8px; font-size: 12px; }
+
+  /* ---------- Inhalt ---------- */
+  main { flex: 1; width: 100%; max-width: 1180px; margin: 0 auto; padding: 20px 24px 12px; counter-reset: sec;
+         display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 16px; align-content: start; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px 20px; min-width: 0; }
+  .wide { grid-column: 1 / -1; }
+  h2, details summary { display: flex; align-items: baseline; gap: 10px; font-size: 15px; font-weight: 600; letter-spacing: -.01em;
+       margin: 0 0 14px; color: var(--ink); }
+  h2::before, details summary::before { counter-increment: sec; content: counter(sec, decimal-leading-zero);
+       font: 500 11px var(--mono); color: var(--accent); }
+  details.card { padding-bottom: 18px; align-self: start; }   /* nicht mit der Nachbarkarte mitwachsen */
+  details summary { cursor: pointer; list-style: none; margin: 0; }
+  details[open] summary { margin-bottom: 14px; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::after { content: '+'; margin-left: auto; font: 400 16px var(--mono); color: var(--muted); }
+  details[open] summary::after { content: '−'; }
+  #messages:empty { display: none; }
+
+  /* Druckerstatus im Kopf: blau, sobald ein Drucker verbunden ist */
+  .tab { display: inline-flex; align-items: center; gap: 6px; font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: .04em;
+         padding: 4px 9px; border-radius: 99px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; }
+  .tab::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+  .tab.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .tab.wait { border-color: var(--accent); color: var(--accent); }
+  .tab.bad { background: var(--warn-bg); border-color: transparent; color: var(--warn); }
+  .tab.busy::before { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+
+  .drop { border: 1px dashed var(--line-strong); border-radius: 10px; padding: 20px 14px;
+          text-align: center; cursor: pointer; color: var(--muted); transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .drop strong { color: var(--ink); display: block; word-break: break-all; font-weight: 600; font-size: 15px; }
+  .drop.disabled { opacity: .45; pointer-events: none; }
+  .upload { display: flex; flex-direction: column; }
+  .upload .drop { flex: 1; min-height: 96px; display: flex; flex-direction: column; justify-content: center; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; align-items: end; }
+  .full { grid-column: 1 / -1; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  label.check { flex-direction: row; align-items: center; gap: 9px; color: var(--ink); font-size: 13px; cursor: pointer; }
+  input[type=text], input[type=password], select {
+         font: 400 14px var(--sans); color: var(--ink); background: var(--field); border: 1px solid var(--line-strong);
+         border-radius: 6px; padding: 6px 8px; width: 100%; transition: border-color .15s, box-shadow .15s; }
+  input[type=password] { font-family: var(--mono); font-size: 13px; }
+  input:focus-visible, select:focus-visible, button:focus-visible, .drop:focus-visible {
+         outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+  button { font: 500 13px var(--sans); border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink);
+           border-radius: 99px; padding: 6px 14px; cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
+  button:hover:not(:disabled) { border-color: var(--ink); }
+  button.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.warn:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
+  button.small { padding: 3px 10px; font-size: 12px; }
+  button:disabled { opacity: .35; cursor: default; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .pick { display: flex; gap: 6px; }
+  .pick select { flex: 1; min-width: 0; }
+  .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  .hint.bad { color: var(--warn); }
+  .derived { font-size: 12px; background: var(--accent-soft); color: var(--ink); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
+  .derived b { font: 600 12px var(--mono); color: var(--accent); }
+  .derived.bad { background: var(--warn-bg); color: var(--warn); }
+  .derived.bad b { color: inherit; }
+  .derived div + div { margin-top: 4px; }
+
+  .bar { height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 10px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+
+  .vols { display: grid; gap: 6px; margin-bottom: 8px; }
+  .vol { display: grid; grid-template-columns: 64px 1fr auto; gap: 10px; align-items: center; font-size: 12px; }
+  .vol .meter { height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .vol .meter i { display: block; height: 100%; background: var(--ink); }
+  .vol .free { font: 500 11px var(--mono); color: var(--muted); }
+  .vol.off { color: var(--muted); }
+
+  .files { list-style: none; margin: 0; padding: 0; }
+  .files li { display: flex; align-items: center; gap: 6px; padding: 9px 10px; margin: 0 -10px; border-top: 1px solid var(--line);
+              border-radius: 8px; cursor: pointer; transition: background .15s; }
+  .files li:hover { background: var(--bg); }
+  .files li.sel { background: var(--accent-soft); }
+  .files li.sel, .files li.sel + li { border-top-color: transparent; }
+  .files li.sel .name { color: var(--accent); font-weight: 600; }
+  .files li.sel .tag { background: var(--panel); }
+  .files li:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+  .files li .info { flex: 1; min-width: 0; }
+  .files li .name { display: block; overflow-wrap: anywhere; }
+  .files li .meta { display: flex; align-items: center; gap: 6px; font: 500 11px var(--mono); color: var(--muted); margin-top: 2px; }
+  .files li.empty { color: var(--muted); font-size: 13px; cursor: default; }
+  .files li.empty:hover { background: none; }
+  .files li.active .name { color: var(--accent); font-weight: 600; }
+  .badge { font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: .04em; padding: 3px 8px; border-radius: 99px;
+           background: var(--warn-bg); color: var(--warn); white-space: nowrap; }
+  .sub { font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 10px 0 -4px; }
+  .sub:first-child { margin-top: 0; }
+  .grid .hint { margin: 0; }
+  input[type=number] { font: 500 13px var(--mono); color: var(--ink); background: var(--field); border: 1px solid var(--line-strong);
+         border-radius: 6px; padding: 6px 8px; width: 100%; transition: border-color .15s, box-shadow .15s; }
+  .tag { font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: .04em; padding: 1px 7px; border-radius: 99px;
+         background: var(--accent-soft); color: var(--accent); }
+
+  /* ---------- Druck ---------- */
+  .print-body { display: flex; gap: 20px; align-items: stretch; }
+  .anim { flex: none; align-self: flex-start; width: 150px; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+          background: radial-gradient(circle, var(--dot) 1px, transparent 1.2px) 0 0 / 12px 12px, var(--bg); }
+  .anim svg { width: 100%; height: 100%; overflow: visible; }
+  .anim .done { stroke: var(--ink); stroke-width: 2.4; }
+  .anim .cur { stroke: var(--accent); stroke-width: 3.6; }
+  .anim .todo { stroke: var(--line-strong); stroke-width: 1.4; stroke-dasharray: 2 4; }
+  .anim .nozzle { fill: var(--accent); }
+  .print-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .job-title { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; overflow-wrap: anywhere; }
+  .job-sub { font: 500 12px var(--mono); color: var(--muted); margin-top: 4px; }
+  .job-sub.bad { color: var(--warn); }
+  .job-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .ota { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .ota .sub { margin: 0 0 6px; }
+  .ota-name { font: 500 12px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+  .bar.big { height: 8px; margin-top: 14px; }
+  .job-meta { display: flex; justify-content: space-between; gap: 12px; font: 500 12px var(--mono); color: var(--muted); margin-top: 6px; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 16px; }
+  button.big { font-size: 15px; font-weight: 600; padding: 10px 24px; }
+  button.danger { color: var(--warn); }
+  button.danger:hover:not(:disabled) { border-color: var(--warn); background: var(--warn-bg); }
+
+  .msg { padding: 8px 11px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); white-space: pre-wrap; font-size: 13px; }
+  .msg.ok { background: var(--accent-soft); color: var(--ink); }
+  .foot { width: 100%; max-width: 1180px; margin: 0 auto; padding: 4px 24px 24px; font-size: 12px; color: var(--muted); }
+  @media (max-width: 860px) {
+    .top { padding: 12px 16px; gap: 12px; }
+    .stats { order: 3; width: 100%; gap: 10px 20px; }
+    .stat b { font-size: 16px; }
+    main { grid-template-columns: 1fr; padding: 16px; }
+    .foot { padding: 4px 16px 20px; }
+    .anim { width: 88px; padding: 8px; }
+    .print-body { gap: 14px; }
+    .job-title { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg id="mark" viewBox="0 0 34 34" role="img" aria-label="μprint"></svg>
+    <h1>µprint<small data-i18n="tagline"></small></h1>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="spacer"></div>
+  <div class="head-right">
+    <select id="lang" data-i18n-aria="lang"></select>
+    <span class="tab" id="tab"></span>
+  </div>
+</header>
+
+<main>
+  <div id="messages" class="wide"></div>
+
+  <section class="card wide">
+    <h2 data-i18n="h.print"></h2>
+    <div class="print-body">
+      <div class="anim" id="anim" hidden><svg id="layers" viewBox="0 0 200 220" aria-hidden="true"></svg></div>
+      <div class="print-main">
+        <div class="job-title" id="jobTitle"></div>
+        <div class="job-sub" id="jobSub"></div>
+        <div class="job-note" id="jobNote" hidden></div>
+        <div id="jobProgress" hidden>
+          <div class="bar big"><i id="jobBar"></i></div>
+          <div class="job-meta"><span id="jobPct"></span><span id="jobEta"></span></div>
+        </div>
+        <div class="controls">
+          <button type="button" class="big primary" id="bStart" data-i18n="start"></button>
+          <button type="button" class="big" id="bPause" data-i18n="pause"></button>
+          <button type="button" class="big primary" id="bResume" data-i18n="resume" hidden></button>
+          <button type="button" class="big danger" id="bCancel" data-i18n="cancel"></button>
+          <button type="button" class="big" id="bAck" data-i18n="ack" hidden></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card upload">
+    <h2 data-i18n="h.upload"></h2>
+    <div class="drop" id="drop" tabindex="0" role="button">
+      <strong id="dropTitle"></strong>
+      <span id="dropSub"></span>
+      <input type="file" id="file" accept=".gcode,.gco,.g" hidden>
+    </div>
+    <div id="upForm" hidden style="margin-top:10px">
+      <div class="grid">
+        <label class="full" id="targetRow"><span data-i18n="target"></span><select id="target"></select></label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button type="button" class="primary" id="upBtn" data-i18n="upload"></button>
+      </div>
+      <p class="hint" id="upHint"></p>
+      <div class="bar" id="upBar" hidden><i></i></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 data-i18n="h.files"></h2>
+    <div class="vols" id="vols"></div>
+    <ul class="files" id="files"></ul>
+  </section>
+
+  <details class="card" id="wifiBox">
+    <summary data-i18n="h.wifi"></summary>
+    <div class="derived" id="wifiStatus"></div>
+    <div class="grid">
+      <label class="full"><span data-i18n="wifi.network"></span>
+        <span class="pick"><select id="wifiNet"></select><button type="button" id="wifiScan" data-i18n="wifi.scan"></button></span>
+      </label>
+      <label class="full" id="ssidRow" hidden><span data-i18n="wifi.ssid"></span><input type="text" id="wifiSsid" maxlength="32" autocomplete="off"></label>
+      <label class="full"><span data-i18n="wifi.password"></span><input type="password" id="wifiPass" maxlength="63" autocomplete="off"></label>
+      <label class="check full"><input type="checkbox" id="wifiShow"> <span data-i18n="wifi.show"></span></label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="primary" id="wifiConnect" data-i18n="wifi.connect"></button>
+      <button type="button" class="warn" id="wifiForget" data-i18n="wifi.forget"></button>
+    </div>
+    <p class="hint" id="wifiHint"></p>
+  </details>
+
+  <details class="card" id="setBox">
+    <summary><span data-i18n="h.settings"></span><span class="badge" id="setBadge" data-i18n="modified" hidden></span></summary>
+    <form id="setForm" class="grid" autocomplete="off" onsubmit="return false">
+      <p class="sub full" data-i18n="set.printer"></p>
+      <label class="full"><span data-i18n="set.baud"></span><select name="baud"></select></label>
+      <p class="hint full" data-i18n="set.baud.hint"></p>
+
+      <p class="sub full" data-i18n="set.pause"></p>
+      <label><span data-i18n="set.lift"></span><input type="number" name="pause_lift" min="0" max="50" step="1"></label>
+      <span></span>
+      <p class="hint full" data-i18n="set.pause.hint"></p>
+
+      <p class="sub full" data-i18n="set.cancel"></p>
+      <label><span data-i18n="set.lift"></span><input type="number" name="cancel_lift" min="0" max="100" step="1"></label>
+      <span></span>
+      <label><span data-i18n="set.park_x"></span><input type="number" name="park_x" step="1"></label>
+      <label><span data-i18n="set.park_y"></span><input type="number" name="park_y" step="1"></label>
+      <p class="hint full" data-i18n="set.cancel.hint"></p>
+
+      <p class="sub full" data-i18n="set.network"></p>
+      <label><span data-i18n="set.hostname"></span><input type="text" name="hostname" maxlength="32" spellcheck="false"></label>
+      <label><span data-i18n="set.ap_password"></span><input type="password" name="ap_password" maxlength="63"></label>
+      <p class="hint full" data-i18n="set.network.hint"></p>
+
+      <p class="sub full" data-i18n="set.sd"></p>
+      <label><span>MOSI</span><input type="number" name="sd_mosi" min="0" max="48"></label>
+      <label><span>MISO</span><input type="number" name="sd_miso" min="0" max="48"></label>
+      <label><span>SCLK</span><input type="number" name="sd_sclk" min="0" max="48"></label>
+      <label><span>CS</span><input type="number" name="sd_cs" min="0" max="48"></label>
+    </form>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="primary" id="setSave" data-i18n="save"></button>
+      <button type="button" id="setRevert" data-i18n="revert"></button>
+    </div>
+    <div class="derived" id="rebootBox" style="margin-top:12px" hidden>
+      <div data-i18n="set.reboot"></div>
+      <div class="row" style="margin-top:8px"><button type="button" class="small" id="rebootBtn" data-i18n="set.rebootNow"></button></div>
+    </div>
+    <div class="ota">
+      <p class="sub" data-i18n="set.firmware"></p>
+      <p class="hint" id="otaVersion" style="margin:0 0 10px"></p>
+      <div class="row">
+        <button type="button" id="otaPick" data-i18n="ota.choose"></button>
+        <button type="button" class="primary" id="otaBtn" data-i18n="ota.install"></button>
+        <span class="ota-name" id="otaName"></span>
+      </div>
+      <div class="bar" id="otaBar" hidden><i></i></div>
+      <p class="hint" id="otaHint" data-i18n="ota.hint"></p>
+      <input type="file" id="otaFile" accept=".bin" hidden>
+    </div>
+  </details>
+</main>
+<footer class="foot" data-i18n-html="footer.html"></footer>
+
+<script src="i18n.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let st = null, offline = false, volumes = [], files = [], wifi = null, nets = [];
+let pick = null, uploading = false, upPct = 0;
+let selKey = null;   // ausgewählte Datei: "<speicher>/<name>"
+const fileKey = (f) => f.storage + '/' + f.name;
+const selected = () => files.find((f) => fileKey(f) === selKey) || null;
+
+// ---------- Hilfsfunktionen ----------
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+const num = (v, d = 0) => v.toLocaleString(LANG, { minimumFractionDigits: d, maximumFractionDigits: d });
+function fmtSize(b) {
+  if (b >= 1073741824) return num(b / 1073741824, 1) + ' GB';
+  if (b >= 1048576) return num(b / 1048576, 1) + ' MB';
+  if (b >= 1024) return num(b / 1024) + ' KB';
+  return b + ' B';
+}
+function fmtTime(s) {
+  s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0');
+}
+const volName = (id) => t('vol.' + id);
+const fileQuery = (f) => '?storage=' + encodeURIComponent(f.storage) + '&name=' + encodeURIComponent(f.name);
+const active = () => st && (st.state === 'printing' || st.state === 'paused');
+
+async function api(method, url, body) {
+  let r;
+  try { r = await fetch(url, { method, body }); } catch (e) { throw new Error(t('err.network')); }
+  let j = {}; try { j = await r.json(); } catch {}
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+// Meldungen unten: Fehler rot, Bestätigungen dezent; verschwinden nach einigen Sekunden
+let msgTimer;
+function say(text, bad) {
+  const m = el('div', 'msg' + (bad ? '' : ' ok'), text);
+  $('messages').replaceChildren(m);
+  clearTimeout(msgTimer); msgTimer = setTimeout(() => $('messages').replaceChildren(), bad ? 10000 : 5000);
+}
+async function act(method, url) {
+  try { await api(method, url); } catch (e) { say(e.message, true); }
+  await refreshStatus();
+}
+
+// ---------- Generative Grafik: Schichten wie beim Druck ----------
+// Ein Gefäß aus waagrechten Linien; Umriss aus überlagerten Sinuswellen, bestimmt durch den Zufallswert
+function profile(seed) {
+  let s = seed >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const a = .6 + rnd() * 1.2, b = 1.5 + rnd() * 3, pa = rnd() * 6.3, pb = rnd() * 6.3, w = .55 + rnd() * .3, amp = .12 + rnd() * .14;
+  return (f) => Math.max(.18, Math.min(1, w + amp * Math.sin(f * Math.PI * a + pa) + amp * .5 * Math.sin(f * Math.PI * b + pb)));
+}
+function hash(str) { let h = 2166136261; for (const c of str) h = Math.imul(h ^ c.codePointAt(0), 16777619); return h >>> 0; }
+
+function drawMark() {   // Logo: bei jedem Laden (und Klick) ein neues Gefäß, die oberste Schicht im Akzent
+  const r = profile(Math.random() * 2 ** 32), n = 11, out = [];
+  for (let i = 0; i < n; i++) {
+    const y = 28 - i * 2.2, half = r(i / (n - 1)) * 12, top = i === n - 1;
+    out.push(`<path d="M${(17 - half).toFixed(1)} ${y.toFixed(1)}H${(17 + half).toFixed(1)}" fill="none" stroke-linecap="round" stroke="${top ? 'var(--accent)' : 'var(--panel)'}" stroke-width="${top ? 1.6 : .9}" opacity="${top ? 1 : .8}"/>`);
+  }
+  $('mark').innerHTML = out.join('');
+}
+
+let layersKey = '';
+function drawLayers(seed, frac, mode) {   // mode: idle | printing | paused
+  const N = 44, done = Math.min(N, Math.floor(frac * N)), key = [seed, done, mode].join();
+  if (key === layersKey) return;      // nicht bei jeder Abfrage neu zeichnen, sonst springt die Animation
+  layersKey = key;
+  const r = profile(seed), out = [];
+  const yAt = (i) => 206 - i * (192 / (N - 1));
+  for (let i = 0; i < N; i++) {
+    const half = r(i / (N - 1)) * 80, y = yAt(i).toFixed(1);
+    const cls = mode === 'idle' ? 'todo' : i < done ? 'done' : i === done ? 'cur' : 'todo';
+    out.push(`<path class="${cls}" d="M${(100 - half).toFixed(1)} ${y}H${(100 + half).toFixed(1)}" stroke-linecap="round"/>`);
+  }
+  if (mode !== 'idle' && done < N) {   // Düse über der aktuellen Schicht, fährt beim Drucken hin und her
+    const half = r(done / (N - 1)) * 80, y = yAt(done) - 3;
+    const anim = mode === 'printing'
+      ? `<animateTransform attributeName="transform" type="translate" values="${-half} 0;${half} 0;${-half} 0" dur="3s" repeatCount="indefinite"/>` : '';
+    out.push(`<g><path class="nozzle" d="M${100 - 4} ${y - 9}h8v4l-3 5h-2l-3-5z"/>${anim}</g>`);
+  }
+  $('layers').innerHTML = out.join('');
+}
+
+// ---------- Status ----------
+async function refreshStatus() {
+  try {
+    const s = await api('GET', '/api/status');
+    const changed = !st || st.state !== s.state || offline, back = offline;
+    st = s; offline = false;
+    renderStatus();
+    if (changed) loadFiles();
+    if (back) loadSettings();
+  } catch (e) {
+    offline = true; renderStatus();
+  }
+}
+async function poll() { await refreshStatus(); setTimeout(poll, 1500); }
+
+function renderStatus() {
+  const s = st || {}, a = !offline && active();
+  const state = offline ? 'offline' : s.state || 'connecting';
+  const tab = $('tab');
+  tab.textContent = t('state.' + state);
+  tab.className = 'tab ' + ({ idle: 'on', printing: 'on busy', paused: 'on', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
+
+  const pct = a && s.size ? s.pos / s.size * 100 : 0;
+  const temp = (v, target) => offline || s.state === 'disconnected' ? '–' : Math.round(v) + '°' + (target > 0 ? ' / ' + Math.round(target) + '°' : '');
+  const items = [
+    ['stat.progress', a ? num(pct, 1) + ' %' : '–'],
+    ['stat.elapsed', a ? fmtTime(s.elapsed) : '–'],
+    ['stat.remaining', a && pct > 2 ? fmtTime(s.elapsed * (100 - pct) / pct) : '–'],
+    ['stat.hotend', temp(s.hotend, s.hotend_target)],
+    ['stat.bed', temp(s.bed, s.bed_target)],
+  ];
+  $('stats').replaceChildren(...items.map(([k, v]) => { const d = el('div', 'stat'); d.append(el('b', '', v), el('span', '', t(k))); return d; }));
+
+  // Bedienelemente bleiben sichtbar und sind nur aktiv, wenn sie etwas bewirken
+  const chosen = selected();
+  $('bStart').disabled = offline || s.state !== 'idle' || !chosen;
+  $('bPause').hidden = !offline && s.state === 'paused';
+  $('bPause').disabled = offline || s.state !== 'printing';
+  $('bResume').hidden = offline || s.state !== 'paused';
+  $('bCancel').disabled = !a;
+  $('bAck').hidden = offline || s.state !== 'error';
+
+  let title, sub = s.message || '', bad = s.state === 'error';
+  if (offline) { title = t('stage.offline'); sub = t('stage.offlineHint'); bad = true; }
+  else if (a) title = s.file;
+  else if (s.state === 'disconnected') { title = t('stage.disconnected'); sub = t('stage.disconnectedHint'); }
+  else if (s.state === 'connecting') { title = t('stage.connecting'); sub = ''; }
+  else if (s.state === 'error') { title = t('state.error'); sub = s.message; }
+  else if (chosen) { title = chosen.name; sub = volName(chosen.storage) + ' · ' + fmtSize(chosen.size) + ' · ' + t('job.ready'); }
+  else { title = t('stage.idle'); sub = t('stage.idleHint'); }
+  // Meldungen der Firmware wie „Druck fertig …“ zusätzlich zeigen, solange nichts läuft
+  const note = !offline && s.state === 'idle' && s.message && !['Drucker bereit', 'Fehler quittiert'].includes(s.message) ? s.message : '';
+  $('jobNote').textContent = note; $('jobNote').hidden = !note;
+  $('jobTitle').textContent = title;
+  // Während des Drucks den übersetzten Zustand zeigen, sonst die Meldung der Firmware
+  $('jobSub').textContent = a ? volName(s.storage) + ' · ' + t('state.' + s.state) : sub;
+  $('jobSub').className = 'job-sub' + (bad ? ' bad' : '');
+  $('jobProgress').hidden = !a;
+  $('jobBar').style.width = pct + '%';
+  $('jobPct').textContent = a ? num(pct, 1) + ' %' : '';
+  $('jobEta').textContent = a && pct > 2 ? t('job.remaining', { t: fmtTime(s.elapsed * (100 - pct) / pct) }) : '';
+  // Animation nur während eines Drucks
+  $('anim').hidden = !a;
+  if (a) drawLayers(hash(s.storage + '/' + s.file), pct / 100, s.state);
+  else layersKey = '';
+  renderFiles(); renderOta();
+}
+$('bStart').onclick = () => { const f = selected(); if (f) act('POST', '/api/print' + fileQuery(f)); };
+
+// ---------- Dateien ----------
+async function loadFiles() {
+  try {
+    const r = await api('GET', '/api/files');
+    volumes = r.volumes; files = r.files;
+    files.sort((x, y) => x.name.localeCompare(y.name, LANG, { numeric: true }) || x.storage.localeCompare(y.storage));
+  } catch { files = []; }
+  renderVolumes(); renderFiles(); renderUpload();
+}
+
+function renderVolumes() {
+  $('vols').replaceChildren(...volumes.map((v) => {
+    const row = el('div', 'vol' + (v.ready ? '' : ' off')), meter = el('span', 'meter'), bar = el('i');
+    if (v.ready && v.total) bar.style.width = (100 - v.free / v.total * 100) + '%';
+    meter.append(bar);
+    row.append(el('span', '', volName(v.id)), meter,
+      el('span', 'free', v.ready ? t('vol.free', { free: fmtSize(v.free), total: fmtSize(v.total) }) : t('vol.missing')));
+    return row;
+  }));
+}
+
+function renderFiles() {
+  const ul = $('files');
+  if (!files.length) { ul.replaceChildren(el('li', 'empty', t(volumes.some((v) => v.ready) ? 'files.empty' : 'files.noStorage'))); return; }
+  ul.replaceChildren(...files.map((f) => {
+    const printing = active() && st.file === f.name && st.storage === f.storage;
+    const li = el('li', [printing ? 'active' : '', fileKey(f) === selKey ? 'sel' : ''].join(' ').trim());
+    const info = el('div', 'info'), meta = el('span', 'meta');
+    meta.append(el('span', 'tag', volName(f.storage)), fmtSize(f.size));
+    info.append(el('span', 'name', f.name), meta);
+    li.tabIndex = 0;
+    li.setAttribute('aria-selected', fileKey(f) === selKey);
+    li.onclick = () => { selKey = fileKey(f); renderStatus(); };
+    li.onkeydown = (e) => { if (e.target === li && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); li.click(); } };
+    const dl = el('button', 'small', t('download'));
+    dl.onclick = (e) => {
+      e.stopPropagation();
+      const a = el('a'); a.href = '/api/download' + fileQuery(f); a.download = f.name;
+      document.body.append(a); a.click(); a.remove();
+    };
+    const d = el('button', 'small warn', t('delete'));
+    d.disabled = printing;
+    d.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm(t('confirm.delete', { name: f.name }))) return;
+      await act('DELETE', '/api/files' + fileQuery(f));
+      if (selKey === fileKey(f)) selKey = null;
+      loadFiles();
+    };
+    li.append(info, dl, d);
+    return li;
+  }));
+}
+
+// ---------- Hochladen ----------
+const readyVols = () => volumes.filter((v) => v.ready);
+function bestTarget(size) {   // SD bevorzugt, sonst der erste Speicher mit genug Platz
+  const ready = readyVols(), fits = (v) => v.free >= size, cur = $('target').value;
+  const v = ready.find((x) => x.id === cur && fits(x)) || ready.find((x) => x.id === 'sd' && fits(x)) || ready.find(fits)
+         || ready.find((x) => x.id === cur) || ready[0];
+  return v ? v.id : '';
+}
+function choose(file) {
+  if (!/\.(gcode|gco|g)$/i.test(file.name)) { say(t('upload.badType'), true); return; }
+  pick = file;
+  renderUpload();
+  $('target').value = bestTarget(file.size);
+  renderUpload();
+}
+function renderUpload() {
+  const ready = readyVols(), anyFree = ready.some((v) => v.free > 0);
+  $('drop').classList.toggle('disabled', !anyFree || uploading);
+  $('dropTitle').textContent = pick ? pick.name : t('drop.title');
+  $('dropSub').textContent = pick ? fmtSize(pick.size) : anyFree ? t('drop.sub') : t('drop.full');
+  $('upForm').hidden = !pick;
+  if (!pick) return;
+
+  const sel = $('target'), cur = sel.value;
+  sel.replaceChildren(...ready.map((v) => { const o = new Option(volName(v.id) + ' · ' + t('vol.free', { free: fmtSize(v.free), total: fmtSize(v.total) }), v.id); return o; }));
+  sel.value = ready.some((v) => v.id === cur) ? cur : bestTarget(pick.size);
+  sel.disabled = uploading;
+  $('targetRow').hidden = ready.length < 2;
+
+  const v = ready.find((x) => x.id === sel.value), fits = !!v && v.free >= pick.size;
+  $('upBtn').disabled = !fits || uploading;
+  const hint = $('upHint');
+  if (uploading) hint.textContent = t('upload.running', { pct: Math.round(upPct) });
+  else if (!v) hint.textContent = t('files.noStorage');
+  else hint.textContent = fits ? t('upload.fits', { free: fmtSize(v.free - pick.size) })
+                               : t('upload.tooBig', { need: fmtSize(pick.size), free: fmtSize(v.free) });
+  hint.className = 'hint' + (!uploading && !fits ? ' bad' : '');
+  $('upBar').hidden = !uploading;
+  $('upBar').firstElementChild.style.width = upPct + '%';
+}
+$('target').onchange = renderUpload;
+
+// Schickt eine Datei als Rohdaten und meldet den Fortschritt (0–100)
+function sendRaw(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', url);
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total * 100); };
+    x.onload = () => {
+      let j = {}; try { j = JSON.parse(x.responseText); } catch {}
+      if (x.status === 200) return resolve(j);
+      reject(new Error(j.error || x.statusText));
+    };
+    x.onerror = () => reject(new Error(t('err.network')));
+    x.send(file);
+  });
+}
+$('upBtn').onclick = async () => {
+  const f = pick, storage = $('target').value;
+  if (!f || uploading) return;
+  if (files.some((x) => x.name === f.name && x.storage === storage) &&
+      !confirm(t('confirm.overwrite', { name: f.name, vol: volName(storage) }))) return;
+  uploading = true; upPct = 0; renderUpload();
+  const t0 = performance.now();
+  try {
+    await sendRaw('/api/upload' + fileQuery({ storage, name: f.name }), f, (p) => { upPct = p; renderUpload(); });
+    say(t('upload.done', { name: f.name, speed: fmtSize(f.size / ((performance.now() - t0) / 1000)) }));
+    pick = null;
+    selKey = storage + '/' + f.name;   // frisch hochgeladene Datei gleich auswählen
+  } catch (e) { say(t('upload.failed', { msg: e.message }), true); }
+  uploading = false;
+  await loadFiles();
+};
+
+$('drop').onclick = () => $('file').click();
+$('drop').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } };
+$('file').onchange = (e) => { if (e.target.files[0]) choose(e.target.files[0]); e.target.value = ''; };
+$('drop').ondragover = (e) => { e.preventDefault(); $('drop').classList.add('over'); };
+$('drop').ondragleave = () => $('drop').classList.remove('over');
+$('drop').ondrop = (e) => {
+  e.preventDefault(); $('drop').classList.remove('over');
+  const f = e.dataTransfer.files[0]; if (f) choose(f);
+};
+
+// ---------- Druck steuern ----------
+$('bPause').onclick = () => act('POST', '/api/pause');
+$('bResume').onclick = () => act('POST', '/api/resume');
+$('bCancel').onclick = () => { if (confirm(t('confirm.cancel'))) act('POST', '/api/cancel'); };
+$('bAck').onclick = () => act('POST', '/api/cancel');
+
+// ---------- WLAN ----------
+const OTHER = '\u0000other';
+let wifiOpened = false, scanned = false;
+
+async function loadWifi() {
+  try { wifi = await api('GET', '/api/wifi'); } catch { return; }
+  renderWifi();
+  if (!wifiOpened) {   // Beim ersten Laden ohne Verbindung (z. B. über den Access Point) gleich aufklappen
+    wifiOpened = true;
+    if (!wifi.connected) { $('wifiBox').open = true; scan(); }
+  }
+}
+
+function reasonText(w) {
+  const r = w.reason;
+  if ([201, 210, 211, 212].includes(r)) return t('wifi.err.notFound', { ssid: w.ssid });
+  if ([2, 15, 202, 204].includes(r)) return t('wifi.err.password');
+  return t('wifi.err.other', { code: r });
+}
+function signal(rssi) { return t(rssi >= -60 ? 'wifi.signal.good' : rssi >= -72 ? 'wifi.signal.ok' : 'wifi.signal.weak') + ' (' + rssi + ' dBm)'; }
+
+function renderWifi() {
+  const w = wifi; if (!w) return;
+  const box = $('wifiStatus'), lines = [];
+  let bad = false;
+  if (w.connected) {
+    const d = el('div'); d.append(t('wifi.connected', { ssid: w.ssid }) + ' · ', el('b', '', w.ip), ' · ' + signal(w.rssi)); lines.push(d);
+  } else if (w.configured) {
+    bad = w.reason !== 0;
+    lines.push(el('div', '', bad ? reasonText(w) : t('wifi.connecting', { ssid: w.ssid })));
+  } else lines.push(el('div', '', t('wifi.none')));
+  if (w.ap) lines.push(el('div', '', t('wifi.ap', { ssid: w.ap_ssid, ip: w.ap_ip })));
+  if (w.ap && w.connected) lines.push(el('div', '', t('wifi.apClosing', { ip: w.ip, host: w.hostname })));
+  box.replaceChildren(...lines);
+  box.className = 'derived' + (bad ? ' bad' : '');
+  $('wifiForget').disabled = !w.configured;
+  $('wifiHint').textContent = t('wifi.hint', { ssid: w.ap_ssid });
+  renderNets();
+}
+
+let netsKey = '';
+function renderNets() {
+  const key = JSON.stringify([nets, wifi && wifi.ssid, LANG]);
+  if (key === netsKey) return;   // nicht bei jeder Abfrage neu aufbauen, sonst klappt die Auswahl zu
+  netsKey = key;
+  const sel = $('wifiNet'), cur = sel.value;
+  const opts = [new Option(t('wifi.choose'), '')];
+  const known = wifi && wifi.ssid && !nets.some((n) => n.ssid === wifi.ssid) ? [{ ssid: wifi.ssid }] : [];
+  for (const n of [...nets, ...known]) {
+    const label = n.rssi === undefined ? n.ssid : n.ssid + ' · ' + n.rssi + ' dBm' + (n.secure ? '' : ' · ' + t('wifi.open'));
+    opts.push(new Option(label, n.ssid));
+  }
+  opts.push(new Option(t('wifi.other'), OTHER));
+  sel.replaceChildren(...opts);
+  sel.value = [...sel.options].some((o) => o.value === cur) && cur ? cur : (wifi && wifi.ssid) || '';
+  $('ssidRow').hidden = sel.value !== OTHER;
+}
+$('wifiNet').onchange = () => { $('ssidRow').hidden = $('wifiNet').value !== OTHER; if (!$('ssidRow').hidden) $('wifiSsid').focus(); };
+
+async function scan() {
+  const b = $('wifiScan');
+  b.disabled = true; b.textContent = t('wifi.scanning');
+  try { nets = await api('GET', '/api/wifi/scan'); scanned = true; renderNets(); }
+  catch (e) { say(e.message, true); }
+  b.disabled = false; b.textContent = t('wifi.scan');
+}
+$('wifiScan').onclick = scan;
+$('wifiBox').ontoggle = () => { if ($('wifiBox').open && !scanned) scan(); };
+$('wifiShow').onchange = () => { $('wifiPass').type = $('wifiShow').checked ? 'text' : 'password'; };
+
+$('wifiConnect').onclick = async () => {
+  const v = $('wifiNet').value, ssid = v === OTHER ? $('wifiSsid').value.trim() : v;
+  if (!ssid) { say(t('wifi.needSsid'), true); return; }
+  try {
+    await api('POST', '/api/wifi', new URLSearchParams({ ssid, password: $('wifiPass').value }));
+    $('wifiPass').value = '';
+    say(t('wifi.saved', { ssid }));
+    setTimeout(loadWifi, 1500);
+  } catch (e) { say(e.message, true); }
+};
+$('wifiForget').onclick = async () => {
+  if (!confirm(t('confirm.forget'))) return;
+  try { await api('DELETE', '/api/wifi'); say(t('wifi.forgotten', { ssid: wifi ? wifi.ap_ssid : 'uprint' })); setTimeout(loadWifi, 1500); }
+  catch (e) { say(e.message, true); }
+};
+async function pollWifi() { await loadWifi(); setTimeout(pollWifi, 4000); }
+
+// ---------- Einstellungen ----------
+const SET_KEYS = ['baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y', 'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
+const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
+const setForm = $('setForm');
+let settings = null;
+
+function readSettings() {
+  return Object.fromEntries(SET_KEYS.map((k) => [k, setForm.elements[k].value.trim()]));
+}
+function writeSettings(s) {
+  const sel = setForm.elements.baud, bauds = BAUDS.includes(s.baud) ? BAUDS : [...BAUDS, s.baud].sort((a, b) => a - b);
+  sel.replaceChildren(...bauds.map((b) => new Option(String(b), b)));
+  for (const k of SET_KEYS) setForm.elements[k].value = s[k];
+}
+const setModified = () => !!settings && SET_KEYS.some((k) => String(settings[k]) !== readSettings()[k]);
+function renderSettings() {
+  const mod = setModified();
+  $('setBadge').hidden = !mod;
+  $('setSave').disabled = !mod;
+  $('setRevert').disabled = !mod;
+  $('rebootBox').hidden = !settings || !settings.reboot_required;
+  renderOta();
+}
+async function loadSettings() {
+  try { settings = await api('GET', '/api/settings'); } catch { return; }
+  if (!setModified() || !$('setBox').open) writeSettings(settings);   // laufende Eingaben nicht überschreiben
+  renderSettings();
+}
+setForm.addEventListener('input', renderSettings);
+setForm.addEventListener('change', renderSettings);
+$('setSave').onclick = async () => {
+  try {
+    settings = await api('POST', '/api/settings', new URLSearchParams(readSettings()));
+    writeSettings(settings); renderSettings();
+    say(t('set.saved'));
+  } catch (e) { say(e.message, true); }
+};
+$('setRevert').onclick = () => { writeSettings(settings); renderSettings(); say(t('set.discarded')); };
+$('rebootBtn').onclick = async () => {
+  if (!confirm(t('confirm.reboot'))) return;
+  try { await api('POST', '/api/reboot'); say(t('set.rebooting')); } catch (e) { say(e.message, true); }
+};
+
+// ---------- Firmware-Update ----------
+let otaFile = null, otaBusy = false;
+function renderOta() {
+  $('otaVersion').textContent = settings ? t('ota.version', { v: settings.version }) : '';
+  $('otaName').textContent = otaFile ? otaFile.name + ' · ' + fmtSize(otaFile.size) : '';
+  $('otaPick').disabled = otaBusy;
+  $('otaBtn').disabled = !otaFile || otaBusy || offline || active();
+  $('otaBar').hidden = !otaBusy;
+}
+$('otaPick').onclick = () => $('otaFile').click();
+$('otaFile').onchange = (e) => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  if (!/\.bin$/i.test(f.name)) { say(t('ota.badType'), true); return; }
+  otaFile = f; renderOta();
+};
+$('otaBtn').onclick = async () => {
+  if (!otaFile || !confirm(t('confirm.ota', { name: otaFile.name }))) return;
+  otaBusy = true; renderOta();
+  const bar = $('otaBar').firstElementChild;
+  bar.style.width = '0';
+  try {
+    const r = await sendRaw('/api/ota', otaFile, (p) => { bar.style.width = p + '%'; $('otaHint').textContent = t('ota.running', { pct: Math.round(p) }); });
+    say(t('ota.done', { v: r.version }));
+    otaFile = null;
+  } catch (e) { say(t('ota.failed', { msg: e.message }), true); }
+  otaBusy = false;
+  $('otaHint').textContent = t('ota.hint');
+  renderOta();
+};
+
+// ---------- Sprache ----------
+for (const [code, name] of Object.entries(LANGS)) $('lang').add(new Option(name, code));
+$('lang').value = LANG;
+$('lang').onchange = () => {
+  LANG = $('lang').value;
+  try { localStorage.setItem('uprint-lang', LANG); } catch {}
+  applyI18n(); renderStatus(); renderVolumes(); renderUpload(); renderWifi();
+  if (settings) { const cur = readSettings(); writeSettings({ ...settings, ...cur, baud: +cur.baud }); }
+};
+
+// ---------- Start ----------
+applyI18n();
+drawMark(); $('mark').onclick = drawMark;
+renderStatus(); renderUpload();
+poll(); pollWifi(); loadSettings();
+</script>
+</body>
+</html>

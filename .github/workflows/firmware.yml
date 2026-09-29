@@ -1,0 +1,124 @@
+# Baut die Firmware mit ESP-IDF und veröffentlicht sie.
+#   Push auf main, Pull Request -> bauen, .bin-Dateien als Artefakt am Workflow-Lauf
+#   Tag v1.2.3                  -> zusätzlich GitHub-Release mit den .bin-Dateien
+#                                  und Web-Flasher auf GitHub Pages aktualisieren
+name: Firmware
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IDF_VERSION: v6.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0          # Tags für git describe
+
+      - id: version
+        name: Version bestimmen
+        run: |
+          # v1.2.3 -> 1.2.3, zwischen Releases z. B. 1.2.3-4-gabc1234
+          VERSION=$(git describe --tags --always)
+          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Bauen
+        uses: espressif/esp-idf-ci-action@v1.2.0
+        with:
+          esp_idf_version: ${{ env.IDF_VERSION }}
+          target: esp32s3
+          extra_docker_args: -e UPRINT_VERSION=${{ steps.version.outputs.version }}
+          command: idf.py build && idf.py merge-bin -o uprint-factory.bin
+
+      - name: Dateien sammeln
+        run: |
+          mkdir dist
+          # OTA-Update über die Weboberfläche
+          cp build/uprint.bin dist/uprint-${{ steps.version.outputs.version }}-ota.bin
+          # Erstinstallation ab Adresse 0x0 (Bootloader, Partitionstabelle, App)
+          cp build/uprint-factory.bin dist/uprint-${{ steps.version.outputs.version }}-factory.bin
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: uprint-${{ steps.version.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: uprint-${{ needs.build.outputs.version }}
+          path: dist
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*.bin
+          generate_release_notes: true
+
+  flasher:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: uprint-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Seite zusammenstellen
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          mkdir -p site/firmware site/fonts
+          cp flasher/index.html site/
+          cp main/www/fonts/*.woff2 main/www/fonts/OFL-*.txt site/fonts/
+          cp "dist/uprint-$VERSION-factory.bin" site/firmware/uprint-factory.bin
+          # Manifest für ESP Web Tools
+          cat > site/manifest.json <<EOF
+          {
+            "name": "µprint",
+            "version": "$VERSION",
+            "new_install_prompt_erase": true,
+            "builds": [
+              { "chipFamily": "ESP32-S3", "parts": [{ "path": "firmware/uprint-factory.bin", "offset": 0 }] }
+            ]
+          }
+          EOF
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v5

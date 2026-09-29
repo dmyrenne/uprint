@@ -1,0 +1,13 @@
+dependencies:
+  idf: ">=5.3"
+  espressif/usb_host_cdc_acm: "^2.0.0"
+  espressif/usb_host_vcp: "^1.0.0~6"
+  espressif/usb_host_ch34x_vcp: "^2"
+  espressif/usb_host_cp210x_vcp: "^2"
+  espressif/usb_host_ftdi_vcp: "^2"
+  espressif/mdns: ">=1.2.0"
+  # Ab IDF 6.0 ist der USB-Host-Stack nicht mehr Teil von IDF
+  espressif/usb:
+    version: "*"
+    rules:
+      - if: "idf_version >=6.0"
