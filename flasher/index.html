@@ -102,6 +102,13 @@
       <li data-i18n="step.click"></li>
       <li data-i18n="step.erase"></li>
     </ol>
+    <div id="channelBox" style="margin-top:16px" hidden>
+      <div class="variants">
+        <label class="variant"><input type="radio" name="channel" value="stable" checked><b data-i18n="ch.stable"></b><span id="verStable"></span></label>
+        <label class="variant"><input type="radio" name="channel" value="alpha"><b>Alpha</b><span id="verAlpha"></span></label>
+      </div>
+      <p class="note" id="alphaNote" data-i18n="ch.alpha.note" hidden></p>
+    </div>
     <p class="note ok" id="choose" data-i18n="chooseFirst" style="margin-top:16px"></p>
     <div class="install" id="installRow" style="margin-top:16px" hidden>
       <esp-web-install-button id="installer">
@@ -149,6 +156,8 @@ const I18N = {
     'step.erase': 'Bei der ersten Installation „Gerät löschen“ bestätigen. Danach dauert das Schreiben etwa eine Minute.',
     'install': 'Installieren',
     'version': 'Version {v}',
+    'ch.stable': 'Stabil',
+    'ch.alpha.note': 'Alpha-Versionen sind Vorabversionen zum Testen neuer Funktionen. Sie können Fehler enthalten. Für den normalen Betrieb die stabile Version nehmen.',
     'unsupported': 'Dieser Browser unterstützt kein WebSerial. Bitte Chrome, Edge oder Opera am Computer verwenden.',
     'notAllowed': 'WebSerial funktioniert nur über HTTPS.',
     'boot.html': 'Findet der Browser das Board nicht oder bricht die Verbindung ab: die Taste <code>BOOT</code> gedrückt halten, kurz <code>RESET</code> (bzw. <code>RST</code>/<code>EN</code>) drücken, <code>BOOT</code> loslassen und erneut auf „Installieren“ klicken. Nach dem Flashen einmal <code>RESET</code> drücken.',
@@ -178,6 +187,8 @@ const I18N = {
     'step.erase': 'On the first install, confirm “Erase device”. Writing then takes about a minute.',
     'install': 'Install',
     'version': 'Version {v}',
+    'ch.stable': 'Stable',
+    'ch.alpha.note': 'Alpha versions are pre-releases for testing new features and may contain bugs. For everyday use, pick the stable version.',
     'unsupported': 'This browser doesn’t support WebSerial. Please use Chrome, Edge or Opera on a computer.',
     'notAllowed': 'WebSerial only works over HTTPS.',
     'boot.html': 'If the browser can’t find the board or the connection drops: hold <code>BOOT</code>, briefly press <code>RESET</code> (or <code>RST</code>/<code>EN</code>), release <code>BOOT</code> and click “Install” again. Press <code>RESET</code> once after flashing.',
@@ -210,13 +221,28 @@ langSel.value = LANG;
 langSel.onchange = () => { LANG = langSel.value; try { localStorage.setItem('uprint-lang', LANG); } catch {} applyI18n(); };
 applyI18n();
 
+// Kanäle aus channels.json, z. B. {"stable":"0.3.0","alpha":"0.4.0-alpha.1"}; Alpha nur, wenn vorhanden
+let channel = 'stable', variant = null;
+const manifest = (v) => 'manifest-' + channel + '-' + v + '.json';
+fetch('channels.json').then((r) => r.json()).then((c) => {
+  document.getElementById('verStable').textContent = c.stable ? t('version', { v: c.stable }) : '';
+  document.getElementById('verAlpha').textContent = c.alpha ? t('version', { v: c.alpha }) : '';
+  document.getElementById('channelBox').hidden = !c.alpha;
+}).catch(() => {});
+for (const r of document.querySelectorAll('input[name=channel]')) r.onchange = () => {
+  channel = r.value;
+  document.getElementById('alphaNote').hidden = channel !== 'alpha';
+  if (variant) chooseVariant(variant);
+};
+
 function chooseVariant(v) {
-  document.getElementById('installer').setAttribute('manifest', 'manifest-' + v + '.json');
+  variant = v;
+  document.getElementById('installer').setAttribute('manifest', manifest(v));
   document.getElementById('installRow').hidden = false;
   document.getElementById('choose').hidden = true;
   VERSION = '';
   applyI18n();
-  fetch('manifest-' + v + '.json').then((r) => r.json()).then((m) => { VERSION = m.version; applyI18n(); }).catch(() => {});
+  fetch(manifest(v)).then((r) => r.json()).then((m) => { VERSION = m.version; applyI18n(); }).catch(() => {});
   try { localStorage.setItem('uprint-variant', v); } catch {}
 }
 for (const r of document.querySelectorAll('input[name=variant]')) r.onchange = () => chooseVariant(r.value);

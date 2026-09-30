@@ -2,7 +2,7 @@
 #   Push auf main, Pull Request -> bauen, .bin-Dateien als Artefakt am Workflow-Lauf
 #   Tag v1.2.3                  -> zusätzlich GitHub-Release mit den .bin-Dateien
 #                                  und Web-Flasher auf GitHub Pages aktualisieren
-#   Tag v1.2.3-alpha.1          -> nur Vorab-Release, der Web-Flasher bleibt beim letzten stabilen Stand
+#   Tag v1.2.3-alpha.1          -> Vorab-Release (nicht "latest"), im Web-Flasher als Kanal "Alpha" wählbar
 name: Firmware
 
 on:
@@ -87,11 +87,15 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
 
+  # Der Web-Flasher bietet zwei Kanäle: "stable" (neuestes normales Release) und "alpha" (neuestes
+  # Vorab-Release, nur solange es jünger ist als das stabile). Da GitHub Pages bei jedem Deploy die ganze
+  # Seite ersetzt, werden bei jedem Tag beide Kanäle aus den Releases neu zusammengestellt.
   flasher:
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
-    needs: [version, build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -101,35 +105,44 @@ jobs:
       group: pages
       cancel-in-progress: false
     env:
-      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: uprint-*
-          path: dist
-          merge-multiple: true
-
       - name: Seite zusammenstellen
         run: |
-          mkdir -p site/firmware site/fonts
+          mkdir -p site/fonts
           cp flasher/index.html site/
           cp main/www/fonts/*.woff2 main/www/fonts/OFL-*.txt site/fonts/
-          # Je Variante ein Image und ein Manifest für ESP Web Tools
-          for v in n16r8 basic; do
-            cp "dist/uprint-$VERSION-$v-factory.bin" "site/firmware/uprint-$v-factory.bin"
-            cat > "site/manifest-$v.json" <<EOF
+          STABLE=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName // ""')
+          # Neuestes Release überhaupt; nur wenn das ein Vorab-Release ist, gibt es einen Alpha-Kanal
+          ALPHA=$(gh release list --exclude-drafts --limit 1 --json tagName,isPrerelease -q '.[0] | select(.isPrerelease) | .tagName')
+          echo '{}' > site/channels.json
+          for ch in stable alpha; do
+            if [ "$ch" = stable ]; then tag=$STABLE; else tag=$ALPHA; fi
+            [ -n "$tag" ] || continue
+            version=${tag#v}
+            mkdir -p "dl/$ch" "site/firmware/$ch"
+            gh release download "$tag" -p '*-factory.bin' -D "dl/$ch"
+            # Je Variante ein Image und ein Manifest für ESP Web Tools
+            for v in n16r8 basic; do
+              cp "dl/$ch/uprint-$version-$v-factory.bin" "site/firmware/$ch/uprint-$v-factory.bin"
+              cat > "site/manifest-$ch-$v.json" <<EOF
           {
             "name": "µprint ($v)",
-            "version": "$VERSION",
+            "version": "$version",
             "new_install_prompt_erase": true,
             "builds": [
-              { "chipFamily": "ESP32-S3", "parts": [{ "path": "firmware/uprint-$v-factory.bin", "offset": 0 }] }
+              { "chipFamily": "ESP32-S3", "parts": [{ "path": "firmware/$ch/uprint-$v-factory.bin", "offset": 0 }] }
             ]
           }
           EOF
+            done
+            jq --arg ch "$ch" --arg v "$version" '. + {($ch): $v}' site/channels.json > channels.tmp
+            mv channels.tmp site/channels.json
           done
+          cat site/channels.json
 
       - uses: actions/configure-pages@v6
 

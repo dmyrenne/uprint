@@ -72,6 +72,9 @@ kein Kabel: Lade die Datei `uprint-…-ota.bin` für deine Variante herunter (`b
 installiere sie in μprint unter **Einstellungen → Firmware**. Welche Variante installiert ist, steht dort ebenfalls. μprint startet danach neu, deine Einstellungen, das WLAN und alle Dateien bleiben
 erhalten. Alternativ kannst du auch einfach den Web-Flasher noch einmal benutzen, dann aber ohne das Gerät zu löschen.
 
+Vorabversionen zum Testen neuer Funktionen erscheinen als *Pre-release* und lassen sich im Web-Flasher über den
+Kanal **Alpha** installieren. Für den normalen Betrieb ist die stabile Version gedacht.
+
 ## Selbst bauen
 
 Wer die Firmware selbst kompilieren möchte, braucht [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/)
