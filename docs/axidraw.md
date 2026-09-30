@@ -96,13 +96,13 @@ Bevor der Plotter-Modus entsteht, gibt es in µprint einen Test, der ein echtes 
 
 Ablauf für einen Tester:
 
-1. ESP32-S3 über den Web-Flasher einrichten, Kanal „Alpha“ wählen, und ins WLAN bringen. Ein schon
+1. ESP32-S3 über den Web-Flasher einrichten (Umschalter auf „Alpha“, neueste Version) und ins WLAN bringen. Ein schon
    eingerichtetes Gerät bekommt die Alpha als `uprint-…-ota.bin` (Vorab-Release) unter Einstellungen → Firmware
 2. AxiDraw anschließen (USB und Netzteil), Gerätetyp umstellen, Test starten, den Anweisungen folgen
 3. Log herunterladen und schicken
 
 Tags mit Bindestrich (z. B. `v0.4.0-alpha.1`) werden als Vorab-Release gebaut (nicht „latest“). Der Web-Flasher
-bietet sie als Kanal „Alpha“ an, solange sie jünger sind als das neueste stabile Release.
+listet alle Releases; der Umschalter „Release / Alpha“ filtert das Versions-Dropdown.
 
 ## Aufgaben
 

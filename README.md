@@ -72,8 +72,9 @@ kein Kabel: Lade die Datei `uprint-…-ota.bin` für deine Variante herunter (`b
 installiere sie in μprint unter **Einstellungen → Firmware**. Welche Variante installiert ist, steht dort ebenfalls. μprint startet danach neu, deine Einstellungen, das WLAN und alle Dateien bleiben
 erhalten. Alternativ kannst du auch einfach den Web-Flasher noch einmal benutzen, dann aber ohne das Gerät zu löschen.
 
-Vorabversionen zum Testen neuer Funktionen erscheinen als *Pre-release* und lassen sich im Web-Flasher über den
-Kanal **Alpha** installieren. Für den normalen Betrieb ist die stabile Version gedacht.
+Im Web-Flasher lässt sich auch eine ältere Version wählen, falls du zurückgehen möchtest. Vorabversionen zum Testen
+neuer Funktionen erscheinen als *Pre-release* und stehen dort unter **Alpha**. Für den normalen Betrieb ist
+**Release** gedacht.
 
 ## Selbst bauen
 

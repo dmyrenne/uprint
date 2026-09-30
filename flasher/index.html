@@ -55,6 +55,15 @@
   .variant:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
   .variant:has(input:focus-visible) { box-shadow: 0 0 0 3px var(--accent-soft); }
   @media (max-width: 600px) { .variants { grid-template-columns: 1fr; } }
+  .pickver { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 99px; padding: 3px; }
+  .seg label { cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span { display: block; padding: 5px 14px; border-radius: 99px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .seg input:checked + span { background: var(--ink); color: var(--panel); }
+  .seg input:focus-visible + span { box-shadow: 0 0 0 3px var(--accent-soft); }
+  .seg input:disabled + span { opacity: .4; cursor: not-allowed; }
+  #verSel { font: 500 13px var(--mono); padding: 7px 10px; border-radius: 8px; min-width: 0; max-width: 100%; }
   .install { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 6px 0 4px; }
   button { font: 600 15px var(--sans); border: 1px solid var(--ink); background: var(--ink); color: var(--panel);
            border-radius: 99px; padding: 10px 24px; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
@@ -102,13 +111,14 @@
       <li data-i18n="step.click"></li>
       <li data-i18n="step.erase"></li>
     </ol>
-    <div id="channelBox" style="margin-top:16px" hidden>
-      <div class="variants">
-        <label class="variant"><input type="radio" name="channel" value="stable" checked><b data-i18n="ch.stable"></b><span id="verStable"></span></label>
-        <label class="variant"><input type="radio" name="channel" value="alpha"><b>Alpha</b><span id="verAlpha"></span></label>
+    <div class="pickver" id="pickVer" style="margin-top:16px" hidden>
+      <div class="seg" role="radiogroup" data-i18n-aria="ch.channel">
+        <label><input type="radio" name="channel" value="release" checked><span data-i18n="ch.release"></span></label>
+        <label><input type="radio" name="channel" value="alpha"><span>Alpha</span></label>
       </div>
-      <p class="note" id="alphaNote" data-i18n="ch.alpha.note" hidden></p>
+      <select id="verSel" data-i18n-aria="ch.version"></select>
     </div>
+    <p class="note" id="alphaNote" data-i18n="ch.alpha.note" style="margin-top:12px" hidden></p>
     <p class="note ok" id="choose" data-i18n="chooseFirst" style="margin-top:16px"></p>
     <div class="install" id="installRow" style="margin-top:16px" hidden>
       <esp-web-install-button id="installer">
@@ -156,7 +166,11 @@ const I18N = {
     'step.erase': 'Bei der ersten Installation „Gerät löschen“ bestätigen. Danach dauert das Schreiben etwa eine Minute.',
     'install': 'Installieren',
     'version': 'Version {v}',
-    'ch.stable': 'Stabil',
+    'ch.channel': 'Art der Version',
+    'ch.release': 'Release',
+    'ch.version': 'Version',
+    'ch.latest': 'neueste',
+    'ch.none': 'Keine Alpha-Version vorhanden',
     'ch.alpha.note': 'Alpha-Versionen sind Vorabversionen zum Testen neuer Funktionen. Sie können Fehler enthalten. Für den normalen Betrieb die stabile Version nehmen.',
     'unsupported': 'Dieser Browser unterstützt kein WebSerial. Bitte Chrome, Edge oder Opera am Computer verwenden.',
     'notAllowed': 'WebSerial funktioniert nur über HTTPS.',
@@ -187,7 +201,11 @@ const I18N = {
     'step.erase': 'On the first install, confirm “Erase device”. Writing then takes about a minute.',
     'install': 'Install',
     'version': 'Version {v}',
-    'ch.stable': 'Stable',
+    'ch.channel': 'Kind of version',
+    'ch.release': 'Release',
+    'ch.version': 'Version',
+    'ch.latest': 'latest',
+    'ch.none': 'No alpha version available',
     'ch.alpha.note': 'Alpha versions are pre-releases for testing new features and may contain bugs. For everyday use, pick the stable version.',
     'unsupported': 'This browser doesn’t support WebSerial. Please use Chrome, Edge or Opera on a computer.',
     'notAllowed': 'WebSerial only works over HTTPS.',
@@ -218,31 +236,39 @@ function applyI18n() {
 const langSel = document.getElementById('lang');
 for (const [c, n] of Object.entries(LANGS)) langSel.add(new Option(n, c));
 langSel.value = LANG;
-langSel.onchange = () => { LANG = langSel.value; try { localStorage.setItem('uprint-lang', LANG); } catch {} applyI18n(); };
+langSel.onchange = () => { LANG = langSel.value; try { localStorage.setItem('uprint-lang', LANG); } catch {} applyI18n(); renderVersions(); };
 applyI18n();
 
-// Kanäle aus channels.json, z. B. {"stable":"0.3.0","alpha":"0.4.0-alpha.1"}; Alpha nur, wenn vorhanden
-let channel = 'stable', variant = null;
-const manifest = (v) => 'manifest-' + channel + '-' + v + '.json';
-fetch('channels.json').then((r) => r.json()).then((c) => {
-  document.getElementById('verStable').textContent = c.stable ? t('version', { v: c.stable }) : '';
-  document.getElementById('verAlpha').textContent = c.alpha ? t('version', { v: c.alpha }) : '';
-  document.getElementById('channelBox').hidden = !c.alpha;
-}).catch(() => {});
-for (const r of document.querySelectorAll('input[name=channel]')) r.onchange = () => {
-  channel = r.value;
+// Alle Releases aus releases.json (neueste zuerst). Der Umschalter filtert zwischen normalen Releases und
+// Vorab-Releases (Alpha), das Dropdown erlaubt auch ältere Versionen, z. B. um zurückzugehen.
+let releases = [], channel = 'release', variant = null, picked = null;
+const manifest = () => 'manifest-' + picked + '-' + variant + '.json';
+const listed = () => releases.filter((r) => r.prerelease === (channel === 'alpha') && (!variant || r.variants.includes(variant)));
+function renderVersions() {
+  const sel = document.getElementById('verSel'), list = listed();
+  const alpha = document.querySelector('input[name=channel][value=alpha]');
+  alpha.disabled = !releases.some((r) => r.prerelease);
   document.getElementById('alphaNote').hidden = channel !== 'alpha';
-  if (variant) chooseVariant(variant);
-};
+  if (!list.some((r) => r.version === picked)) picked = list.length ? list[0].version : null;
+  sel.replaceChildren(...(list.length
+    ? list.map((r, i) => new Option(r.version + ' · ' + r.date + (i === 0 ? ' (' + t('ch.latest') + ')' : ''), r.version))
+    : [new Option(t('ch.none'), '')]));
+  sel.value = picked || '';
+  sel.disabled = !list.length;
+  document.getElementById('pickVer').hidden = !variant || !releases.length;
+  document.getElementById('installRow').hidden = !variant || !picked;
+  if (variant && picked) document.getElementById('installer').setAttribute('manifest', manifest());
+  VERSION = picked || '';
+  applyI18n();
+}
+document.getElementById('verSel').onchange = (e) => { picked = e.target.value; renderVersions(); };
+for (const r of document.querySelectorAll('input[name=channel]')) r.onchange = () => { channel = r.value; picked = null; renderVersions(); };
+fetch('releases.json').then((r) => r.json()).then((list) => { releases = list; renderVersions(); }).catch(() => {});
 
 function chooseVariant(v) {
   variant = v;
-  document.getElementById('installer').setAttribute('manifest', manifest(v));
-  document.getElementById('installRow').hidden = false;
   document.getElementById('choose').hidden = true;
-  VERSION = '';
-  applyI18n();
-  fetch(manifest(v)).then((r) => r.json()).then((m) => { VERSION = m.version; applyI18n(); }).catch(() => {});
+  renderVersions();
   try { localStorage.setItem('uprint-variant', v); } catch {}
 }
 for (const r of document.querySelectorAll('input[name=variant]')) r.onchange = () => chooseVariant(r.value);
