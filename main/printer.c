@@ -20,6 +20,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "axidraw.h"
 #include "printer.h"
 #include "settings.h"
 #include "storage.h"
@@ -59,6 +60,8 @@ static bool s_req_start;
 static bool s_req_cancel;
 static bool s_req_pause;
 static bool s_req_resume;
+static bool s_req_relink;      // Gerätetyp geändert: neu verbinden
+static int s_device;           // device_type_t der aktuellen Verbindung
 
 // Nur im Drucker-Task benutzt
 static FILE *s_file;
@@ -719,18 +722,39 @@ static void printer_task(void *arg)
             continue;
         }
 
-        if (!linked || generation != usb_serial_generation() || s_need_sync) {
+        LOCK();
+        bool relink = s_req_relink;
+        s_req_relink = false;
+        UNLOCK();
+        if (!linked || generation != usb_serial_generation() || s_need_sync || relink) {
             if (linked && generation != usb_serial_generation() && s_file) {
                 fail("USB-Verbindung unterbrochen, Druck abgebrochen");
             }
             linked = true;
             generation = usb_serial_generation();
             s_need_sync = false;
+            settings_t cfg;
+            settings_get(&cfg);
+            LOCK();
+            s_device = cfg.device_type;
+            UNLOCK();
+            if (cfg.device_type == DEVICE_AXIDRAW) {
+                char msg[sizeof(s_st.message)];
+                set_state(PRINTER_CONNECTING, "Verbinde mit AxiDraw …");
+                axidraw_link(msg, sizeof(msg));
+                set_state(PRINTER_IDLE, "%s", msg);
+                continue;
+            }
             if (!sync_printer()) {
                 ESP_LOGW(TAG, "Drucker antwortet nicht, neuer Versuch");
                 s_need_sync = true;
                 vTaskDelay(pdMS_TO_TICKS(1000));
             }
+            continue;
+        }
+
+        if (s_device == DEVICE_AXIDRAW) {
+            axidraw_poll();   // plotten geht noch nicht, nur der Testmodus
             continue;
         }
 
@@ -748,7 +772,7 @@ static void printer_task(void *arg)
 esp_err_t printer_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
-    if (!s_lock) {
+    if (!s_lock || axidraw_init() != ESP_OK) {
         return ESP_ERR_NO_MEM;
     }
     s_st.state = PRINTER_DISCONNECTED;
@@ -788,7 +812,7 @@ esp_err_t printer_start(storage_vol_t vol, const char *name)
 {
     esp_err_t err = ESP_OK;
     LOCK();
-    if (s_st.state != PRINTER_IDLE) {
+    if (s_st.state != PRINTER_IDLE || s_device == DEVICE_AXIDRAW) {
         err = ESP_ERR_INVALID_STATE;
     } else {
         s_st.state = PRINTER_PRINTING;
@@ -862,4 +886,17 @@ bool printer_is_using(storage_vol_t vol, const char *name)
                  s_st.vol == vol && strcmp(s_st.file, name) == 0;
     UNLOCK();
     return using;
+}
+
+esp_err_t printer_device_changed(void)
+{
+    esp_err_t err = ESP_OK;
+    LOCK();
+    if (s_st.state == PRINTER_PRINTING || s_st.state == PRINTER_PAUSED) {
+        err = ESP_ERR_INVALID_STATE;
+    } else {
+        s_req_relink = true;
+    }
+    UNLOCK();
+    return err;
 }

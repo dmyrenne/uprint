@@ -172,6 +172,12 @@
   button.danger { color: var(--warn); }
   button.danger:hover:not(:disabled) { border-color: var(--warn); background: var(--warn-bg); }
 
+  .axi-prompt { font-size: 15px; font-weight: 600; margin-top: 14px; }
+  .axi-log { font: 500 11px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+             margin: 14px 0 0; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .axi-obs { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .axi-obs textarea { font: 13px var(--sans, inherit); color: var(--ink); background: var(--field); border: 1px solid var(--line-strong);
+                      border-radius: 6px; padding: 7px 9px; resize: vertical; }
   .msg { padding: 8px 11px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); white-space: pre-wrap; font-size: 13px; }
   .msg.ok { background: var(--accent-soft); color: var(--ink); }
   .foot { width: 100%; max-width: 1180px; margin: 0 auto; padding: 4px 24px 24px; font-size: 12px; color: var(--muted); }
@@ -253,6 +259,27 @@
     <ul class="files" id="files"></ul>
   </section>
 
+  <details class="card wide" id="axiBox" open hidden>
+    <summary data-i18n="h.axidraw"></summary>
+    <p class="hint" data-i18n="axi.intro" style="margin-top:0"></p>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="axiMotion"> <span data-i18n="axi.motion"></span></label>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="primary" id="axiStart" data-i18n="axi.start"></button>
+      <button type="button" class="danger" id="axiAbort" data-i18n="axi.abort"></button>
+    </div>
+    <div class="derived axi-prompt" id="axiPrompt" hidden></div>
+    <div class="axi-obs" id="axiObs" hidden>
+      <p class="sub" data-i18n="axi.obs"></p>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.pen"> <span data-i18n="axi.obs.pen"></span></label>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.square"> <span data-i18n="axi.obs.square"></span></label>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.lm"> <span data-i18n="axi.obs.lm"></span></label>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.home"> <span data-i18n="axi.obs.home"></span></label>
+      <label><span data-i18n="axi.notes"></span><textarea id="axiNotes" rows="3"></textarea></label>
+      <div class="row"><button type="button" class="primary" id="axiDownload" data-i18n="axi.download"></button></div>
+    </div>
+    <pre class="axi-log" id="axiLog" hidden></pre>
+  </details>
+
   <details class="card" id="wifiBox">
     <summary data-i18n="h.wifi"></summary>
     <div class="derived" id="wifiStatus"></div>
@@ -285,6 +312,11 @@
       <p class="hint full" id="slicerHint"></p>
 
       <p class="sub full" data-i18n="set.printer"></p>
+      <label class="full"><span data-i18n="set.device_type"></span><select name="device_type">
+        <option value="0" data-i18n="set.device_type.printer"></option>
+        <option value="1" data-i18n="set.device_type.axidraw"></option>
+      </select></label>
+      <p class="hint full" data-i18n="set.device_type.hint"></p>
       <label class="full"><span data-i18n="set.baud"></span><select name="baud"></select></label>
       <p class="hint full" data-i18n="set.baud.hint"></p>
 
@@ -733,7 +765,7 @@ $('wifiForget').onclick = async () => {
 async function pollWifi() { await loadWifi(); setTimeout(pollWifi, 4000); }
 
 // ---------- Einstellungen ----------
-const SET_KEYS = ['device_name', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y', 'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
+const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y', 'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm');
 let settings = null;
@@ -753,7 +785,7 @@ function renderSettings() {
   $('setSave').disabled = !mod;
   $('setRevert').disabled = !mod;
   $('rebootBox').hidden = !settings || !settings.reboot_required;
-  renderOta(); renderSlicer(); renderName();
+  renderOta(); renderSlicer(); renderName(); renderAxi();
 }
 async function loadSettings() {
   try { settings = await api('GET', '/api/settings'); } catch { return; }
@@ -773,6 +805,60 @@ $('setRevert').onclick = () => { writeSettings(settings); renderSettings(); say(
 $('rebootBtn').onclick = async () => {
   if (!confirm(t('confirm.reboot'))) return;
   try { await api('POST', '/api/reboot'); say(t('set.rebooting')); } catch (e) { say(e.message, true); }
+};
+
+// ---------- AxiDraw-Testmodus ----------
+// Nur sichtbar, wenn als Gerätetyp AxiDraw gespeichert ist. Das Log kommt vom Gerät,
+// die Beobachtungen hängt der Browser beim Herunterladen an.
+let axi = null, axiLog = '', axiTimer = null;
+const axiMode = () => !!settings && settings.device_type === 1;
+function renderAxi() {
+  $('axiBox').hidden = !axiMode();
+  if (!axiMode()) return;
+  const run = !!axi && axi.running, ready = !offline && !!st && st.state === 'idle';
+  $('axiStart').disabled = run || !ready;
+  $('axiMotion').disabled = run;
+  $('axiAbort').hidden = !run;
+  $('axiPrompt').hidden = !axi || !(run || axi.done);
+  $('axiPrompt').textContent = axi ? axi.prompt : '';
+  $('axiObs').hidden = !axi || run || !axi.done;
+  $('axiLog').hidden = !axiLog;
+  if ($('axiLog').textContent !== axiLog) {
+    const el = $('axiLog'), end = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+    el.textContent = axiLog;
+    if (end) el.scrollTop = el.scrollHeight;   // mitlaufen, außer der Nutzer hat hochgescrollt
+  }
+}
+async function pollAxi() {
+  clearTimeout(axiTimer);
+  if (axiMode()) {
+    try {
+      axi = await api('GET', '/api/axidraw/test');
+      if (axi.log_len !== axiLog.length) axiLog = await (await fetch('/api/axidraw/log')).text();
+    } catch {}
+    renderAxi();
+  }
+  axiTimer = setTimeout(pollAxi, axi && axi.running ? 700 : 3000);
+}
+$('axiStart').onclick = async () => {
+  if ($('axiMotion').checked && !confirm(t('confirm.axi_motion'))) return;
+  try {
+    await api('POST', '/api/axidraw/test' + ($('axiMotion').checked ? '?motion=1' : ''));
+    for (const c of $('axiObs').querySelectorAll('input')) c.checked = false;
+    axiLog = ''; pollAxi();
+  } catch (e) { say(e.message, true); }
+};
+$('axiAbort').onclick = async () => { try { await api('POST', '/api/axidraw/abort'); } catch (e) { say(e.message, true); } };
+$('axiDownload').onclick = () => {
+  const obs = [...$('axiObs').querySelectorAll('input[data-obs]')]
+    .map((c) => (c.checked ? '[x] ' : '[ ] ') + t(c.dataset.obs));
+  const notes = $('axiNotes').value.trim();
+  const text = axiLog + '\n---- ' + t('axi.obs') + ' ----\n' + obs.join('\n') + '\n' + (notes ? '\n' + notes + '\n' : '');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  a.download = 'uprint-axidraw-test-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.txt';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
 // ---------- Gerätename ----------
@@ -841,13 +927,14 @@ $('lang').onchange = () => {
   try { localStorage.setItem('uprint-lang', LANG); } catch {}
   applyI18n(); renderName(); renderStatus(); renderVolumes(); renderUpload(); renderWifi();
   if (settings) { const cur = readSettings(); writeSettings({ ...settings, ...cur, baud: +cur.baud }); }
+  renderAxi();
 };
 
 // ---------- Start ----------
 applyI18n();
 drawMark(); $('mark').onclick = drawMark;
 renderStatus(); renderUpload();
-poll(); pollWifi(); loadSettings();
+poll(); pollWifi(); loadSettings(); pollAxi();
 </script>
 </body>
 </html>

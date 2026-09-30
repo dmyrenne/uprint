@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <cstring>
 
 #include "esp_check.h"
@@ -32,6 +33,8 @@ static SemaphoreHandle_t s_disconnected;
 static CdcAcmDevice *s_dev;
 static volatile bool s_connected;
 static volatile uint32_t s_generation;
+static char s_info[96];           // zuletzt erkanntes Gerät, für Diagnose
+static const char *s_driver = "";
 
 // Nur vom lesenden Task benutzt
 static char s_line[256];
@@ -70,6 +73,8 @@ static void on_new_device(usb_device_handle_t usb_dev)
     if (usb_host_get_device_descriptor(usb_dev, &desc) == ESP_OK) {
         ESP_LOGI(TAG, "USB-Gerät erkannt: VID 0x%04x, PID 0x%04x, Klasse 0x%02x",
                  desc->idVendor, desc->idProduct, desc->bDeviceClass);
+        snprintf(s_info, sizeof(s_info), "VID 0x%04x, PID 0x%04x, Klasse 0x%02x",
+                 desc->idVendor, desc->idProduct, desc->bDeviceClass);
     }
 }
 
@@ -89,11 +94,13 @@ static CdcAcmDevice *open_device(const cdc_acm_host_device_config_t *cfg)
     // USB-Seriell-Wandler anhand VID/PID
     CdcAcmDevice *dev = VCP::open(cfg);
     if (dev) {
+        s_driver = "USB-Seriell-Wandler (VCP)";
         return dev;
     }
     // Sonst generisches CDC-ACM (MK3S mit ATmega32U2, Boards mit nativem USB)
     dev = new CdcAcmDevice();
     if (dev->open(CDC_HOST_ANY_VID, CDC_HOST_ANY_PID, 0, cfg) == ESP_OK) {
+        s_driver = "generisches CDC-ACM";
         return dev;
     }
     delete dev;
@@ -190,6 +197,11 @@ extern "C" bool usb_serial_connected(void)
 extern "C" uint32_t usb_serial_generation(void)
 {
     return s_generation;
+}
+
+extern "C" void usb_serial_info(char *out, size_t len)
+{
+    snprintf(out, len, "%s, Treiber: %s", s_info[0] ? s_info : "unbekannt", s_driver[0] ? s_driver : "keiner");
 }
 
 extern "C" esp_err_t usb_serial_write(const char *data, size_t len)
