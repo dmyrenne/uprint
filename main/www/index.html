@@ -54,8 +54,9 @@
   h2::before, details summary::before { counter-increment: sec; content: counter(sec, decimal-leading-zero);
        font: 500 11px var(--mono); color: var(--accent); }
   details.card { padding-bottom: 18px; align-self: start; }   /* nicht mit der Nachbarkarte mitwachsen */
-  details summary { cursor: pointer; list-style: none; margin: 0; }
-  details[open] summary { margin-bottom: 14px; }
+  /* Kopfzeile reicht bis an den Kartenrand, damit die ganze (geschlossene) Karte klickbar ist */
+  details summary { cursor: pointer; list-style: none; margin: -18px -20px; padding: 18px 20px; }
+  details[open] summary { margin-bottom: -4px; }
   details summary::-webkit-details-marker { display: none; }
   details summary::after { content: '+'; margin-left: auto; font: 400 16px var(--mono); color: var(--muted); }
   details[open] summary::after { content: '−'; }
