@@ -84,3 +84,7 @@ v6.1. Die übrigen Abhängigkeiten lädt der Build automatisch:
 
 `build-basic/uprint.bin` lässt sich anschließend auch über **Einstellungen → Firmware** einspielen. Jeder Tag `v*` im Repo
 baut über GitHub Actions automatisch ein Release und aktualisiert den Web-Flasher.
+
+## Lizenz
+
+μprint steht unter der [MIT-Lizenz](LICENSE).
