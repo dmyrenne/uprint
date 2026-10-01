@@ -167,6 +167,9 @@ static void fail(const char *fmt, ...)
 
     close_job();
     s_inject_count = 0;
+    LOCK();
+    s_st.finished = false;
+    UNLOCK();
     set_state(PRINTER_ERROR, "%s", msg);
 }
 
@@ -174,7 +177,10 @@ static void finish_job(void)
 {
     close_job();
     LOCK();
-    uint32_t minutes = (uint32_t)((now_us() - s_st.started_us) / 60000000LL);
+    s_st.finished = true;
+    s_st.duration_s = (uint32_t)((now_us() - s_st.started_us) / 1000000LL);
+    s_st.file_pos = s_st.file_size;
+    uint32_t minutes = s_st.duration_s / 60;
     char name[STORAGE_NAME_MAX];
     strlcpy(name, s_st.file, sizeof(name));
     UNLOCK();
@@ -797,6 +803,8 @@ esp_err_t printer_start(storage_vol_t vol, const char *name)
         s_st.file_size = 0;
         s_st.file_pos = 0;
         s_st.started_us = now_us();
+        s_st.finished = false;
+        s_st.duration_s = 0;
         strlcpy(s_st.message, "Druck läuft", sizeof(s_st.message));
         s_req_start = true;
     }

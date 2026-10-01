@@ -84,9 +84,11 @@ static esp_err_t status_get(httpd_req_t *req)
     snprintf(body, sizeof(body),
              "{\"state\":\"%s\",\"file\":\"%s\",\"size\":%" PRIu32 ",\"pos\":%" PRIu32
              ",\"elapsed\":%" PRIu32 ",\"hotend\":%.1f,\"hotend_target\":%.1f"
-             ",\"bed\":%.1f,\"bed_target\":%.1f,\"message\":\"%s\",\"storage\":\"%s\"}",
+             ",\"bed\":%.1f,\"bed_target\":%.1f,\"message\":\"%s\",\"storage\":\"%s\""
+             ",\"finished\":%s,\"duration\":%" PRIu32 "}",
              printer_state_name(st.state), file, st.file_size, st.file_pos, st.elapsed_s,
-             st.hotend, st.hotend_target, st.bed, st.bed_target, msg, storage_id(st.vol));
+             st.hotend, st.hotend_target, st.bed, st.bed_target, msg, storage_id(st.vol),
+             st.finished ? "true" : "false", st.duration_s);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
 }

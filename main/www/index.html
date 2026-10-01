@@ -46,9 +46,9 @@
 
   /* ---------- Inhalt ---------- */
   main { flex: 1; width: 100%; max-width: 1180px; margin: 0 auto; padding: 20px 24px 12px; counter-reset: sec;
-         display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-content: start; }
+         display: flex; flex-direction: column; gap: 16px; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px 20px; min-width: 0; }
-  .wide { grid-column: 1 / -1; }
   /* Spalten wachsen unabhängig voneinander: eine lange Dateiliste schiebt WLAN und Einstellungen nicht nach unten */
   .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   h2, details summary { display: flex; align-items: baseline; gap: 10px; font-size: 15px; font-weight: 600; letter-spacing: -.01em;
@@ -74,19 +74,19 @@
   .tab.busy::before { animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
 
-  .drop { border: 1px dashed var(--line-strong); border-radius: 10px; padding: 20px 14px;
+  .drop { border: 1px dashed var(--line-strong); border-radius: 10px; padding: 14px;
           text-align: center; cursor: pointer; color: var(--muted); transition: border-color .15s, background .15s; }
   .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   .drop strong { color: var(--ink); display: block; word-break: break-all; font-weight: 600; font-size: 15px; }
   .drop.disabled { opacity: .45; pointer-events: none; }
-  .upload .drop { min-height: 96px; display: flex; flex-direction: column; justify-content: center; }
+  .upload .drop { min-height: 76px; display: flex; flex-direction: column; justify-content: center; }
   #targetRow { margin-bottom: 10px; }
 
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; align-items: end; }
   .full { grid-column: 1 / -1; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
   label.check { flex-direction: row; align-items: center; gap: 9px; color: var(--ink); font-size: 13px; cursor: pointer; }
-  input[type=text], input[type=password], select {
+  input[type=text], input[type=password], input[type=search], select {
          font: 400 14px var(--sans); color: var(--ink); background: var(--field); border: 1px solid var(--line-strong);
          border-radius: 6px; padding: 6px 8px; width: 100%; transition: border-color .15s, box-shadow .15s; }
   input[type=password] { font-family: var(--mono); font-size: 13px; }
@@ -120,12 +120,16 @@
   .vols { display: grid; gap: 6px; margin-bottom: 8px; }
   .vol { display: grid; grid-template-columns: 64px 1fr auto; gap: 10px; align-items: center; font-size: 12px; }
   .vol .meter { height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; }
-  .vol .meter i { display: block; height: 100%; background: var(--ink); }
+  .vol .meter i { display: block; height: 100%; width: 0; background: var(--ink); }
+  .vol .meter i.bad { background: var(--warn); }   /* nicht verfügbar oder ab 90 % belegt */
   .vol .free { font: 500 11px var(--mono); color: var(--muted); }
+  .vol .free.bad { color: var(--warn); }
   .vol.off { color: var(--muted); }
+  input.search { margin: 6px 0 8px; }
 
-  .files { list-style: none; margin: 0; padding: 0; }
-  .files li { display: flex; align-items: center; gap: 6px; padding: 9px 10px; margin: 0 -10px; border-top: 1px solid var(--line);
+  /* Eigener Scrollbereich; die Zeilen reichen trotzdem bis an den Kartenrand */
+  .files { list-style: none; margin: 0 -10px; padding: 0; max-height: 60vh; overflow-y: auto; overscroll-behavior: contain; }
+  .files li { display: flex; align-items: center; gap: 6px; padding: 9px 10px; border-top: 1px solid var(--line);
               border-radius: 8px; cursor: pointer; transition: background .15s; }
   .files li:hover { background: var(--bg); }
   .files li.sel { background: var(--accent-soft); }
@@ -158,10 +162,25 @@
   .anim .cur { stroke: var(--accent); stroke-width: 3.6; }
   .anim .todo { stroke: var(--line-strong); stroke-width: 1.4; stroke-dasharray: 2 4; }
   .anim .nozzle { fill: var(--accent); }
+  /* Drucker – Kabel – µprint, wenn kein Drucker verbunden ist */
+  .anim.illu { width: 300px; aspect-ratio: 2 / 1; }
+  .illu .frame { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+  .illu .thin { fill: none; stroke: var(--muted); stroke-width: 1.1; stroke-linecap: round; }
+  .illu .solid { fill: var(--bg); }
+  .illu .layer { stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; }
+  .illu .cable { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; }
+  .illu .cut { stroke: var(--warn); stroke-width: 2.4; stroke-linecap: round; }
+  .illu .mu { fill: var(--ink); font: 700 30px var(--sans); }
+  .illu .led { fill: var(--warn); }
+  .illu.wait .cable { stroke: var(--accent); stroke-dasharray: 3 5; animation: flow 1s linear infinite; }
+  .illu.wait .led { fill: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .illu.wait .x { display: none; }
+  @keyframes flow { to { stroke-dashoffset: -16; } }
   .print-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .job-title { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; overflow-wrap: anywhere; }
   .job-sub { font: 500 12px var(--mono); color: var(--muted); margin-top: 4px; }
   .job-sub.bad { color: var(--warn); }
+  .job-sub.done { color: var(--accent); font-weight: 600; }
   .job-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
   #apiKey { font: 500 12px var(--mono); }
   .hint code { font: 500 11px var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
@@ -177,16 +196,31 @@
 
   .msg { padding: 8px 11px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); white-space: pre-wrap; font-size: 13px; }
   .msg.ok { background: var(--accent-soft); color: var(--ink); }
-  .foot { width: 100%; max-width: 1180px; margin: 0 auto; padding: 4px 24px 24px; font-size: 12px; color: var(--muted); }
+  .foot { width: 100%; max-width: 1180px; margin: 0 auto; padding: 4px 24px 24px; font-size: 12px; color: var(--muted); text-align: center; }
+
+  /* Großer Bildschirm: die Seite passt in den Viewport, Dateiliste und rechte Spalte scrollen für sich.
+     Bei geringerer Höhe scrollt die Seite normal, die Dateiliste ist dann auf 60 % der Höhe begrenzt. */
+  @media (min-width: 861px) and (min-height: 900px) {
+    body { height: 100vh; height: 100dvh; min-height: 0; }
+    main { min-height: 0; }
+    .cols { flex: 1; min-height: 0; align-items: stretch; }
+    /* Reicht die Höhe selbst für die Mindesthöhe der Dateiliste nicht, scrollt die ganze Spalte */
+    .col { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    .files-card { flex: 1 0 0; min-height: 280px; display: flex; flex-direction: column; }
+    .files { flex: 1; min-height: 0; max-height: none; }
+    .foot { padding-bottom: 16px; }
+  }
   @media (max-width: 860px) {
     .top { padding: 12px 16px; gap: 12px; }
     .stats { order: 3; width: 100%; gap: 10px 20px; }
     .stat b { font-size: 16px; }
-    main { grid-template-columns: 1fr; padding: 16px; }
-    .col { display: contents; }
+    main { padding: 16px; }
+    .cols { grid-template-columns: 1fr; }
     .foot { padding: 4px 16px 20px; }
     .anim { width: 88px; padding: 8px; }
-    .print-body { gap: 14px; }
+    .anim.illu { width: 100%; max-width: 300px; }
+    .print-body { gap: 14px; flex-wrap: wrap; }
+    .print-main { min-width: 180px; }
     .job-title { font-size: 18px; }
   }
 </style>
@@ -206,12 +240,39 @@
 </header>
 
 <main>
-  <div id="messages" class="wide"></div>
+  <div id="messages"></div>
 
-  <section class="card wide">
+  <section class="card">
     <h2 data-i18n="h.print"></h2>
     <div class="print-body">
       <div class="anim" id="anim" hidden><svg id="layers" viewBox="0 0 200 220" aria-hidden="true"></svg></div>
+      <div class="anim illu" id="illu" hidden>
+        <svg viewBox="0 0 276 126" aria-hidden="true">
+          <!-- Drucker frontal: Rahmen, Z-Achsen, X-Achse mit Extruder, Bett mit Druckteil, Display -->
+          <rect class="frame" x="16" y="8" width="92" height="96" rx="4"/>
+          <rect class="thin" x="28" y="18" width="68" height="58" rx="2"/>
+          <path class="thin" d="M22 12V100M102 12V100"/>
+          <path class="frame" d="M18 40H106M18 46H106"/>
+          <rect class="frame solid" x="15" y="35" width="11" height="16" rx="1.5"/>
+          <rect class="frame solid" x="98" y="35" width="11" height="16" rx="1.5"/>
+          <rect class="frame solid" x="54" y="29" width="16" height="23" rx="2"/>
+          <circle class="thin" cx="62" cy="39" r="4"/>
+          <path class="frame" d="M58 52h8l-2 5h-4z"/>
+          <path class="layer" d="M49 77H75M51 73.5H73M53 70H71"/>
+          <rect class="frame solid" x="8" y="80" width="108" height="5" rx="1.5"/>
+          <rect class="frame solid" x="38" y="91" width="40" height="10" rx="1.5"/>
+          <circle class="frame" cx="87" cy="96" r="3"/>
+          <path class="frame" d="M10 110H114"/>
+          <!-- USB-Kabel, getrennt -->
+          <path class="cable" d="M109 66C130 66 132 98 152 98C172 98 172 64 191 64"/>
+          <g class="x"><circle class="solid" cx="152" cy="98" r="9"/><path class="cut" d="M147 93l10 10M157 93l-10 10"/></g>
+          <!-- µprint -->
+          <rect class="frame" x="191" y="59" width="5" height="10" rx="1"/>
+          <rect class="frame" x="196" y="38" width="66" height="52" rx="7"/>
+          <text class="mu" x="229" y="75" text-anchor="middle">µ</text>
+          <circle class="led" cx="252" cy="47" r="2.4"/>
+        </svg>
+      </div>
       <div class="print-main">
         <div class="job-title" id="jobTitle"></div>
         <div class="job-sub" id="jobSub"></div>
@@ -231,6 +292,7 @@
     </div>
   </section>
 
+  <div class="cols">
   <div class="col">
   <section class="card upload">
     <h2 data-i18n="h.upload"></h2>
@@ -250,14 +312,15 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card files-card">
     <h2 data-i18n="h.files"></h2>
     <div class="vols" id="vols"></div>
+    <input type="search" class="search" id="fileSearch" data-i18n-placeholder="files.search" autocomplete="off" spellcheck="false" hidden>
     <ul class="files" id="files"></ul>
   </section>
   </div>
 
-  <div class="col">
+  <div class="col side">
   <details class="card" id="wifiBox">
     <summary data-i18n="h.wifi"></summary>
     <div class="derived" id="wifiStatus"></div>
@@ -338,6 +401,7 @@
     </div>
   </details>
   </div>
+  </div>
 </main>
 <footer class="foot" data-i18n-html="footer.html"></footer>
 
@@ -407,7 +471,7 @@ function drawMark() {   // Logo: bei jedem Laden (und Klick) ein neues Gefäß, 
 }
 
 let layersKey = '';
-function drawLayers(seed, frac, mode) {   // mode: idle | printing | paused
+function drawLayers(seed, frac, mode) {   // mode: idle | printing | paused | done
   const N = 44, done = Math.min(N, Math.floor(frac * N)), key = [seed, done, mode].join();
   if (key === layersKey) return;      // nicht bei jeder Abfrage neu zeichnen, sonst springt die Animation
   layersKey = key;
@@ -415,10 +479,10 @@ function drawLayers(seed, frac, mode) {   // mode: idle | printing | paused
   const yAt = (i) => 206 - i * (192 / (N - 1));
   for (let i = 0; i < N; i++) {
     const half = r(i / (N - 1)) * 80, y = yAt(i).toFixed(1);
-    const cls = mode === 'idle' ? 'todo' : i < done ? 'done' : i === done ? 'cur' : 'todo';
+    const cls = mode === 'idle' ? 'todo' : mode === 'done' || i < done ? 'done' : i === done ? 'cur' : 'todo';
     out.push(`<path class="${cls}" d="M${(100 - half).toFixed(1)} ${y}H${(100 + half).toFixed(1)}" stroke-linecap="round"/>`);
   }
-  if (mode !== 'idle' && done < N) {   // Düse über der aktuellen Schicht, fährt beim Drucken hin und her
+  if ((mode === 'printing' || mode === 'paused') && done < N) {   // Düse über der aktuellen Schicht, fährt beim Drucken hin und her
     const half = r(done / (N - 1)) * 80, y = yAt(done) - 3;
     const anim = mode === 'printing'
       ? `<animateTransform attributeName="transform" type="translate" values="${-half} 0;${half} 0;${-half} 0" dur="3s" repeatCount="indefinite"/>` : '';
@@ -432,6 +496,8 @@ async function refreshStatus() {
   try {
     const s = await api('GET', '/api/status');
     const changed = !st || st.state !== s.state || offline, back = offline;
+    // Beim Druckstart die Auswahl lösen, damit danach „Druck fertig“ erscheint
+    if (changed && st && (s.state === 'printing' || s.state === 'paused')) selKey = null;
     st = s; offline = false;
     renderStatus();
     if (changed) loadFiles();
@@ -442,18 +508,22 @@ async function refreshStatus() {
 }
 async function poll() { await refreshStatus(); setTimeout(poll, 1500); }
 
+// Letzter Druck fertig: so lange anzeigen, bis eine andere Datei gewählt wird
+const finished = () => !offline && st && st.state === 'idle' && st.finished && !selKey;
+const finishedFile = () => finished() ? files.find((f) => f.storage === st.storage && f.name === st.file) || null : null;
+
 function renderStatus() {
-  const s = st || {}, a = !offline && active();
+  const s = st || {}, a = !offline && active(), done = finished(), show = a || done;
   const state = offline ? 'offline' : s.state || 'connecting';
   const tab = $('tab');
   tab.textContent = t('state.' + state);
   tab.className = 'tab ' + ({ idle: 'on', printing: 'on busy', paused: 'on', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
 
-  const pct = a && s.size ? s.pos / s.size * 100 : 0;
+  const pct = a && s.size ? s.pos / s.size * 100 : done ? 100 : 0;
   const temp = (v, target) => offline || s.state === 'disconnected' ? '–' : Math.round(v) + '°' + (target > 0 ? ' / ' + Math.round(target) + '°' : '');
   const items = [
-    ['stat.progress', a ? num(pct, 1) + ' %' : '–'],
-    ['stat.elapsed', a ? fmtTime(s.elapsed) : '–'],
+    ['stat.progress', show ? num(pct, 1) + ' %' : '–'],
+    ['stat.elapsed', a ? fmtTime(s.elapsed) : done ? fmtTime(s.duration) : '–'],
     ['stat.remaining', a && pct > 2 ? fmtTime(s.elapsed * (100 - pct) / pct) : '–'],
     ['stat.hotend', temp(s.hotend, s.hotend_target)],
     ['stat.bed', temp(s.bed, s.bed_target)],
@@ -461,8 +531,9 @@ function renderStatus() {
   $('stats').replaceChildren(...items.map(([k, v]) => { const d = el('div', 'stat'); d.append(el('b', '', v), el('span', '', t(k))); return d; }));
 
   // Bedienelemente bleiben sichtbar und sind nur aktiv, wenn sie etwas bewirken
-  const chosen = selected();
-  $('bStart').disabled = offline || s.state !== 'idle' || !chosen;
+  const chosen = selected(), again = !chosen && finishedFile();
+  $('bStart').disabled = offline || s.state !== 'idle' || !(chosen || again);
+  $('bStart').textContent = t(done ? 'reprint' : 'start');
   $('bPause').hidden = !offline && s.state === 'paused';
   $('bPause').disabled = offline || s.state !== 'printing';
   $('bResume').hidden = offline || s.state !== 'paused';
@@ -471,30 +542,35 @@ function renderStatus() {
 
   let title, sub = s.message || '', bad = s.state === 'error';
   if (offline) { title = t('stage.offline'); sub = t('stage.offlineHint'); bad = true; }
-  else if (a) title = s.file;
+  else if (show) title = s.file;
   else if (s.state === 'disconnected') { title = t('stage.disconnected'); sub = t('stage.disconnectedHint'); }
   else if (s.state === 'connecting') { title = t('stage.connecting'); sub = ''; }
   else if (s.state === 'error') { title = t('state.error'); sub = s.message; }
   else if (chosen) { title = chosen.name; sub = volName(chosen.storage) + ' · ' + fmtSize(chosen.size) + ' · ' + t('job.ready'); }
   else { title = t('stage.idle'); sub = t('stage.idleHint'); }
   // Meldungen der Firmware wie „Druck fertig …“ zusätzlich zeigen, solange nichts läuft
-  const note = !offline && s.state === 'idle' && s.message && !['Drucker bereit', 'Fehler quittiert'].includes(s.message) ? s.message : '';
+  const note = !offline && !done && s.state === 'idle' && !s.finished && s.message && !['Drucker bereit', 'Fehler quittiert'].includes(s.message) ? s.message : '';
   $('jobNote').textContent = note; $('jobNote').hidden = !note;
   $('jobTitle').textContent = title;
   // Während des Drucks den übersetzten Zustand zeigen, sonst die Meldung der Firmware
-  $('jobSub').textContent = a ? volName(s.storage) + ' · ' + t('state.' + s.state) : sub;
-  $('jobSub').className = 'job-sub' + (bad ? ' bad' : '');
-  $('jobProgress').hidden = !a;
+  $('jobSub').textContent = a ? volName(s.storage) + ' · ' + t('state.' + s.state) : done ? volName(s.storage) + ' · ' + t('stage.done') : sub;
+  $('jobSub').className = 'job-sub' + (bad ? ' bad' : done ? ' done' : '');
+  $('jobProgress').hidden = !show;
   $('jobBar').style.width = pct + '%';
-  $('jobPct').textContent = a ? num(pct, 1) + ' %' : '';
-  $('jobEta').textContent = a && pct > 2 ? t('job.remaining', { t: fmtTime(s.elapsed * (100 - pct) / pct) }) : '';
-  // Animation nur während eines Drucks
-  $('anim').hidden = !a;
-  if (a) drawLayers(hash(s.storage + '/' + s.file), pct / 100, s.state);
+  $('jobPct').textContent = show ? num(pct, 1) + ' %' : '';
+  $('jobEta').textContent = a && pct > 2 ? t('job.remaining', { t: fmtTime(s.elapsed * (100 - pct) / pct) })
+                          : done ? t('job.duration', { t: fmtTime(s.duration) }) : '';
+  // Animation während des Drucks und fertig gedruckt danach
+  $('anim').hidden = !show;
+  if (show) drawLayers(hash(s.storage + '/' + s.file), pct / 100, done ? 'done' : s.state);
   else layersKey = '';
+  // Ohne Drucker: Grafik mit getrenntem Kabel, beim Verbinden läuft das Kabel
+  const unplugged = !offline && (s.state === 'disconnected' || s.state === 'connecting');
+  $('illu').hidden = !unplugged;
+  $('illu').classList.toggle('wait', s.state === 'connecting');
   renderFiles(); renderOta();
 }
-$('bStart').onclick = () => { const f = selected(); if (f) act('POST', '/api/print' + fileQuery(f)); };
+$('bStart').onclick = () => { const f = selected() || finishedFile(); if (f) act('POST', '/api/print' + fileQuery(f)); };
 
 // ---------- Dateien ----------
 async function loadFiles() {
@@ -507,20 +583,33 @@ async function loadFiles() {
 }
 
 function renderVolumes() {
-  $('vols').replaceChildren(...volumes.map((v) => {
+  // Den internen Speicher nur zeigen, wenn er bereit ist oder es gar keinen Speicher gibt
+  const anyReady = volumes.some((v) => v.ready);
+  $('vols').replaceChildren(...volumes.filter((v) => v.ready || v.id !== 'flash' || !anyReady).map((v) => {
     const row = el('div', 'vol' + (v.ready ? '' : ' off')), meter = el('span', 'meter'), bar = el('i');
-    if (v.ready && v.total) bar.style.width = (100 - v.free / v.total * 100) + '%';
+    const used = v.ready && v.total ? 1 - v.free / v.total : 1, bad = !v.ready || used >= 0.9;
+    bar.style.width = used * 100 + '%';
+    bar.className = bad ? 'bad' : '';
     meter.append(bar);
     row.append(el('span', '', volName(v.id)), meter,
-      el('span', 'free', v.ready ? t('vol.free', { free: fmtSize(v.free), total: fmtSize(v.total) }) : t('vol.missing')));
+      el('span', 'free' + (bad ? ' bad' : ''), v.ready ? t('vol.free', { free: fmtSize(v.free), total: fmtSize(v.total) }) : t('vol.missing')));
     return row;
   }));
 }
 
+// Suche: alle Wörter müssen im Namen vorkommen, ohne Groß-/Kleinschreibung und Akzente
+const fold = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
+const matches = (f, words) => { const n = fold(f.name); return words.every((w) => n.includes(w)); };
+$('fileSearch').oninput = renderFiles;
+$('fileSearch').onkeydown = (e) => { if (e.key === 'Escape' && e.target.value) { e.target.value = ''; renderFiles(); } };
+
 function renderFiles() {
-  const ul = $('files');
+  const ul = $('files'), q = $('fileSearch').value.trim();
+  $('fileSearch').hidden = !files.length;
   if (!files.length) { ul.replaceChildren(el('li', 'empty', t(volumes.some((v) => v.ready) ? 'files.empty' : 'files.noStorage'))); return; }
-  ul.replaceChildren(...files.map((f) => {
+  const words = fold(q).split(/\s+/).filter(Boolean), shown = files.filter((f) => matches(f, words));
+  if (!shown.length) { ul.replaceChildren(el('li', 'empty', t('files.noMatch', { q }))); return; }
+  ul.replaceChildren(...shown.map((f) => {
     const printing = active() && st.file === f.name && st.storage === f.storage;
     const li = el('li', [printing ? 'active' : '', fileKey(f) === selKey ? 'sel' : ''].join(' ').trim());
     const info = el('div', 'info'), meta = el('span', 'meta');

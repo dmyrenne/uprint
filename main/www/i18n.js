@@ -134,6 +134,11 @@ const I18N = {
     'ack': 'Fehler quittieren',
     'confirm.cancel': 'Druck wirklich abbrechen?',
 
+    'stage.done': 'Druck fertig',
+    'job.duration': 'Dauer {t}',
+    'reprint': 'Nochmal drucken',
+    'files.search': 'Dateien durchsuchen …',
+    'files.noMatch': 'Keine Datei passt zu „{q}“.',
     'stage.idle': 'Kein aktiver Druck',
     'stage.idleHint': 'Wähle unter „Dateien“ eine Datei aus.',
     'stage.disconnected': 'Kein Drucker verbunden',
@@ -277,6 +282,11 @@ const I18N = {
     'ack': 'Clear error',
     'confirm.cancel': 'Really cancel the print?',
 
+    'stage.done': 'Print finished',
+    'job.duration': 'took {t}',
+    'reprint': 'Print again',
+    'files.search': 'Search files …',
+    'files.noMatch': 'No file matches “{q}”.',
     'stage.idle': 'No active print',
     'stage.idleHint': 'Select a file under “Files”.',
     'stage.disconnected': 'No printer connected',
