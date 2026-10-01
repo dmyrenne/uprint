@@ -495,7 +495,8 @@ function drawLayers(seed, frac, mode) {   // mode: idle | printing | paused | do
 async function refreshStatus() {
   try {
     const s = await api('GET', '/api/status');
-    const changed = !st || st.state !== s.state || offline, back = offline;
+    // Dateiliste neu laden, wenn sich Dateien oder Speicher geändert haben (auch durch Slicer oder SD-Karte)
+    const changed = !st || st.state !== s.state || st.files_rev !== s.files_rev || offline, back = offline;
     // Beim Druckstart die Auswahl lösen, damit danach „Druck fertig“ erscheint
     if (changed && st && (s.state === 'printing' || s.state === 'paused')) selKey = null;
     st = s; offline = false;

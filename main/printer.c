@@ -62,6 +62,7 @@ static bool s_req_resume;
 
 // Nur im Drucker-Task benutzt
 static FILE *s_file;
+static storage_vol_t s_job_vol;   // Speicher der offenen Datei, über storage_acquire() gehalten
 static history_t s_hist[HISTORY_LEN];
 static uint32_t s_last_n;      // höchste bisher vergebene Zeilennummer
 static uint32_t s_next_n;      // als nächstes zu sendende Nummer (<= s_last_n: Wiederholung)
@@ -136,6 +137,7 @@ static void close_job(void)
     if (s_file) {
         fclose(s_file);
         s_file = NULL;
+        storage_release(s_job_vol);
     }
 }
 
@@ -424,6 +426,22 @@ static void inject_cancel_sequence(void)
     inject("M84");
 }
 
+// Die Datei lässt sich nicht mehr lesen (z. B. SD-Karte entfernt), der Drucker selbst ist aber in Ordnung:
+// wie beim Abbrechen Heizungen aus, anheben und parken, dann den Fehler anzeigen. Anders als bei fail()
+// gehen die Befehle trotz Fehlerzustand noch raus.
+static void abort_job(void)
+{
+    const char *msg = s_job_vol == STORAGE_SD ? "SD-Karte entfernt oder nicht lesbar, Druck abgebrochen"
+                                              : "Lesefehler im internen Speicher, Druck abgebrochen";
+    close_job();
+    s_inject_count = 0;
+    inject_cancel_sequence();
+    LOCK();
+    s_st.finished = false;
+    UNLOCK();
+    set_state(PRINTER_ERROR, "%s", msg);
+}
+
 // 1 = Zeile gelesen, 0 = Dateiende, -1 = Zeile zu lang, -2 = Lesefehler
 static int read_file_line(char *out)
 {
@@ -488,7 +506,7 @@ static void send_next(void)
             return;
         }
         if (r < 0) {
-            fail("Lesefehler auf der SD-Karte");
+            abort_job();
             return;
         }
         track_motion(cmd);
@@ -658,10 +676,10 @@ static void process_requests(void)
     UNLOCK();
 
     if (cancel) {
-        bool active = s_file != NULL;
-        close_job();
-        s_inject_count = 0;
-        if (active) {
+        // Beim Quittieren eines Fehlers keine noch laufende Abbruchsequenz verwerfen
+        if (s_file) {
+            close_job();
+            s_inject_count = 0;
             inject_cancel_sequence();
         }
         return;
@@ -677,11 +695,17 @@ static void process_requests(void)
     if (start && printing) {
         char path[STORAGE_PATH_MAX];
         storage_path(path, sizeof(path), vol, name);
+        if (!storage_acquire(vol)) {
+            set_state(PRINTER_IDLE, "%s nicht verfügbar", storage_label(vol));
+            return;
+        }
         s_file = fopen(path, "r");
         if (!s_file) {
+            storage_release(vol);
             set_state(PRINTER_IDLE, "Datei nicht lesbar: %s", name);
             return;
         }
+        s_job_vol = vol;
         struct stat st;
         uint32_t size = stat(path, &st) == 0 ? (uint32_t)st.st_size : 0;
         load_shutdown(path);
@@ -744,7 +768,11 @@ static void printer_task(void *arg)
             handle_line(line);
         }
         process_requests();
-        if (s_ready && get_state() != PRINTER_ERROR) {
+        if (s_file && !storage_ready(s_job_vol)) {
+            abort_job();   // SD-Karte während des Drucks oder der Pause entfernt
+        }
+        // Im Fehlerzustand nur noch die Abbruchsequenz nach abort_job()
+        if (s_ready && (get_state() != PRINTER_ERROR || s_inject_count > 0)) {
             send_next();
         }
         check_timeout();
