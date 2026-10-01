@@ -46,14 +46,16 @@
 
   /* ---------- Inhalt ---------- */
   main { flex: 1; width: 100%; max-width: 1180px; margin: 0 auto; padding: 20px 24px 12px; counter-reset: sec;
-         display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 16px; align-content: start; }
+         display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-content: start; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px 20px; min-width: 0; }
   .wide { grid-column: 1 / -1; }
+  /* Spalten wachsen unabhängig voneinander: eine lange Dateiliste schiebt WLAN und Einstellungen nicht nach unten */
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   h2, details summary { display: flex; align-items: baseline; gap: 10px; font-size: 15px; font-weight: 600; letter-spacing: -.01em;
        margin: 0 0 14px; color: var(--ink); }
   h2::before, details summary::before { counter-increment: sec; content: counter(sec, decimal-leading-zero);
        font: 500 11px var(--mono); color: var(--accent); }
-  details.card { padding-bottom: 18px; align-self: start; }   /* nicht mit der Nachbarkarte mitwachsen */
+  details.card { padding-bottom: 18px; }
   /* Kopfzeile reicht bis an den Kartenrand, damit die ganze (geschlossene) Karte klickbar ist */
   details summary { cursor: pointer; list-style: none; margin: -18px -20px; padding: 18px 20px; }
   details[open] summary { margin-bottom: -4px; }
@@ -77,8 +79,8 @@
   .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   .drop strong { color: var(--ink); display: block; word-break: break-all; font-weight: 600; font-size: 15px; }
   .drop.disabled { opacity: .45; pointer-events: none; }
-  .upload { display: flex; flex-direction: column; }
-  .upload .drop { flex: 1; min-height: 96px; display: flex; flex-direction: column; justify-content: center; }
+  .upload .drop { min-height: 96px; display: flex; flex-direction: column; justify-content: center; }
+  #targetRow { margin-bottom: 10px; }
 
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; align-items: end; }
   .full { grid-column: 1 / -1; }
@@ -181,6 +183,7 @@
     .stats { order: 3; width: 100%; gap: 10px 20px; }
     .stat b { font-size: 16px; }
     main { grid-template-columns: 1fr; padding: 16px; }
+    .col { display: contents; }
     .foot { padding: 4px 16px 20px; }
     .anim { width: 88px; padding: 8px; }
     .print-body { gap: 14px; }
@@ -228,18 +231,17 @@
     </div>
   </section>
 
+  <div class="col">
   <section class="card upload">
     <h2 data-i18n="h.upload"></h2>
+    <label id="targetRow" hidden><span data-i18n="target"></span><select id="target"></select></label>
     <div class="drop" id="drop" tabindex="0" role="button">
       <strong id="dropTitle"></strong>
       <span id="dropSub"></span>
       <input type="file" id="file" accept=".gcode,.gco,.g" hidden>
     </div>
     <div id="upForm" hidden style="margin-top:10px">
-      <div class="grid">
-        <label class="full" id="targetRow"><span data-i18n="target"></span><select id="target"></select></label>
-      </div>
-      <div class="row" style="margin-top:10px">
+      <div class="row">
         <button type="button" class="primary" id="upBtn" data-i18n="upload"></button>
         <button type="button" id="upCancel" data-i18n="cancel"></button>
       </div>
@@ -253,7 +255,9 @@
     <div class="vols" id="vols"></div>
     <ul class="files" id="files"></ul>
   </section>
+  </div>
 
+  <div class="col">
   <details class="card" id="wifiBox">
     <summary data-i18n="h.wifi"></summary>
     <div class="derived" id="wifiStatus"></div>
@@ -333,6 +337,7 @@
       <input type="file" id="otaFile" accept=".bin" hidden>
     </div>
   </details>
+  </div>
 </main>
 <footer class="foot" data-i18n-html="footer.html"></footer>
 
@@ -565,14 +570,15 @@ function renderUpload() {
   $('drop').classList.toggle('disabled', !anyFree || uploading);
   $('dropTitle').textContent = pick ? pick.name : t('drop.title');
   $('dropSub').textContent = pick ? fmtSize(pick.size) : anyFree ? t('drop.sub') : t(ready.length ? 'drop.full' : 'drop.noStorage');
-  $('upForm').hidden = !pick;
-  if (!pick) return;
-
+  // Speicherort schon vor der Dateiauswahl wählbar, sobald es mehr als einen gibt
   const sel = $('target'), cur = sel.value;
   sel.replaceChildren(...ready.map((v) => { const o = new Option(volName(v.id) + ' · ' + t('vol.free', { free: fmtSize(v.free), total: fmtSize(v.total) }), v.id); return o; }));
-  sel.value = ready.some((v) => v.id === cur) ? cur : bestTarget(pick.size);
+  sel.value = ready.some((v) => v.id === cur) ? cur : bestTarget(pick ? pick.size : 0);
   sel.disabled = uploading;
   $('targetRow').hidden = ready.length < 2;
+
+  $('upForm').hidden = !pick;
+  if (!pick) return;
 
   const v = ready.find((x) => x.id === sel.value), fits = !!v && v.free >= pick.size;
   $('upBtn').disabled = !fits || uploading;
