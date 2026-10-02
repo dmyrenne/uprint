@@ -2,6 +2,7 @@
 #   Push auf main, Pull Request -> bauen, .bin-Dateien als Artefakt am Workflow-Lauf
 #   Tag v1.2.3                  -> zusätzlich GitHub-Release mit den .bin-Dateien
 #                                  und Web-Flasher auf GitHub Pages aktualisieren
+#   Tag v1.2.3-alpha.1          -> Vorab-Release (nicht "latest"), im Web-Flasher unter "Alpha" wählbar
 name: Firmware
 
 on:
@@ -84,12 +85,17 @@ jobs:
         with:
           files: dist/*.bin
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
+  # Der Web-Flasher bietet alle Releases zur Auswahl an, getrennt nach normalen Releases und Vorab-Releases
+  # (Alpha), damit man auch zu einer älteren Version zurück kann. Da GitHub Pages bei jedem Deploy die ganze
+  # Seite ersetzt, wird sie bei jedem Tag aus allen Releases neu zusammengestellt.
   flasher:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [version, build]
+    needs: release
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -99,35 +105,48 @@ jobs:
       group: pages
       cancel-in-progress: false
     env:
-      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: uprint-*
-          path: dist
-          merge-multiple: true
-
       - name: Seite zusammenstellen
         run: |
-          mkdir -p site/firmware site/fonts
+          mkdir -p site/fonts
           cp flasher/index.html site/
           cp main/www/fonts/*.woff2 main/www/fonts/OFL-*.txt site/fonts/
-          # Je Variante ein Image und ein Manifest für ESP Web Tools
-          for v in n16r8 basic; do
-            cp "dist/uprint-$VERSION-$v-factory.bin" "site/firmware/uprint-$v-factory.bin"
-            cat > "site/manifest-$v.json" <<EOF
+          # releases.json: neueste zuerst, je Eintrag Version, Vorab-Kennzeichen, Datum und vorhandene Varianten
+          echo '[]' > site/releases.json
+          gh release list --exclude-drafts --limit 100 --json tagName,isPrerelease,publishedAt \
+            -q '.[] | [.tagName, .isPrerelease, .publishedAt] | @tsv' |
+          while IFS=$'\t' read -r tag pre date; do
+            version=${tag#v}
+            mkdir -p "dl/$version" "site/firmware/$version"
+            gh release download "$tag" -p '*-factory.bin' -D "dl/$version" || true
+            variants='[]'
+            # Je Variante ein Image und ein Manifest für ESP Web Tools
+            for v in n16r8 basic; do
+              [ -f "dl/$version/uprint-$version-$v-factory.bin" ] || continue
+              cp "dl/$version/uprint-$version-$v-factory.bin" "site/firmware/$version/uprint-$v-factory.bin"
+              cat > "site/manifest-$version-$v.json" <<EOF
           {
             "name": "µprint ($v)",
-            "version": "$VERSION",
+            "version": "$version",
             "new_install_prompt_erase": true,
             "builds": [
-              { "chipFamily": "ESP32-S3", "parts": [{ "path": "firmware/uprint-$v-factory.bin", "offset": 0 }] }
+              { "chipFamily": "ESP32-S3", "parts": [{ "path": "firmware/$version/uprint-$v-factory.bin", "offset": 0 }] }
             ]
           }
           EOF
+              variants=$(jq -c --arg v "$v" '. + [$v]' <<<"$variants")
+            done
+            [ "$variants" != '[]' ] || continue
+            jq --arg version "$version" --argjson pre "$pre" --arg date "${date%%T*}" --argjson variants "$variants" \
+              '. + [{version: $version, prerelease: $pre, date: $date, variants: $variants}]' \
+              site/releases.json > releases.tmp
+            mv releases.tmp site/releases.json
           done
+          cat site/releases.json
 
       - uses: actions/configure-pages@v6
 
