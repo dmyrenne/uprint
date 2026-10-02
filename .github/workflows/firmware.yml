@@ -1,8 +1,9 @@
 # Baut die Firmware mit ESP-IDF für alle Board-Varianten und veröffentlicht sie.
 #   Push auf einen Branch        -> Vorab-Release v1.2.3-alpha.N (nicht "latest"), im Web-Flasher unter "Alpha",
 #                                   damit sich der Stand testen lässt, bevor er in main liegt
-#   Pull Request in main gemergt -> Release v1.2.3, die Alphas des Branches werden entfernt
+#   Pull Request in main gemergt -> Release v1.2.3
 #   Tag v1.2.3 (von Hand)        -> Release zu diesem Tag
+#   Bei jedem stabilen Release verschwinden die Alphas dieser Version und des gemergten Branches.
 #   sonst (direkter Push auf main, workflow_dispatch) -> nur bauen, .bin-Dateien als Artefakt am Workflow-Lauf
 # Releases gibt es nur, wenn sich die Firmware ändert (main/, CMake, sdkconfig, Partitionen). Die nächste
 # Version ist die letzte stabile mit erhöhter Patch-Nummer, mit Label "minor" bzw. "major" am Pull Request
@@ -169,12 +170,14 @@ jobs:
           prerelease: ${{ env.PRERELEASE }}
           make_latest: ${{ env.PRERELEASE == 'true' && 'false' || 'true' }}
 
-      # Aus den Alphas ist jetzt ein Release geworden
-      - name: Alphas des Branches entfernen
-        if: github.ref_name == 'main' && env.BRANCH != ''
+      # Aus den Alphas ist jetzt ein Release geworden: alle Alphas dieser Version entfernen (auch aus anderen
+      # Branches, deren nächster Push bekommt ohnehin eine neue Nummer) und die des gemergten Branches
+      - name: Alphas entfernen
+        if: env.PRERELEASE != 'true'
         run: |
           gh release list --exclude-drafts --limit 100 --json tagName,name,isPrerelease \
-            -q ".[] | select(.isPrerelease and (.name | endswith(\" · $BRANCH\"))) | .tagName" |
+            -q ".[] | select(.isPrerelease) | select((.tagName | startswith(\"v$VERSION-\"))
+                     or (\"$BRANCH\" != \"\" and (.name | endswith(\" · $BRANCH\")))) | .tagName" |
           while read -r tag; do
             echo "Entferne $tag"
             gh release delete "$tag" --cleanup-tag --yes
