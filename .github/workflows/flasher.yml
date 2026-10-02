@@ -1,0 +1,92 @@
+# Web-Flasher auf GitHub Pages: bietet die letzten 5 stabilen Releases und alle Vorab-Releases (Alpha) zur
+# Auswahl an, damit man auch zu einer älteren Version zurück kann. Da GitHub Pages bei jedem Deploy die ganze
+# Seite ersetzt, wird sie jedes Mal aus den Releases neu zusammengestellt.
+# Läuft nach jedem Release (von firmware.yml angestoßen) und wenn sich die Flasher-Seite in main ändert.
+# Die Seite kommt immer aus main, auch wenn das Release aus einem Branch stammt.
+name: Web-Flasher
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['flasher/**', '.github/workflows/flasher.yml']
+
+permissions:
+  contents: read
+
+env:
+  STABLE_MAX: 5
+
+jobs:
+  flasher:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Seite zusammenstellen
+        run: |
+          mkdir -p site/fonts
+          cp flasher/index.html site/
+          cp main/www/fonts/*.woff2 main/www/fonts/OFL-*.txt site/fonts/
+          # releases.json: neueste zuerst, je Eintrag Version, Vorab-Kennzeichen, Branch (bei Alphas),
+          # Datum und vorhandene Varianten
+          echo '[]' > site/releases.json
+          stable=0
+          gh release list --exclude-drafts --limit 100 --json tagName,name,isPrerelease,publishedAt \
+            -q '.[] | [.tagName, .isPrerelease, .publishedAt, (.name | split(" · ")[1] // "")] | @tsv' |
+          while IFS=$'\t' read -r tag pre date branch; do
+            if [ "$pre" = false ]; then
+              [ "$stable" -lt "$STABLE_MAX" ] || continue
+              stable=$((stable + 1))
+            fi
+            version=${tag#v}
+            mkdir -p "dl/$version" "site/firmware/$version"
+            gh release download "$tag" -p '*-factory.bin' -D "dl/$version" || true
+            variants='[]'
+            # Je Variante ein Image und ein Manifest für ESP Web Tools
+            for v in n16r8 basic; do
+              [ -f "dl/$version/uprint-$version-$v-factory.bin" ] || continue
+              cp "dl/$version/uprint-$version-$v-factory.bin" "site/firmware/$version/uprint-$v-factory.bin"
+              cat > "site/manifest-$version-$v.json" <<EOF
+          {
+            "name": "µprint ($v)",
+            "version": "$version",
+            "new_install_prompt_erase": true,
+            "builds": [
+              { "chipFamily": "ESP32-S3", "parts": [{ "path": "firmware/$version/uprint-$v-factory.bin", "offset": 0 }] }
+            ]
+          }
+          EOF
+              variants=$(jq -c --arg v "$v" '. + [$v]' <<<"$variants")
+            done
+            [ "$variants" != '[]' ] || continue
+            jq --arg version "$version" --argjson pre "$pre" --arg branch "$branch" --arg date "${date%%T*}" \
+              --argjson variants "$variants" \
+              '. + [{version: $version, prerelease: $pre, branch: $branch, date: $date, variants: $variants}]' \
+              site/releases.json > releases.tmp
+            mv releases.tmp site/releases.json
+          done
+          cat site/releases.json
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v5
