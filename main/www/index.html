@@ -102,6 +102,18 @@
   button.small { padding: 3px 10px; font-size: 12px; }
   button:disabled { opacity: .35; cursor: default; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  /* Speichern/Verwerfen: bei ungespeicherten Änderungen am unteren Rand, damit man sie nicht übersieht.
+     Sticky direkt vor dem Footer: klebt beim Scrollen unten und liegt am Seitenende über dem Footer, nie darunter */
+  .set-actions { margin-top: 12px; }
+  .set-actions .unsaved { display: none; }
+  .set-actions.floating { position: sticky; z-index: 20; bottom: 16px; align-self: center; margin: 0 16px 8px;
+    width: max-content; max-width: calc(100% - 32px); padding: 10px 12px 10px 16px; gap: 10px;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .18); }
+  .set-actions.floating .unsaved { display: inline; font-size: 13px; font-weight: 600; margin-right: 6px; }
+  @media (max-width: 600px) {
+    .set-actions.floating { align-self: stretch; bottom: 12px; margin: 0 12px 8px; width: auto; max-width: none; }
+    .set-actions.floating .unsaved { flex: 1 0 100%; margin: 0; }
+  }
   .pick { display: flex; gap: 6px; }
   .pick select { flex: 1; min-width: 0; }
   .pick input { flex: 1; min-width: 0; }
@@ -404,7 +416,8 @@
       <label><span>SCLK</span><input type="number" name="sd_sclk" min="0" max="48"></label>
       <label><span>CS</span><input type="number" name="sd_cs" min="0" max="48"></label>
     </form>
-    <div class="row" style="margin-top:12px">
+    <div class="row set-actions" id="setActions">
+      <span class="unsaved" data-i18n="set.unsaved"></span>
       <button type="button" class="primary" id="setSave" data-i18n="save"></button>
       <button type="button" id="setRevert" data-i18n="revert"></button>
     </div>
@@ -941,6 +954,12 @@ function renderSettings() {
   $('setBadge').hidden = !mod;
   $('setSave').disabled = !mod;
   $('setRevert').disabled = !mod;
+  // Schwebend vor den Footer, sonst unsichtbar, solange die Karte zugeklappt ist (geschlossenes details rendert nichts)
+  const bar = $('setActions');
+  if (mod !== bar.classList.contains('floating')) {
+    if (mod) document.querySelector('.foot').before(bar); else $('setForm').after(bar);
+    bar.classList.toggle('floating', mod);
+  }
   $('rebootBox').hidden = !settings || !settings.reboot_required;
   renderOta(); renderSlicer(); renderName();
 }
