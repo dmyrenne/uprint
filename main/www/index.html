@@ -779,7 +779,8 @@ function renderWifi() {
   const box = $('wifiStatus'), lines = [];
   let bad = false;
   if (w.connected) {
-    const d = el('div'); d.append(t('wifi.connected', { ssid: w.ssid }) + ' · ', hostLink('status', w.ip), ' · ' + signal(w.rssi)); lines.push(d);
+    // Solange der Access Point noch offen ist, steht die IP im Hinweis darunter
+    const d = el('div'); d.append(t('wifi.connected', { ssid: w.ssid }) + ' · ', ...(w.ap ? [] : [hostLink('status', w.ip), ' · ']), signal(w.rssi)); lines.push(d);
   } else if (w.configured) {
     bad = w.reason !== 0;
     lines.push(el('div', '', bad ? reasonText(w) : t('wifi.connecting', { ssid: w.ssid })));
