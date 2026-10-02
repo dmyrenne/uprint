@@ -4,3 +4,7 @@ managed_components/
 # wird aus sdkconfig.defaults* erzeugt
 sdkconfig
 sdkconfig.old
+# nur lokal: Mock-Server und Hilfsskripte
+tools/
+# Platine liegt in einem eigenen Repo
+PCB/
