@@ -18,6 +18,8 @@ typedef struct {
     bool configured;     // Zugangsdaten gespeichert
     bool connected;      // mit dem WLAN verbunden und IP erhalten
     bool ap_active;      // eigener Access Point offen
+    bool ap_only;        // ohne WLAN fortgefahren: Access Point bleibt an, kein Captive Portal
+    int ap_off_in;       // Sekunden, bis sich der Access Point schließt, -1 = nicht geplant
     char ssid[33];
     char hostname[33];   // aktiver Hostname (= SSID des Access Points)
     char ip[16];
@@ -32,6 +34,13 @@ esp_err_t wifi_set_credentials(const char *ssid, const char *password);
 
 // Löscht die Zugangsdaten und öffnet den Access Point.
 esp_err_t wifi_forget(void);
+
+// "Ohne WLAN fortfahren": Access Point bleibt dauerhaft an (auch nach einem Neustart), das Captive Portal
+// ist aus. Neue Zugangsdaten oder wifi_forget() heben das wieder auf.
+esp_err_t wifi_set_ap_only(void);
+
+// Access Point offen und nicht im Modus "nur Access Point": Geräte sollen auf die Einrichtung geleitet werden
+bool wifi_portal_active(void);
 
 typedef struct {
     char ssid[33];

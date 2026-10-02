@@ -17,6 +17,7 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "captive.h"
 #include "http_util.h"
 #include "printer.h"
 #include "slicer.h"
@@ -331,14 +332,19 @@ static esp_err_t wifi_get(httpd_req_t *req)
 {
     wifi_status_t st;
     char ssid[33 * 6];
-    char body[512];
+    char body[640];
     wifi_get_status(&st);
     http_json_escape(ssid, sizeof(ssid), st.ssid);
+    bool via_ap = captive_via_ap(httpd_req_to_sockfd(req));
+    // portal: Seite wurde über den Access Point zur Einrichtung geöffnet, die UI zeigt dann nur das WLAN
     snprintf(body, sizeof(body),
              "{\"configured\":%s,\"connected\":%s,\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d"
-             ",\"reason\":%d,\"ap\":%s,\"ap_ssid\":\"%s\",\"ap_ip\":\"192.168.4.1\",\"hostname\":\"%s\"}",
+             ",\"reason\":%d,\"ap\":%s,\"ap_ssid\":\"%s\",\"ap_ip\":\"192.168.4.1\",\"hostname\":\"%s\""
+             ",\"ap_only\":%s,\"ap_off_in\":%d,\"via_ap\":%s,\"portal\":%s}",
              st.configured ? "true" : "false", st.connected ? "true" : "false", ssid, st.ip, st.rssi,
-             st.last_reason, st.ap_active ? "true" : "false", st.hostname, st.hostname);
+             st.last_reason, st.ap_active ? "true" : "false", st.hostname, st.hostname,
+             st.ap_only ? "true" : "false", st.ap_off_in, via_ap ? "true" : "false",
+             via_ap && st.ap_active && !st.ap_only ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
 }
@@ -401,6 +407,15 @@ static esp_err_t wifi_post(httpd_req_t *req)
         return http_send_error(req, "400 Bad Request", "SSID 1–32 Zeichen, Passwort leer oder 8–63 Zeichen");
     }
     return send_result(req, err, "");
+}
+
+static esp_err_t wifi_ap_only_post(httpd_req_t *req)
+{
+    esp_err_t err = wifi_set_ap_only();
+    if (err != ESP_OK) {
+        return http_send_error(req, "500 Internal Server Error", "Konnte nicht gespeichert werden");
+    }
+    return http_send_ok(req);
 }
 
 static esp_err_t wifi_delete(httpd_req_t *req)
@@ -633,6 +648,54 @@ static esp_err_t reboot_post(httpd_req_t *req)
     return http_send_ok(req);
 }
 
+// Prüfadressen der Betriebssysteme und die Antwort, die "Internet erreichbar" bedeutet
+typedef struct {
+    const char *path;
+    const char *status;
+    const char *body;
+} probe_t;
+
+static const probe_t PROBES[] = {
+    {"/generate_204", "204 No Content", ""},                         // Android, Chrome OS
+    {"/gen_204", "204 No Content", ""},
+    {"/hotspot-detect.html", "200 OK", "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"},   // Apple
+    {"/library/test/success.html", "200 OK", "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"},
+    {"/connecttest.txt", "200 OK", "Microsoft Connect Test"},        // Windows
+    {"/ncsi.txt", "200 OK", "Microsoft NCSI"},
+    {"/success.txt", "200 OK", "success\n"},                        // Firefox
+    {"/canonical.html", "200 OK", "<meta http-equiv=\"refresh\" content=\"0;url=https://support.mozilla.org/kb/captive-portal\"/>"},
+};
+
+// Am Access Point führt jeder unbekannte Pfad zur Startseite. Darüber erkennen Handys und Laptops
+// das Captive Portal und öffnen die Seite von selbst. Nach "ohne WLAN fortfahren" bekommen die
+// Prüfadressen stattdessen die erwartete Antwort, damit das Portal schließt und das Gerät verbunden
+// bleibt. Im WLAN bleibt es beim normalen 404.
+static esp_err_t not_found(httpd_req_t *req, httpd_err_code_t err)
+{
+    if (!captive_via_ap(httpd_req_to_sockfd(req))) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
+        return ESP_FAIL;
+    }
+    if (!wifi_portal_active()) {
+        size_t len = strcspn(req->uri, "?");
+        for (size_t i = 0; i < sizeof(PROBES) / sizeof(PROBES[0]); i++) {
+            if (strlen(PROBES[i].path) == len && strncmp(req->uri, PROBES[i].path, len) == 0) {
+                httpd_resp_set_status(req, PROBES[i].status);
+                httpd_resp_set_type(req, "text/html");
+                httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+                return httpd_resp_sendstr(req, PROBES[i].body);
+            }
+        }
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
+        return ESP_FAIL;
+    }
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", CAPTIVE_URL);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    // iOS erkennt das Portal nur, wenn die Antwort auch einen Inhalt hat
+    return httpd_resp_sendstr(req, "uprint: " CAPTIVE_URL);
+}
+
 esp_err_t web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
@@ -663,6 +726,7 @@ esp_err_t web_start(void)
         {.uri = "/api/wifi",      .method = HTTP_POST,   .handler = wifi_post},
         {.uri = "/api/wifi",      .method = HTTP_DELETE, .handler = wifi_delete},
         {.uri = "/api/wifi/scan", .method = HTTP_GET,    .handler = wifi_scan_get},
+        {.uri = "/api/wifi/ap-only", .method = HTTP_POST, .handler = wifi_ap_only_post},
         {.uri = "/api/settings",  .method = HTTP_GET,    .handler = settings_get_handler},
         {.uri = "/api/settings",  .method = HTTP_POST,   .handler = settings_post_handler},
         {.uri = "/api/reboot",    .method = HTTP_POST,   .handler = reboot_post},
@@ -674,6 +738,9 @@ esp_err_t web_start(void)
         ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &routes[i]), TAG, "route %s", routes[i].uri);
     }
     ESP_RETURN_ON_ERROR(slicer_api_register(server), TAG, "Slicer-API");
+    httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, not_found);
+    // Am Access Point fragen Handys laufend Prüfadressen ab, die sollen das Log nicht fluten
+    esp_log_level_set("httpd_uri", ESP_LOG_ERROR);
     ESP_LOGI(TAG, "Webserver läuft auf Port 80");
     return ESP_OK;
 }
