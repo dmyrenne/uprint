@@ -86,8 +86,11 @@ v6.1. Die übrigen Abhängigkeiten lädt der Build automatisch:
     idf.py -DUPRINT_VARIANT=basic -B build-basic build          # oder n16r8
     idf.py -DUPRINT_VARIANT=basic -B build-basic -p <port> flash
 
-`build-basic/uprint.bin` lässt sich anschließend auch über **Einstellungen → Firmware** einspielen. Jeder Tag `v*` im Repo
-baut über GitHub Actions automatisch ein Release und aktualisiert den Web-Flasher.
+`build-basic/uprint.bin` lässt sich anschließend auch über **Einstellungen → Firmware** einspielen. Releases entstehen über
+GitHub Actions automatisch: Jeder Push auf einen Branch, der die Firmware ändert, wird zum Vorab-Release
+`v1.2.3-alpha.N` und ist im Web-Flasher unter **Alpha** wählbar. Wird der Pull Request in `main` gemergt, entsteht
+daraus das Release `v1.2.3`, und die Alphas des Branches verschwinden. Standardmäßig steigt die Patch-Nummer, mit dem
+Label `minor` bzw. `major` am Pull Request die entsprechende Stelle. Der Web-Flasher zeigt die letzten 5 Releases.
 
 ## Lizenz
 

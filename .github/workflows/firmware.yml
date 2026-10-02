@@ -1,15 +1,18 @@
 # Baut die Firmware mit ESP-IDF für alle Board-Varianten und veröffentlicht sie.
-#   Push auf main, Pull Request -> bauen, .bin-Dateien als Artefakt am Workflow-Lauf
-#   Tag v1.2.3                  -> zusätzlich GitHub-Release mit den .bin-Dateien
-#                                  und Web-Flasher auf GitHub Pages aktualisieren
-#   Tag v1.2.3-alpha.1          -> Vorab-Release (nicht "latest"), im Web-Flasher unter "Alpha" wählbar
+#   Push auf einen Branch        -> Vorab-Release v1.2.3-alpha.N (nicht "latest"), im Web-Flasher unter "Alpha",
+#                                   damit sich der Stand testen lässt, bevor er in main liegt
+#   Pull Request in main gemergt -> Release v1.2.3, die Alphas des Branches werden entfernt
+#   Tag v1.2.3 (von Hand)        -> Release zu diesem Tag
+#   sonst (direkter Push auf main, workflow_dispatch) -> nur bauen, .bin-Dateien als Artefakt am Workflow-Lauf
+# Releases gibt es nur, wenn sich die Firmware ändert (main/, CMake, sdkconfig, Partitionen). Die nächste
+# Version ist die letzte stabile mit erhöhter Patch-Nummer, mit Label "minor" bzw. "major" am Pull Request
+# entsprechend höher. Den Web-Flasher baut danach flasher.yml aus allen Releases neu.
 name: Firmware
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
     tags: ['v*']
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -21,17 +24,81 @@ env:
 jobs:
   version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      title: ${{ steps.version.outputs.title }}
+      branch: ${{ steps.version.outputs.branch }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0          # Tags für git describe
+          fetch-depth: 0          # Tags und main für Version und Änderungsprüfung
       - id: version
         run: |
-          # v1.2.3 -> 1.2.3, zwischen Releases z. B. 1.2.3-4-gabc1234
+          out() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
+          # Standard: nur bauen, Version z. B. 1.2.3-4-gabc1234
           VERSION=$(git describe --tags --always)
-          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+          out version "${VERSION#v}"
+          out release false
+          out prerelease false
+
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            out version "${GITHUB_REF_NAME#v}"
+            out release true
+            out prerelease "$([[ $GITHUB_REF_NAME == *-* ]] && echo true || echo false)"
+            out title "$GITHUB_REF_NAME"
+            exit 0
+          fi
+          [ "$GITHUB_EVENT_NAME" = push ] || exit 0
+
+          if [ "$GITHUB_REF_NAME" = main ]; then
+            # Nur Merges von Pull Requests werden zum Release
+            PR=$(gh api "repos/$GH_REPO/commits/$GITHUB_SHA/pulls" -q '[.[] | select(.merged_at != null)][0] // empty')
+            if [ -z "$PR" ]; then echo "Kein gemergter Pull Request, nur bauen"; exit 0; fi
+            BRANCH=$(jq -r .head.ref <<<"$PR")
+            LABELS=$(jq -r '.labels[].name' <<<"$PR")
+            BASE=$(git rev-parse HEAD^1)
+          else
+            BRANCH=$GITHUB_REF_NAME
+            LABELS=$(gh pr list --head "$BRANCH" --state open --json labels -q '.[0].labels[]?.name' || true)
+            BASE=$(git merge-base origin/main HEAD)
+          fi
+          if git diff --quiet "$BASE" HEAD -- main CMakeLists.txt dependencies.lock 'sdkconfig.defaults*' 'partitions-*.csv'; then
+            echo "Firmware unverändert gegenüber main, nur bauen"; exit 0
+          fi
+
+          # Nächste Version aus der letzten stabilen
+          LAST=$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -v -- - | head -1)
+          IFS=. read -r MA MI PA <<<"${LAST#v}"
+          if grep -qx major <<<"$LABELS"; then NEXT="$((MA + 1)).0.0"
+          elif grep -qx minor <<<"$LABELS"; then NEXT="$MA.$((MI + 1)).0"
+          else NEXT="$MA.$MI.$((PA + 1))"; fi
+
+          if [ "$GITHUB_REF_NAME" = main ]; then
+            VERSION=$NEXT
+            out prerelease false
+            out title "v$VERSION"
+          else
+            # Alphas zählen über alle Branches hoch, der Branch steht im Titel
+            N=$(git tag -l "v$NEXT-alpha.*" | sed 's/.*-alpha\.//' | sort -n | tail -1)
+            VERSION="$NEXT-alpha.$((${N:-0} + 1))"
+            out prerelease true
+            out title "v$VERSION · $BRANCH"
+          fi
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Tag v$VERSION gibt es schon"; exit 1
+          fi
+          echo "Release v$VERSION (Branch $BRANCH, nach $LAST)"
+          out version "$VERSION"
+          out release true
+          out branch "$BRANCH"
 
   build:
     needs: version
@@ -69,11 +136,22 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    if: needs.version.outputs.release == 'true'
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write          # flasher.yml anstoßen
+    # Versionsnummern nicht parallel vergeben
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.version.outputs.version }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
+      BRANCH: ${{ needs.version.outputs.branch }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -83,76 +161,25 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ needs.version.outputs.title }}
           files: dist/*.bin
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ env.PRERELEASE }}
+          make_latest: ${{ env.PRERELEASE == 'true' && 'false' || 'true' }}
 
-  # Der Web-Flasher bietet alle Releases zur Auswahl an, getrennt nach normalen Releases und Vorab-Releases
-  # (Alpha), damit man auch zu einer älteren Version zurück kann. Da GitHub Pages bei jedem Deploy die ganze
-  # Seite ersetzt, wird sie bei jedem Tag aus allen Releases neu zusammengestellt.
-  flasher:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Seite zusammenstellen
+      # Aus den Alphas ist jetzt ein Release geworden
+      - name: Alphas des Branches entfernen
+        if: github.ref_name == 'main' && env.BRANCH != ''
         run: |
-          mkdir -p site/fonts
-          cp flasher/index.html site/
-          cp main/www/fonts/*.woff2 main/www/fonts/OFL-*.txt site/fonts/
-          # releases.json: neueste zuerst, je Eintrag Version, Vorab-Kennzeichen, Datum und vorhandene Varianten
-          echo '[]' > site/releases.json
-          gh release list --exclude-drafts --limit 100 --json tagName,isPrerelease,publishedAt \
-            -q '.[] | [.tagName, .isPrerelease, .publishedAt] | @tsv' |
-          while IFS=$'\t' read -r tag pre date; do
-            version=${tag#v}
-            mkdir -p "dl/$version" "site/firmware/$version"
-            gh release download "$tag" -p '*-factory.bin' -D "dl/$version" || true
-            variants='[]'
-            # Je Variante ein Image und ein Manifest für ESP Web Tools
-            for v in n16r8 basic; do
-              [ -f "dl/$version/uprint-$version-$v-factory.bin" ] || continue
-              cp "dl/$version/uprint-$version-$v-factory.bin" "site/firmware/$version/uprint-$v-factory.bin"
-              cat > "site/manifest-$version-$v.json" <<EOF
-          {
-            "name": "µprint ($v)",
-            "version": "$version",
-            "new_install_prompt_erase": true,
-            "builds": [
-              { "chipFamily": "ESP32-S3", "parts": [{ "path": "firmware/$version/uprint-$v-factory.bin", "offset": 0 }] }
-            ]
-          }
-          EOF
-              variants=$(jq -c --arg v "$v" '. + [$v]' <<<"$variants")
-            done
-            [ "$variants" != '[]' ] || continue
-            jq --arg version "$version" --argjson pre "$pre" --arg date "${date%%T*}" --argjson variants "$variants" \
-              '. + [{version: $version, prerelease: $pre, date: $date, variants: $variants}]' \
-              site/releases.json > releases.tmp
-            mv releases.tmp site/releases.json
+          gh release list --exclude-drafts --limit 100 --json tagName,name,isPrerelease \
+            -q ".[] | select(.isPrerelease and (.name | endswith(\" · $BRANCH\"))) | .tagName" |
+          while read -r tag; do
+            echo "Entferne $tag"
+            gh release delete "$tag" --cleanup-tag --yes
           done
-          cat site/releases.json
 
-      - uses: actions/configure-pages@v6
-
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
-
-      - id: deploy
-        uses: actions/deploy-pages@v5
+      # Pages darf nur von main aus veröffentlichen, deshalb läuft der Flasher als eigener Workflow auf main
+      - name: Web-Flasher aktualisieren
+        run: gh workflow run flasher.yml --ref main
