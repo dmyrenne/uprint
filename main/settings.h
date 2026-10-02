@@ -9,12 +9,19 @@ extern "C" {
 #endif
 
 // Alle Einstellungen von uprint; sie liegen im NVS und werden über die Weboberfläche geändert.
+typedef enum {
+    DEVICE_PRINTER = 0,   // 3D-Drucker mit Marlin/Prusa-Firmware
+    DEVICE_AXIDRAW = 1,   // AxiDraw/NextDraw (EiBotBoard), vorerst nur Testmodus
+} device_type_t;
+
 typedef struct {
     // Anzeigename des Geräts, leer = "µprint" (sofort wirksam)
     char device_name[33];
     // Netzwerk (wirksam nach Neustart)
     char hostname[33];
     char ap_password[64];
+    // Angeschlossenes Gerät, device_type_t (sofort wirksam, verbindet neu)
+    int device_type;
     // Drucker (wirksam ab der nächsten USB-Verbindung)
     int baud;
     // Pausieren / Abbrechen, in mm (sofort wirksam)

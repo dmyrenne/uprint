@@ -19,6 +19,7 @@ static const char *TAG = "settings";
 static const settings_t DEFAULTS = {
     .hostname = "uprint",
     .ap_password = "uprint123",
+    .device_type = DEVICE_PRINTER,
     .baud = 115200,
     .pause_lift = 5,
     .cancel_lift = 10,
@@ -41,7 +42,7 @@ typedef struct {
 
 #define FIELD(name) {#name, offsetof(settings_t, name)}
 static const int_field_t INT_FIELDS[] = {
-    FIELD(baud), FIELD(pause_lift), FIELD(cancel_lift), FIELD(park_x), FIELD(park_y),
+    FIELD(device_type), FIELD(baud), FIELD(pause_lift), FIELD(cancel_lift), FIELD(park_x), FIELD(park_y),
     FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs),
 };
 
@@ -124,6 +125,9 @@ static const char *validate(const settings_t *s)
     len = strlen(s->ap_password);
     if (len != 0 && (len < 8 || len > 63)) {
         return "Access-Point-Passwort: leer (offen) oder 8–63 Zeichen";
+    }
+    if (s->device_type != DEVICE_PRINTER && s->device_type != DEVICE_AXIDRAW) {
+        return "Unbekannter Gerätetyp";
     }
     if (s->baud < 1200 || s->baud > 2000000) {
         return "Baudrate: 1200–2000000";
