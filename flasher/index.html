@@ -251,7 +251,7 @@ function renderVersions() {
   document.getElementById('alphaNote').hidden = channel !== 'alpha';
   if (!list.some((r) => r.version === picked)) picked = list.length ? list[0].version : null;
   sel.replaceChildren(...(list.length
-    ? list.map((r, i) => new Option(r.version + ' · ' + r.date + (i === 0 ? ' (' + t('ch.latest') + ')' : ''), r.version))
+    ? list.map((r, i) => new Option(r.version + (r.branch ? ' · ' + r.branch : '') + ' · ' + r.date + (i === 0 ? ' (' + t('ch.latest') + ')' : ''), r.version))
     : [new Option(t('ch.none'), '')]));
   sel.value = picked || '';
   sel.disabled = !list.length;
