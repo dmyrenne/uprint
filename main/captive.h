@@ -7,7 +7,6 @@
 /*
  * Captive Portal für den eigenen Access Point: Handys und Laptops öffnen die Weboberfläche
  * nach dem Verbinden von selbst, ohne dass man http://192.168.4.1 eintippen muss.
- *   - DHCP-Option 114 (RFC 8910) nennt die Adresse direkt (neuere Android/iOS)
  *   - ein DNS-Server beantwortet jede Anfrage mit der Adresse des Access Points
  *   - der Webserver leitet unbekannte Pfade am Access Point auf die Startseite um
  *     (die Prüfadressen der Betriebssysteme, z. B. /generate_204, /hotspot-detect.html)
@@ -15,7 +14,7 @@
 
 #define CAPTIVE_URL "http://192.168.4.1/"
 
-// Vor dem Start des Access Points aufrufen (setzt die DHCP-Option)
+// Mit dem Netzwerk-Interface des Access Points aufrufen
 void captive_init(esp_netif_t *ap);
 
 // Startet den DNS-Server, mehrfacher Aufruf schadet nicht

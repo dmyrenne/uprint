@@ -26,14 +26,11 @@ static uint32_t ap_ip(void)
 
 void captive_init(esp_netif_t *ap)
 {
+    // Keine DHCP-Option 114 (RFC 8910): Sie muss auf eine HTTPS-API mit application/captive+json zeigen,
+    // eine einfache HTTP-Seite werten Android und iOS als Fehler. Erkannt wird das Portal über DNS und
+    // die Weiterleitung. Den DHCP-Server hier auch nicht anfassen: Nach esp_netif_dhcps_stop() startet
+    // ESP-IDF ihn beim Öffnen des Access Points nicht mehr, Geräte bekommen dann keine Adresse.
     s_ap = ap;
-    // Der DHCP-Server merkt sich nur den Zeiger, deshalb static
-    static char uri[] = CAPTIVE_URL;
-    esp_netif_dhcps_stop(ap);
-    esp_err_t err = esp_netif_dhcps_option(ap, ESP_NETIF_OP_SET, ESP_NETIF_CAPTIVEPORTAL_URI, uri, strlen(uri));
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "DHCP-Option 114 nicht gesetzt: %s", esp_err_to_name(err));
-    }
 }
 
 // Antwort auf eine Anfrage im selben Puffer bauen. Rückgabe: Länge oder 0 (verwerfen).
