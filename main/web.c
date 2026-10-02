@@ -84,9 +84,11 @@ static esp_err_t status_get(httpd_req_t *req)
     snprintf(body, sizeof(body),
              "{\"state\":\"%s\",\"file\":\"%s\",\"size\":%" PRIu32 ",\"pos\":%" PRIu32
              ",\"elapsed\":%" PRIu32 ",\"hotend\":%.1f,\"hotend_target\":%.1f"
-             ",\"bed\":%.1f,\"bed_target\":%.1f,\"message\":\"%s\",\"storage\":\"%s\"}",
+             ",\"bed\":%.1f,\"bed_target\":%.1f,\"message\":\"%s\",\"storage\":\"%s\""
+             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 "}",
              printer_state_name(st.state), file, st.file_size, st.file_pos, st.elapsed_s,
-             st.hotend, st.hotend_target, st.bed, st.bed_target, msg, storage_id(st.vol));
+             st.hotend, st.hotend_target, st.bed, st.bed_target, msg, storage_id(st.vol),
+             st.finished ? "true" : "false", st.duration_s, storage_revision());
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
 }
@@ -116,8 +118,12 @@ static esp_err_t files_get(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, "],\"files\":[");
 
     for (int v = 0; v < STORAGE_COUNT; v++) {
-        DIR *dir = storage_ready(v) ? opendir(storage_mount(v)) : NULL;
+        if (!storage_acquire(v)) {
+            continue;
+        }
+        DIR *dir = opendir(storage_mount(v));
         if (!dir) {
+            storage_release(v);
             continue;
         }
         struct dirent *e;
@@ -137,6 +143,7 @@ static esp_err_t files_get(httpd_req_t *req)
             first = false;
         }
         closedir(dir);
+        storage_release(v);
     }
     httpd_resp_sendstr_chunk(req, "]}");
     return httpd_resp_sendstr_chunk(req, NULL);
@@ -153,10 +160,16 @@ static esp_err_t files_delete(httpd_req_t *req)
     if (printer_is_using(vol, name)) {
         return http_send_error(req, "409 Conflict", "Datei wird gerade gedruckt");
     }
+    if (!storage_acquire(vol)) {
+        return http_send_error(req, "503 Service Unavailable", "Speicher nicht verfügbar");
+    }
     storage_path(path, sizeof(path), vol, name);
-    if (unlink(path) != 0) {
+    int removed = unlink(path);
+    storage_release(vol);
+    if (removed != 0) {
         return http_send_error(req, "404 Not Found", "Datei nicht gefunden");
     }
+    storage_changed();
     ESP_LOGI(TAG, "Gelöscht: %s (%s)", name, storage_label(vol));
     return http_send_ok(req);
 }
@@ -227,14 +240,19 @@ static esp_err_t download_get(httpd_req_t *req)
     if (!get_file(req, &vol, name, sizeof(name))) {
         return http_send_error(req, "400 Bad Request", "Ungültiger Speicher oder Dateiname");
     }
+    if (!storage_acquire(vol)) {
+        return http_send_error(req, "503 Service Unavailable", "Speicher nicht verfügbar");
+    }
     storage_path(path, sizeof(path), vol, name);
     FILE *f = fopen(path, "rb");
     if (!f) {
+        storage_release(vol);
         return http_send_error(req, "404 Not Found", "Datei nicht gefunden");
     }
     char *buf = malloc(HTTP_CHUNK);
     if (!buf) {
         fclose(f);
+        storage_release(vol);
         return http_send_error(req, "500 Internal Server Error", "Kein Speicher");
     }
 
@@ -255,6 +273,7 @@ static esp_err_t download_get(httpd_req_t *req)
     }
     free(buf);
     fclose(f);
+    storage_release(vol);
     if (err == ESP_OK) {
         err = httpd_resp_send_chunk(req, NULL, 0);
     }
@@ -281,8 +300,13 @@ static esp_err_t print_post(httpd_req_t *req)
     if (!get_file(req, &vol, name, sizeof(name))) {
         return http_send_error(req, "400 Bad Request", "Ungültiger Speicher oder Dateiname");
     }
+    if (!storage_acquire(vol)) {
+        return http_send_error(req, "503 Service Unavailable", "Speicher nicht verfügbar");
+    }
     storage_path(path, sizeof(path), vol, name);
-    if (stat(path, &st) != 0) {
+    int found = stat(path, &st);
+    storage_release(vol);
+    if (found != 0) {
         return http_send_error(req, "404 Not Found", "Datei nicht gefunden");
     }
     return send_result(req, printer_start(vol, name), "Drucker ist nicht bereit");

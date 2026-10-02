@@ -28,6 +28,9 @@ typedef struct {
     float bed;
     float bed_target;
     char message[160];
+    // Letzter Druck lief bis zum Dateiende (file, vol, file_size bleiben bis zum nächsten Start erhalten)
+    bool finished;
+    uint32_t duration_s;
 } printer_status_t;
 
 esp_err_t printer_init(void);

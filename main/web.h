@@ -5,7 +5,7 @@
 /*
  * HTTP-Server auf Port 80:
  *   GET    /                        Weboberfläche
- *   GET    /api/status              Druckerstatus (JSON)
+ *   GET    /api/status              Druckerstatus (JSON), mit finished/duration für den letzten fertigen Druck
  *   GET    /api/files               Speicher und Dateien (JSON)
  *   POST   /api/upload?storage=<sd|flash>&name=<datei>  Rohdaten im Body
  *   DELETE /api/files?storage=<sd|flash>&name=<datei>
