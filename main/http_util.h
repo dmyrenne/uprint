@@ -29,6 +29,7 @@ typedef struct {
     char tmp[STORAGE_PATH_MAX];
     FILE *f;
     size_t written;
+    bool held;   // storage_acquire() für vol
 } upload_t;
 
 // Prüft Speicher, Platz (size ist eine Obergrenze) und laufenden Druck.

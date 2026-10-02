@@ -16,9 +16,19 @@ typedef enum {
 } storage_vol_t;
 
 // Bindet alle verfügbaren Speicher ein; ESP_OK, wenn mindestens einer bereit ist.
+// Die SD-Karte wird danach regelmäßig geprüft und kann entfernt und wieder eingesteckt werden.
 esp_err_t storage_init(void);
 
 bool storage_ready(storage_vol_t vol);
+
+// Umschließt jeden Dateizugriff: false, wenn der Speicher nicht bereit ist. Solange ein Zugriff
+// offen ist, wird eine entfernte SD-Karte nicht ausgehängt; die Dateioperationen schlagen dann fehl.
+bool storage_acquire(storage_vol_t vol);
+void storage_release(storage_vol_t vol);
+
+// Zähler, der sich bei jeder Änderung der Dateien oder Speicher erhöht (für die Weboberfläche)
+uint32_t storage_revision(void);
+void storage_changed(void);
 // false, wenn die Firmware-Variante diesen Speicher nicht hat (z. B. kein interner Dateispeicher)
 bool storage_present(storage_vol_t vol);
 const char *storage_mount(storage_vol_t vol);

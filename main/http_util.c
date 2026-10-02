@@ -107,12 +107,18 @@ const char *upload_begin(upload_t *u, storage_vol_t vol, const char *name, size_
         *status = "409 Conflict";
         return "Datei wird gerade gedruckt";
     }
+    if (!storage_acquire(vol)) {
+        *status = "503 Service Unavailable";
+        return "Speicher nicht verfügbar";
+    }
+    u->held = true;
     u->vol = vol;
     strlcpy(u->name, name, sizeof(u->name));
     storage_path(u->tmp, sizeof(u->tmp), vol, UPLOAD_TMP_NAME);
     storage_path(u->path, sizeof(u->path), vol, name);
     u->f = fopen(u->tmp, "wb");
     if (!u->f) {
+        upload_abort(u);
         *status = "500 Internal Server Error";
         return "Datei kann nicht angelegt werden";
     }
@@ -146,9 +152,13 @@ const char *upload_finish(upload_t *u)
     }
     if (failure) {
         unlink(u->tmp);
+        upload_abort(u);
         ESP_LOGW(TAG, "Upload %s: %s", u->name, failure);
         return failure;
     }
+    storage_release(u->vol);
+    u->held = false;
+    storage_changed();
     ESP_LOGI(TAG, "Hochgeladen: %s (%s, %u Bytes)", u->name, storage_label(u->vol), (unsigned)u->written);
     return NULL;
 }
@@ -159,5 +169,9 @@ void upload_abort(upload_t *u)
         fclose(u->f);
         u->f = NULL;
         unlink(u->tmp);
+    }
+    if (u->held) {
+        storage_release(u->vol);
+        u->held = false;
     }
 }
