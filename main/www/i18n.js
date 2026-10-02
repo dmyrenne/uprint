@@ -9,6 +9,7 @@ const I18N = {
     'tagline.named': 'µprint · USB-Druckserver',
 
     'state.disconnected': 'Kein Drucker',
+    'state.axiDisconnected': 'Kein AxiDraw',
     'state.connecting': 'Verbinde …',
     'state.idle': 'Verbunden',
     'state.printing': 'Druckt',
@@ -170,6 +171,8 @@ const I18N = {
     'stage.idleHint': 'Wähle unter „Dateien“ eine Datei aus.',
     'stage.disconnected': 'Kein Drucker verbunden',
     'stage.disconnectedHint': 'Drucker per USB an den Host-Port des ESP anschließen.',
+    'stage.axiDisconnected': 'Kein AxiDraw verbunden',
+    'stage.axiDisconnectedHint': 'AxiDraw per USB an den Host-Port des ESP anschließen.',
     'stage.connecting': 'Verbinde mit dem Drucker …',
     'stage.offline': 'uprint ist nicht erreichbar',
     'stage.offlineHint': 'Verbindung zum ESP prüfen. Die Seite versucht es weiter.',
@@ -184,6 +187,7 @@ const I18N = {
     'tagline.named': 'µprint · USB print server',
 
     'state.disconnected': 'No printer',
+    'state.axiDisconnected': 'No AxiDraw',
     'state.connecting': 'Connecting …',
     'state.idle': 'Connected',
     'state.printing': 'Printing',
@@ -345,6 +349,8 @@ const I18N = {
     'stage.idleHint': 'Select a file under “Files”.',
     'stage.disconnected': 'No printer connected',
     'stage.disconnectedHint': 'Connect the printer via USB to the ESP’s host port.',
+    'stage.axiDisconnected': 'No AxiDraw connected',
+    'stage.axiDisconnectedHint': 'Connect the AxiDraw via USB to the ESP’s host port.',
     'stage.connecting': 'Connecting to the printer …',
     'stage.offline': 'uprint is not reachable',
     'stage.offlineHint': 'Check the connection to the ESP. The page keeps trying.',

@@ -182,6 +182,8 @@
   .illu .cut { stroke: var(--warn); stroke-width: 2.4; stroke-linecap: round; }
   .illu .mu { fill: var(--ink); font: 700 30px var(--sans); }
   .illu .led { fill: var(--warn); }
+  .illu .art { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  .illu .pen { fill: var(--accent); }
   .illu.wait .cable { stroke: var(--accent); stroke-dasharray: 3 5; animation: flow 1s linear infinite; }
   .illu.wait .led { fill: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
   .illu.wait .x { display: none; }
@@ -282,6 +284,33 @@
           <path class="frame" d="M10 110H114"/>
           <!-- USB-Kabel, getrennt -->
           <path class="cable" d="M109 66C130 66 132 98 152 98C172 98 172 64 191 64"/>
+          <g class="x"><circle class="solid" cx="152" cy="98" r="9"/><path class="cut" d="M147 93l10 10M157 93l-10 10"/></g>
+          <!-- µprint -->
+          <rect class="frame" x="191" y="59" width="5" height="10" rx="1"/>
+          <rect class="frame" x="196" y="38" width="66" height="52" rx="7"/>
+          <text class="mu" x="229" y="75" text-anchor="middle">µ</text>
+          <circle class="led" cx="252" cy="47" r="2.4"/>
+        </svg>
+      </div>
+      <div class="anim illu" id="illuAxi" hidden>
+        <svg viewBox="0 0 276 126" aria-hidden="true">
+          <!-- AxiDraw von oben: X-Schiene mit Motoren hinten, Schlitten, Arm nach vorn, Stifthalter über dem Papier -->
+          <rect class="thin" x="14" y="34" width="96" height="74" rx="1.5"/>
+          <path class="art" d="M24 99C40 99 46 97 52 93S58 85 62 89S70 99 76 97S90 99 100 99"/>
+          <path class="art" d="M24 93C38 93 44 92 50 88S56 79 60 82S64 86 66 85"/>
+          <rect class="frame solid" x="8" y="10" width="108" height="9" rx="2"/>
+          <path class="thin" d="M22 14.5H102"/>
+          <rect class="frame solid" x="5" y="5" width="16" height="19" rx="2"/>
+          <circle class="thin" cx="13" cy="14.5" r="3.5"/>
+          <rect class="frame solid" x="103" y="5" width="16" height="19" rx="2"/>
+          <circle class="thin" cx="111" cy="14.5" r="3.5"/>
+          <rect class="frame solid" x="48" y="7" width="24" height="15" rx="2"/>
+          <rect class="frame solid" x="56" y="22" width="9" height="52" rx="1.5"/>
+          <path class="thin" d="M60.5 26V70"/>
+          <rect class="frame solid" x="51" y="72" width="19" height="13" rx="2"/>
+          <circle class="pen" cx="66" cy="85" r="2.6"/>
+          <!-- USB-Kabel, getrennt -->
+          <path class="cable" d="M119 14C142 14 132 98 152 98C172 98 172 64 191 64"/>
           <g class="x"><circle class="solid" cx="152" cy="98" r="9"/><path class="cut" d="M147 93l10 10M157 93l-10 10"/></g>
           <!-- µprint -->
           <rect class="frame" x="191" y="59" width="5" height="10" rx="1"/>
@@ -518,7 +547,43 @@ function profile(seed) {
 }
 function hash(str) { let h = 2166136261; for (const c of str) h = Math.imul(h ^ c.codePointAt(0), 16777619); return h >>> 0; }
 
+// Logo im AxiDraw-Modus: Wellenlinien wie auf „Unknown Pleasures“ (Verfahren wie in µgen): von vorn nach
+// hinten zeichnen, je Spalte die höchste Stelle merken, verdeckte Teile weglassen. Vorderste Linie im Akzent.
+function drawWaves() {
+  let s = (Math.random() * 2 ** 32) >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const grid = Array.from({ length: 24 }, () => Array.from({ length: 12 }, rnd));
+  const smooth = (t) => t * t * (3 - 2 * t);
+  const noise = (x, r) => {   // Wertrauschen, glatt in x, je Linie eigene Werte
+    const i = Math.floor(x), f = smooth(x - i), row = grid[r % grid.length];
+    return row[i % row.length] * (1 - f) + row[(i + 1) % row.length] * f;
+  };
+  const n = 9, x0 = 5, x1 = 29, step = .5, cols = Math.round((x1 - x0) / step) + 1;
+  const horizon = new Array(cols).fill(Infinity), out = [];
+  for (let r = n - 1; r >= 0; r--) {   // vorn (unten) zuerst
+    const y = 12 + r * 2.1, runs = [];
+    let run = null;
+    for (let c = 0; c < cols; c++) {
+      const x = x0 + c * step, u = (x - 17) / 12;
+      const env = Math.exp(-Math.pow(Math.abs(u) / .42, 2));
+      const py = y - 7 * env * Math.pow(noise(x / 2.2, r), 2) - noise(x / .9, r + 7) * .25 * (1 - env);
+      if (py <= horizon[c]) {
+        horizon[c] = py;
+        if (!run) { run = []; runs.push(run); }
+        run.push(x.toFixed(1) + ' ' + py.toFixed(2));
+      } else run = null;
+    }
+    const front = r === n - 1;
+    for (const p of runs) if (p.length > 1)
+      out.push(`<path d="M${p.join('L')}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="${front ? 'var(--accent)' : 'var(--panel)'}" stroke-width="${front ? 1.3 : .8}" opacity="${front ? 1 : .85}"/>`);
+  }
+  $('mark').innerHTML = out.join('');
+}
+
+let markAxi = false;
 function drawMark() {   // Logo: bei jedem Laden (und Klick) ein neues Gefäß, die oberste Schicht im Akzent
+  markAxi = axiMode();
+  if (markAxi) return drawWaves();
   const r = profile(Math.random() * 2 ** 32), n = 11, out = [];
   for (let i = 0; i < n; i++) {
     const y = 28 - i * 2.2, half = r(i / (n - 1)) * 12, top = i === n - 1;
@@ -574,7 +639,7 @@ function renderStatus() {
   const s = st || {}, a = !offline && active(), done = finished(), show = a || done;
   const state = offline ? 'offline' : s.state || 'connecting';
   const tab = $('tab');
-  tab.textContent = t('state.' + state);
+  tab.textContent = t(state === 'disconnected' && axiMode() ? 'state.axiDisconnected' : 'state.' + state);
   tab.className = 'tab ' + ({ idle: 'on', printing: 'on busy', paused: 'on', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
 
   const pct = a && s.size ? s.pos / s.size * 100 : done ? 100 : 0;
@@ -601,7 +666,7 @@ function renderStatus() {
   let title, sub = s.message || '', bad = s.state === 'error';
   if (offline) { title = t('stage.offline'); sub = t('stage.offlineHint'); bad = true; }
   else if (show) title = s.file;
-  else if (s.state === 'disconnected') { title = t('stage.disconnected'); sub = t('stage.disconnectedHint'); }
+  else if (s.state === 'disconnected') { const k = axiMode() ? 'stage.axiDisconnected' : 'stage.disconnected'; title = t(k); sub = t(k + 'Hint'); }
   else if (s.state === 'connecting') { title = t('stage.connecting'); sub = ''; }
   else if (s.state === 'error') { title = t('state.error'); sub = s.message; }
   else if (chosen) { title = chosen.name; sub = volName(chosen.storage) + ' · ' + fmtSize(chosen.size) + ' · ' + t('job.ready'); }
@@ -624,8 +689,10 @@ function renderStatus() {
   else layersKey = '';
   // Ohne Drucker: Grafik mit getrenntem Kabel, beim Verbinden läuft das Kabel
   const unplugged = !offline && (s.state === 'disconnected' || s.state === 'connecting');
-  $('illu').hidden = !unplugged;
-  $('illu').classList.toggle('wait', s.state === 'connecting');
+  for (const [id, on] of [['illu', !axiMode()], ['illuAxi', axiMode()]]) {
+    $(id).hidden = !unplugged || !on;
+    $(id).classList.toggle('wait', s.state === 'connecting');
+  }
   renderFiles(); renderOta();
 }
 $('bStart').onclick = () => { const f = selected() || finishedFile(); if (f) act('POST', '/api/print' + fileQuery(f)); };
@@ -1002,6 +1069,7 @@ $('rebootBtn').onclick = async () => {
 let axi = null, axiLog = '', axiTimer = null;
 const axiMode = () => !!settings && settings.device_type === 1;
 function renderAxi() {
+  if (markAxi !== axiMode()) drawMark();
   $('axiBox').hidden = !axiMode();
   if (!axiMode()) return;
   const run = !!axi && axi.running, ready = !offline && !!st && st.state === 'idle';
