@@ -17,6 +17,7 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "captive.h"
 #include "http_util.h"
 #include "printer.h"
 #include "slicer.h"
@@ -633,6 +634,21 @@ static esp_err_t reboot_post(httpd_req_t *req)
     return http_send_ok(req);
 }
 
+// Am Access Point führt jeder unbekannte Pfad zur Startseite. Darüber erkennen Handys und Laptops
+// das Captive Portal und öffnen die Seite von selbst. Im WLAN bleibt es beim normalen 404.
+static esp_err_t not_found(httpd_req_t *req, httpd_err_code_t err)
+{
+    if (!captive_via_ap(httpd_req_to_sockfd(req))) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
+        return ESP_FAIL;
+    }
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", CAPTIVE_URL);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    // iOS erkennt das Portal nur, wenn die Antwort auch einen Inhalt hat
+    return httpd_resp_sendstr(req, "uprint: " CAPTIVE_URL);
+}
+
 esp_err_t web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
@@ -674,6 +690,9 @@ esp_err_t web_start(void)
         ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &routes[i]), TAG, "route %s", routes[i].uri);
     }
     ESP_RETURN_ON_ERROR(slicer_api_register(server), TAG, "Slicer-API");
+    httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, not_found);
+    // Am Access Point fragen Handys laufend Prüfadressen ab, die sollen das Log nicht fluten
+    esp_log_level_set("httpd_uri", ESP_LOG_ERROR);
     ESP_LOGI(TAG, "Webserver läuft auf Port 80");
     return ESP_OK;
 }

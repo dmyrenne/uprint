@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "captive.h"
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -127,6 +128,7 @@ static void set_ap(bool on)
         cfg.ap.max_connection = 4;
         esp_wifi_set_mode(WIFI_MODE_APSTA);
         esp_wifi_set_config(WIFI_IF_AP, &cfg);
+        captive_dns_start();
         ESP_LOGI(TAG, "Access Point \"%s\" offen: http://192.168.4.1", s_hostname);
     } else {
         esp_wifi_set_mode(WIFI_MODE_STA);
@@ -255,7 +257,7 @@ esp_err_t wifi_init(void)
     ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "netif");
     ESP_RETURN_ON_ERROR(esp_event_loop_create_default(), TAG, "event loop");
     s_sta = esp_netif_create_default_wifi_sta();
-    esp_netif_create_default_wifi_ap();
+    captive_init(esp_netif_create_default_wifi_ap());
     esp_netif_set_hostname(s_sta, s_hostname);
 
     wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();

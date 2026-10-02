@@ -109,7 +109,7 @@
   .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
   .hint.bad { color: var(--warn); }
   .derived { font-size: 12px; background: var(--accent-soft); color: var(--ink); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
-  .derived b { font: 600 12px var(--mono); color: var(--accent); }
+  .derived b, .derived a { font: 600 12px var(--mono); color: var(--accent); }
   .derived.bad { background: var(--warn-bg); color: var(--warn); }
   .derived.bad b { color: inherit; }
   .derived div + div { margin-top: 4px; }
@@ -763,18 +763,30 @@ function reasonText(w) {
 }
 function signal(rssi) { return t(rssi >= -60 ? 'wifi.signal.good' : rssi >= -72 ? 'wifi.signal.ok' : 'wifi.signal.weak') + ' (' + rssi + ' dBm)'; }
 
+// Link auf die Adresse von uprint im WLAN, damit man vom Access Point direkt dorthin wechseln kann.
+// Dieselben Elemente wiederverwenden: Der Status wird alle 4 s neu aufgebaut, ein Tipp soll trotzdem ankommen.
+const hostLinks = {};
+function hostLink(slot, host) {
+  const key = slot + ' ' + host;   // je Stelle ein eigenes Element, ein Knoten kann nur an einer Stelle stehen
+  if (!hostLinks[key]) { const a = el('a', '', host); a.href = 'http://' + host + '/'; hostLinks[key] = a; }
+  return hostLinks[key];
+}
+// Übersetzung mit Platzhaltern, die durch DOM-Knoten ersetzt werden (z. B. Links)
+function tNodes(key, nodes) { return t(key).split(/(\{\w+\})/).map((p) => nodes[p.slice(1, -1)] || p); }
+
 function renderWifi() {
   const w = wifi; if (!w) return;
   const box = $('wifiStatus'), lines = [];
   let bad = false;
   if (w.connected) {
-    const d = el('div'); d.append(t('wifi.connected', { ssid: w.ssid }) + ' · ', el('b', '', w.ip), ' · ' + signal(w.rssi)); lines.push(d);
+    const d = el('div'); d.append(t('wifi.connected', { ssid: w.ssid }) + ' · ', hostLink('status', w.ip), ' · ' + signal(w.rssi)); lines.push(d);
   } else if (w.configured) {
     bad = w.reason !== 0;
     lines.push(el('div', '', bad ? reasonText(w) : t('wifi.connecting', { ssid: w.ssid })));
   } else lines.push(el('div', '', t('wifi.none')));
-  if (w.ap) lines.push(el('div', '', t('wifi.ap', { ssid: w.ap_ssid, ip: w.ap_ip })));
-  if (w.ap && w.connected) lines.push(el('div', '', t('wifi.apClosing', { ip: w.ip, host: w.hostname })));
+  if (w.ap && w.connected) {
+    const d = el('div'); d.append(...tNodes('wifi.apClosing', { ip: hostLink('ap', w.ip), host: hostLink('ap', w.hostname + '.local') })); lines.push(d);
+  }
   box.replaceChildren(...lines);
   box.className = 'derived' + (bad ? ' bad' : '');
   $('wifiForget').disabled = !w.configured;
