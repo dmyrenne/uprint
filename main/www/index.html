@@ -113,6 +113,16 @@
   .derived.bad { background: var(--warn-bg); color: var(--warn); }
   .derived.bad b { color: inherit; }
   .derived div + div { margin-top: 4px; }
+  /* Einrichtung über das Captive Portal: nur die WLAN-Karte */
+  body:not(.setup) .setup-only { display: none !important; }
+  body.setup main > :not(#setupSlot):not(#messages), body.setup .foot, body.setup .stats { display: none; }
+  #setupSlot { max-width: 560px; margin: 0 auto; width: 100%; }
+  body.setup #wifiBox summary { cursor: default; }
+  body.setup #wifiBox summary::after, body.setup #wifiForget, body.setup #wifiHint { display: none; }
+  .handoff { font-size: 14px; }
+  .handoff .count { font: 600 28px var(--mono); color: var(--accent); }
+  .addr { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .addr code { flex: 1; font: 600 14px var(--mono); background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; overflow-wrap: anywhere; }
 
   .bar { height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 10px; }
   .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
@@ -241,6 +251,7 @@
 
 <main>
   <div id="messages"></div>
+  <div id="setupSlot"></div>
 
   <section class="card">
     <h2 data-i18n="h.print"></h2>
@@ -323,7 +334,16 @@
   <div class="col side">
   <details class="card" id="wifiBox">
     <summary data-i18n="h.wifi"></summary>
+    <p class="hint setup-only" id="setupIntro" data-i18n="setup.intro" style="margin:0 0 12px"></p>
     <div class="derived" id="wifiStatus"></div>
+    <div class="handoff" id="handoff" hidden>
+      <p id="handoffText" style="margin:0"></p>
+      <p style="margin:12px 0 0"><span class="count" id="handoffCount"></span></p>
+      <p class="hint" id="handoffNext"></p>
+      <div class="addr"><code id="addrHost"></code><button type="button" data-copy="addrHost" data-i18n="copy"></button></div>
+      <div class="addr"><code id="addrIp"></code><button type="button" data-copy="addrIp" data-i18n="copy"></button></div>
+    </div>
+    <div id="wifiForm">
     <div class="grid">
       <label class="full"><span data-i18n="wifi.network"></span>
         <span class="pick"><select id="wifiNet"></select><button type="button" id="wifiScan" data-i18n="wifi.scan"></button></span>
@@ -336,7 +356,12 @@
       <button type="button" class="primary" id="wifiConnect" data-i18n="wifi.connect"></button>
       <button type="button" class="warn" id="wifiForget" data-i18n="wifi.forget"></button>
     </div>
+    <div class="setup-only" style="margin-top:20px; border-top:1px solid var(--line); padding-top:16px">
+      <button type="button" id="wifiApOnly" data-i18n="setup.apOnly"></button>
+      <p class="hint" id="apOnlyHint"></p>
+    </div>
     <p class="hint" id="wifiHint"></p>
+    </div>
   </details>
 
   <details class="card" id="setBox">
@@ -774,6 +799,57 @@ function hostLink(slot, host) {
 // Übersetzung mit Platzhaltern, die durch DOM-Knoten ersetzt werden (z. B. Links)
 function tNodes(key, nodes) { return t(key).split(/(\{\w+\})/).map((p) => nodes[p.slice(1, -1)] || p); }
 
+// Einrichtung über das Captive Portal: WLAN-Karte allein oben. Nach dem Verbinden ein Countdown, bis sich
+// der Access Point abschaltet. Links funktionieren aus dem Portal-Fenster heraus nicht (das Gerät wechselt
+// erst danach ins WLAN), deshalb die Adressen zum Kopieren.
+let setupMode = false, handoffAt = 0;
+function renderSetup() {
+  const w = wifi;
+  if (w.portal !== setupMode) {
+    setupMode = w.portal;
+    document.body.classList.toggle('setup', setupMode);
+    const box = $('wifiBox');
+    if (setupMode) { $('setupSlot').append(box); box.open = true; }   // gesucht wird beim ersten Laden ohne Verbindung
+    else { $('setBox').before(box); handoffAt = 0; }
+  }
+  const handoff = setupMode && w.connected && w.ap && w.ap_off_in >= 0;
+  if (handoff) {
+    handoffAt = Date.now() + w.ap_off_in * 1000;
+    $('handoffText').textContent = t('setup.connected', { ssid: w.ssid });
+    $('addrHost').textContent = 'http://' + w.hostname + '.local';
+    $('addrIp').textContent = 'http://' + w.ip;
+  }
+  if (handoff || !handoffAt) {   // nach Ablauf stehen lassen, solange die Seite noch im Einrichtungsmodus ist
+    $('handoff').hidden = !handoff;
+    for (const id of ['wifiForm', 'wifiStatus', 'setupIntro']) $(id).hidden = handoff;
+  }
+  tickHandoff();
+}
+function tickHandoff() {
+  if (!handoffAt) return;
+  const s = Math.max(0, Math.ceil((handoffAt - Date.now()) / 1000));
+  $('handoffCount').textContent = s > 0 ? s + ' s' : '✓';
+  $('handoffNext').textContent = t(s > 0 ? 'setup.countdown' : 'setup.switched');
+}
+setInterval(tickHandoff, 250);
+for (const b of document.querySelectorAll('[data-copy]')) {
+  b.onclick = () => {
+    // navigator.clipboard gibt es nur über HTTPS, im Portal-Fenster deshalb über ein Eingabefeld
+    const i = el('input'); i.value = $(b.dataset.copy).textContent; document.body.append(i); i.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch {}
+    i.remove();
+    if (ok) { b.textContent = t('copied'); setTimeout(() => { b.textContent = t('copy'); }, 1500); }
+  };
+}
+$('wifiBox').querySelector('summary').onclick = (e) => { if (setupMode) e.preventDefault(); };
+$('wifiApOnly').onclick = async () => {
+  try {
+    await api('POST', '/api/wifi/ap-only');
+    say(t('setup.apOnly.done', { ssid: wifi ? wifi.ap_ssid : 'uprint', ip: wifi ? wifi.ap_ip : '192.168.4.1' }));
+    await loadWifi();
+  } catch (e) { say(e.message, true); }
+};
+
 function renderWifi() {
   const w = wifi; if (!w) return;
   const box = $('wifiStatus'), lines = [];
@@ -785,13 +861,16 @@ function renderWifi() {
     bad = w.reason !== 0;
     lines.push(el('div', '', bad ? reasonText(w) : t('wifi.connecting', { ssid: w.ssid })));
   } else lines.push(el('div', '', t('wifi.none')));
-  if (w.ap && w.connected) {
-    const d = el('div'); d.append(...tNodes('wifi.apClosing', { ip: hostLink('ap', w.ip), host: hostLink('ap', w.hostname + '.local') })); lines.push(d);
+  if (w.ap_only) lines.push(el('div', '', t('wifi.apOnly', { ssid: w.ap_ssid, ip: w.ap_ip })));
+  if (w.ap && w.connected && w.ap_off_in >= 0) {
+    const d = el('div'); d.append(...tNodes('wifi.apClosing', { s: w.ap_off_in, ip: hostLink('ap', w.ip), host: hostLink('ap', w.hostname + '.local') })); lines.push(d);
   }
   box.replaceChildren(...lines);
   box.className = 'derived' + (bad ? ' bad' : '');
   $('wifiForget').disabled = !w.configured;
   $('wifiHint').textContent = t('wifi.hint', { ssid: w.ap_ssid });
+  $('apOnlyHint').textContent = t('setup.apOnly.hint', { ssid: w.ap_ssid, ip: w.ap_ip });
+  renderSetup();
   renderNets();
 }
 
@@ -840,7 +919,7 @@ $('wifiForget').onclick = async () => {
   try { await api('DELETE', '/api/wifi'); say(t('wifi.forgotten', { ssid: wifi ? wifi.ap_ssid : 'uprint' })); setTimeout(loadWifi, 1500); }
   catch (e) { say(e.message, true); }
 };
-async function pollWifi() { await loadWifi(); setTimeout(pollWifi, 4000); }
+async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1000 : 4000); }
 
 // ---------- Einstellungen ----------
 const SET_KEYS = ['device_name', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y', 'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];

@@ -21,12 +21,13 @@ static const char *TAG = "wifi";
 #define NVS_NAMESPACE   "wifi"
 #define RECONNECT_US    (5 * 1000000LL)
 #define FALLBACK_US     (30 * 1000000LL)    // so lange ohne Verbindung, dann Access Point öffnen
-#define AP_LINGER_US    (120 * 1000000LL)   // Access Point nach erfolgreicher Verbindung noch offen lassen
+#define AP_LINGER_US    (10 * 1000000LL)    // Access Point nach erfolgreicher Verbindung noch offen lassen,
+                                            // damit die Seite die neue Adresse noch anzeigen kann
 #define APPLY_DELAY_US  (500 * 1000LL)
 
 // Alle Änderungen am WLAN laufen über den Event-Loop und damit nacheinander
 ESP_EVENT_DEFINE_BASE(UPRINT_WIFI_EVENT);
-enum { EV_RECONNECT, EV_FALLBACK, EV_AP_OFF, EV_APPLY, EV_FORGET };
+enum { EV_RECONNECT, EV_FALLBACK, EV_AP_OFF, EV_APPLY, EV_FORGET, EV_AP_ONLY };
 
 static SemaphoreHandle_t s_lock;
 static esp_netif_t *s_sta;
@@ -41,6 +42,8 @@ static char s_pass[65];
 static bool s_configured;
 static bool s_connected;
 static bool s_ap_active;
+static bool s_ap_only;          // "ohne WLAN fortfahren": Access Point bleibt an, kein Captive Portal
+static int64_t s_ap_off_at;     // esp_timer-Zeit, zu der der Access Point schließt, 0 = nicht geplant
 static esp_ip4_addr_t s_ip;
 static int s_last_reason;
 
@@ -76,6 +79,22 @@ static void restart_timer(esp_timer_handle_t timer, int64_t us)
     esp_timer_start_once(timer, us);
 }
 
+static void schedule_ap_off(void)
+{
+    LOCK();
+    s_ap_off_at = esp_timer_get_time() + AP_LINGER_US;
+    UNLOCK();
+    restart_timer(s_ap_off_timer, AP_LINGER_US);
+}
+
+static void cancel_ap_off(void)
+{
+    esp_timer_stop(s_ap_off_timer);
+    LOCK();
+    s_ap_off_at = 0;
+    UNLOCK();
+}
+
 static void load_credentials(void)
 {
     nvs_handle_t nvs;
@@ -90,6 +109,9 @@ static void load_credentials(void)
         }
         s_configured = true;
     }
+    uint8_t ap_only = 0;
+    nvs_get_u8(nvs, "ap_only", &ap_only);
+    s_ap_only = ap_only;
     nvs_close(nvs);
 }
 
@@ -100,6 +122,9 @@ static esp_err_t store_credentials(const char *ssid, const char *pass)
     esp_err_t err = nvs_set_str(nvs, "ssid", ssid);
     if (err == ESP_OK) {
         err = nvs_set_str(nvs, "pass", pass);
+    }
+    if (err == ESP_OK) {
+        nvs_erase_key(nvs, "ap_only");
     }
     if (err == ESP_OK) {
         err = nvs_commit(nvs);
@@ -198,16 +223,18 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         s_connected = true;
         s_last_reason = 0;
         bool ap_active = s_ap_active;
+        bool ap_only = s_ap_only;
         UNLOCK();
         esp_timer_stop(s_fallback_timer);
         ESP_LOGI(TAG, "Verbunden: http://" IPSTR "  (http://%s.local)", IP2STR(&ev->ip_info.ip), s_hostname);
-        if (ap_active) {
-            restart_timer(s_ap_off_timer, AP_LINGER_US);
+        if (ap_active && !ap_only) {
+            schedule_ap_off();
         }
     } else if (base == UPRINT_WIFI_EVENT) {
         LOCK();
         bool configured = s_configured;
         bool connected = s_connected;
+        bool ap_only = s_ap_only;
         UNLOCK();
         switch (id) {
         case EV_RECONNECT:
@@ -224,9 +251,16 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             }
             break;
         case EV_AP_OFF:
-            if (configured && connected) {
+            LOCK();
+            s_ap_off_at = 0;
+            UNLOCK();
+            if (configured && connected && !ap_only) {
                 set_ap(false);
             }
+            break;
+        case EV_AP_ONLY:
+            cancel_ap_off();
+            set_ap(true);
             break;
         case EV_APPLY:
             apply_sta_config();
@@ -234,7 +268,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         case EV_FORGET:
             esp_timer_stop(s_reconnect_timer);
             esp_timer_stop(s_fallback_timer);
-            esp_timer_stop(s_ap_off_timer);
+            cancel_ap_off();
             esp_wifi_disconnect();
             set_ap(true);
             break;
@@ -275,13 +309,17 @@ esp_err_t wifi_init(void)
     ESP_ERROR_CHECK(esp_event_handler_register(UPRINT_WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL));
 
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "mode");
+    if (s_ap_only) {
+        ESP_LOGI(TAG, "Nur Access Point (ohne WLAN fortgefahren)");
+        set_ap(true);
+    }
     if (s_configured) {
         wifi_config_t cfg = {0};
         strlcpy((char *)cfg.sta.ssid, s_ssid, sizeof(cfg.sta.ssid));
         strlcpy((char *)cfg.sta.password, s_pass, sizeof(cfg.sta.password));
         ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &cfg), TAG, "config");
         ESP_LOGI(TAG, "Verbinde mit \"%s\"", s_ssid);
-    } else {
+    } else if (!s_ap_only) {
         ESP_LOGI(TAG, "Kein WLAN eingerichtet");
         set_ap(true);
     }
@@ -311,12 +349,19 @@ void wifi_get_status(wifi_status_t *out)
     out->configured = s_configured;
     out->connected = s_connected;
     out->ap_active = s_ap_active;
+    out->ap_only = s_ap_only;
+    int64_t off_at = s_ap_off_at;
     out->last_reason = s_last_reason;
     strlcpy(out->ssid, s_ssid, sizeof(out->ssid));
     strlcpy(out->hostname, s_hostname, sizeof(out->hostname));
     esp_ip4_addr_t ip = s_ip;
     UNLOCK();
 
+    out->ap_off_in = -1;
+    if (out->ap_active && off_at) {
+        int64_t left = off_at - esp_timer_get_time();
+        out->ap_off_in = left > 0 ? (int)((left + 999999) / 1000000) : 0;
+    }
     out->ip[0] = '\0';
     out->rssi = 0;
     if (out->connected) {
@@ -337,6 +382,7 @@ esp_err_t wifi_set_credentials(const char *ssid, const char *password)
     }
     ESP_RETURN_ON_ERROR(store_credentials(ssid, password), TAG, "NVS");
     LOCK();
+    s_ap_only = false;   // mit einem Netz gilt wieder der normale Ablauf (in store_credentials gelöscht)
     strlcpy(s_ssid, ssid, sizeof(s_ssid));
     strlcpy(s_pass, password, sizeof(s_pass));
     s_configured = true;
@@ -358,10 +404,36 @@ esp_err_t wifi_forget(void)
     s_pass[0] = '\0';
     s_configured = false;
     s_connected = false;
+    s_ap_only = false;   // nvs_erase_all hat es schon entfernt
     s_last_reason = 0;
     UNLOCK();
     ESP_LOGI(TAG, "WLAN-Zugangsdaten gelöscht");
     return esp_event_post(UPRINT_WIFI_EVENT, EV_FORGET, NULL, 0, pdMS_TO_TICKS(100));
+}
+
+esp_err_t wifi_set_ap_only(void)
+{
+    nvs_handle_t nvs;
+    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs), TAG, "nvs_open");
+    esp_err_t err = nvs_set_u8(nvs, "ap_only", 1);
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+    ESP_RETURN_ON_ERROR(err, TAG, "NVS");
+    LOCK();
+    s_ap_only = true;
+    UNLOCK();
+    ESP_LOGI(TAG, "Ohne WLAN fortgefahren: Access Point bleibt an, Captive Portal aus");
+    return esp_event_post(UPRINT_WIFI_EVENT, EV_AP_ONLY, NULL, 0, pdMS_TO_TICKS(100));
+}
+
+bool wifi_portal_active(void)
+{
+    LOCK();
+    bool on = s_ap_active && !s_ap_only;
+    UNLOCK();
+    return on;
 }
 
 static int by_rssi(const void *a, const void *b)
