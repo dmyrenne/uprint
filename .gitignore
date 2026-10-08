@@ -8,3 +8,5 @@ sdkconfig.old
 tools/
 # Platine liegt in einem eigenen Repo
 PCB/
+# Logs von Hardwaretests, nur lokal
+logs/

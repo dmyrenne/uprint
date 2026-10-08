@@ -221,8 +221,9 @@ listet alle Releases; der Umschalter „Release / Alpha“ filtert das Versions-
    Stift hoch, Motoren bleiben an; Fortsetzen per Web-UI oder erneutem Tastendruck (erst nach Loslassen)
 9. ~~Temperaturen und andere Druckerfelder im Plotter-Modus ausblenden~~ (erledigt, dazu „Plotten“ statt
    „Drucken“)
-10. µplot: AxiDraw-Modus laut [uplot#1](https://github.com/dmyrenne/uplot/issues/1) (Zeichenfläche, Offset 0,
-    Nullpunkt oben links ohne Umklappen in Y, Z 0/1, Kennung in der ersten Zeile, Ende auf X0 Y0)
+10. ~~µplot: AxiDraw-Modus laut [uplot#1](https://github.com/dmyrenne/uplot/issues/1)~~ (erledigt in µplot
+    95a3e7c: Zeichenfläche mit Modellvorlagen, Offset 0, Nullpunkt oben links ohne Umklappen in Y, Z 0/1,
+    Kennung in der ersten Zeile, Ende auf X0 Y0)
 11. Gesamttest beim Bekannten: SVG → µplot → µprint → AxiDraw, mit Stiftwechsel über die Taste
 
 ## Offen
