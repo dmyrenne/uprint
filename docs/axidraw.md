@@ -120,6 +120,55 @@ Verworfene Alternative: SVG im Browser planen (wie saxi) und fertige EBB-Befehle
 
 saxi steht unter AGPL-3.0, daher darf kein Code übernommen werden, nur das Prinzip.
 
+## Plotter-Modus (v0.5.0)
+
+v0.4.0 (PR #11) enthält nur den Testmodus. Das Plotten kommt als v0.5.0 (Branch `axidraw-plotter`, aufbauend
+auf `axidraw-compatibility`). Bis #11 gemergt ist, entstehen die Vorab-Versionen als von Hand gesetzte Tags
+`v0.5.0-alpha.N`; ein Push des Branches selbst würde nach der CI-Regel eine `v0.4.0-alpha` bauen.
+
+### Vertrag mit µplot ([uplot#1](https://github.com/dmyrenne/uplot/issues/1))
+
+- Erste Zeile `; uplot-axidraw 1` (Formatversion). Im AxiDraw-Modus nimmt µprint nur solche Dateien an.
+- Einheit mm, absolut (`G21`, `G90`). Nullpunkt = Stiftposition beim Einschalten, oben links; X nach rechts,
+  Y vom Gerät weg (wie im SVG, also kein Umklappen in µplot).
+- Stift nur über Z: `Z0` = unten, `Z1` = oben. Werte dazwischen sind für Druckstufen reserviert (µprint
+  rundet sie vorerst auf unten/oben). Die Servohöhen stellt man in µprint ein.
+- `G00`/`G01` mit `F` (mm/min); µprint begrenzt auf seine Höchstgeschwindigkeiten (G0 und G1 getrennt).
+- Am Ende zurück auf `X0 Y0`, dann `M84`. Kein `G28`, `M3`, `M5`.
+- µprint lehnt ab: `E`-Werte, Temperaturbefehle, Kreisbögen (`G2`/`G3`), Bewegungen ohne `G0`/`G1`.
+
+### Übersetzer (`main/plot.c`)
+
+- Reines C ohne ESP-IDF; Zeile für Zeile rein, EBB-Befehle über einen Callback raus.
+- CoreXY: Motor 1 = x + y, Motor 2 = x − y in Schritten. Gerechnet wird in ganzen Schritten ab dem
+  Nullpunkt, deshalb summieren sich keine Rundungsfehler.
+- Trapezprofil je Strecke (bis zu drei `LM`), Vorausschau über 32 Strecken mit Eckgeschwindigkeit wie bei Grbl
+  (junction deviation). Vor jedem Stiftwechsel wird auf Stillstand gebremst.
+- Jeder Motor bekommt eine eigene Beschleunigung, mit der er seine ganzzahligen Schritte genau in der
+  Phasendauer fährt (Ziel + ½ Schritt, damit Rundung ihn nie mit Rate ≈ 0 hängen lässt).
+- Jedes `LM` dauert mindestens 3 ms. Das EBB puffert nur einen Befehl, und der nächste muss über USB
+  ankommen, bevor der laufende fertig ist. Sehr kurze Strecken werden dafür gebremst und als ein einziges
+  `LM` ausgegeben.
+- Stift: am Start `SC,4`/`SC,5` mit den eingestellten Höhen (0–100 %) und `SC,8` (PWM-Kanäle), dann `SP,1`/`SP,0`
+  mit Wartezeit. Zwei Servo-Profile (Einstellung „Stift-Servo“), Werte aus der AxiDraw-Software
+  (`axidraw_conf.py`, `pen_handling.py`):
+
+  | Profil | Geräte | Ausgang | 0 % … 100 % (83,3 ns) | `SC,8` | `SP` |
+  |---|---|---|---|---|---|
+  | Standard | AxiDraw V3, SE, MiniKit | RB1 | 9855 … 27831 | 8 | `SP,1,<ms>` (getestet mit FW 2.8.1) |
+  | Bürstenlos (Beta) | NextDraw, AxiDraw mit Upgrade-Kit | RB2 | 5400 … 12600 | 1 | `SP,1,<ms>,2` |
+
+  saxi (Issue #340) bestätigt RB2 mit 5400…12600 an einem NextDraw (dort als `S2`-Pin 5 = RP5 = RB2).
+  Ein NextDraw hat FW ≥ 3.0.2, läuft also über das Beta-Antwortformat. Ob die NextDraw-Modelle ebenfalls
+  80 Schritte/mm haben, ist nicht geprüft.
+- Test auf dem PC: `tools/plot_sim.c` (lokal) fährt die Befehle in einem nachgebauten EBB im 40-µs-Takt ab.
+  Mit Testdateien (Quadrat, Kreis, Stern, feine Spirale mit 24 500 Strecken, Umkehr, flache Diagonalen, 300
+  Zufallspfade) stimmt die Position an jedem Stiftwechsel und am Ende exakt. Die Abweichung von der Linie liegt
+  unter 18 µm (ein Schritt = 12,5 µm), und es gibt kein `LM` unter 2 ms.
+
+Am Gerät zu prüfen: Vorzeichen von Y (Motor 1 = x + y?), USB-Durchsatz bei vielen kurzen Strecken, `SC,4`/`SC,5`
+mit den Prozentwerten, Wartezeiten des Stifts.
+
 ## Aufteilung zwischen µplot und µprint
 
 Nullpunkt, Achsrichtung und Zeichenfläche regelt **µplot** über ein AxiDraw-Profil. Das AxiDraw hat seinen
@@ -162,14 +211,18 @@ listet alle Releases; der Umschalter „Release / Alpha“ filtert das Versions-
 3. ~~Hardwaretest beim Bekannten, Log auswerten~~ (erledigt: FW 2.8.1, Log vom 08.10.2026)
 4. Protokollschicht für den Plotter-Modus: Antwortformat je Firmware (für den Testmodus erledigt, `ebb_cmd`
    und `ebb_detect` in `main/axidraw.c`). Zweiter Test mit alpha.5 bestätigt das für FW 2.x, FW 3.x bleibt Beta
-5. Einstellungen für den Plotter: Maschinenprofil (AxiDraw/NextDraw), Stifthöhen, Geschwindigkeit, Beschleunigung
-6. Übersetzer G-Code → `LM`/`S2` mit Vorausschau zum Abbremsen an Ecken
-7. Abbrechen über `ES`, danach Stift hoch und Motoren aus
-8. Pause über die PRG-Taste: regelmäßig `QG` abfragen (nicht `QB`), Stift hoch, Position merken, Fortsetzen
-   per Web-UI oder erneutem Tastendruck (erst nach Loslassen)
-9. Temperaturen und andere Druckerfelder im Plotter-Modus ausblenden
-10. µplot: AxiDraw-Profil mit Zeichenfläche (A4/A3), Offset 0, Nullpunkt oben links, Y gespiegelt;
-    Stift weiter über Z, µprint wertet den Z-Wechsel aus
+5. ~~Einstellungen für den Plotter~~ (erledigt: Geschwindigkeit Zeichnen/Verfahren, Beschleunigung, Stift-Servo
+   Standard/bürstenlos (NextDraw), Stifthöhen in %, Wartezeit)
+6. ~~Übersetzer G-Code → `LM`/`SP` mit Vorausschau~~ (erledigt, `main/plot.c`, am PC getestet)
+7. ~~Abbrechen~~ (erledigt): statt `ES` den Puffer verwerfen, Stift hoch, zurück auf X0 Y0, Motoren
+   aus. Weil höchstens ein `LM` (≤ 0,5 s) im EBB wartet, ist die Position bekannt und der Nullpunkt bleibt
+   erhalten.
+8. ~~Pause über die PRG-Taste~~ (erledigt): `QG` alle 200 ms (pausiert alle 100 ms), Puffer ausfahren,
+   Stift hoch, Motoren bleiben an; Fortsetzen per Web-UI oder erneutem Tastendruck (erst nach Loslassen)
+9. ~~Temperaturen und andere Druckerfelder im Plotter-Modus ausblenden~~ (erledigt, dazu „Plotten“ statt
+   „Drucken“)
+10. µplot: AxiDraw-Modus laut [uplot#1](https://github.com/dmyrenne/uplot/issues/1) (Zeichenfläche, Offset 0,
+    Nullpunkt oben links ohne Umklappen in Y, Z 0/1, Kennung in der ersten Zeile, Ende auf X0 Y0)
 11. Gesamttest beim Bekannten: SVG → µplot → µprint → AxiDraw, mit Stiftwechsel über die Taste
 
 ## Offen

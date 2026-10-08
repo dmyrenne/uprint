@@ -25,6 +25,13 @@ static const settings_t DEFAULTS = {
     .cancel_lift = 10,
     .park_x = 0,
     .park_y = 200,       // MK3S: Bett nach vorn
+    .plot_draw = 50,
+    .plot_travel = 150,
+    .plot_accel = 1000,
+    .pen_servo = 0,
+    .pen_up = 60,        // Vorgaben der AxiDraw-Software
+    .pen_down = 30,
+    .pen_delay = 200,
     .sd_mosi = 11,
     .sd_miso = 13,
     .sd_sclk = 12,
@@ -44,6 +51,7 @@ typedef struct {
 static const int_field_t INT_FIELDS[] = {
     FIELD(device_type), FIELD(baud), FIELD(pause_lift), FIELD(cancel_lift), FIELD(park_x), FIELD(park_y),
     FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs),
+    FIELD(plot_draw), FIELD(plot_travel), FIELD(plot_accel), FIELD(pen_servo), FIELD(pen_up), FIELD(pen_down), FIELD(pen_delay),
 };
 
 #define INT_AT(s, f) (*(int *)((char *)(s) + (f)->offset))
@@ -140,6 +148,24 @@ static const char *validate(const settings_t *s)
     }
     if (s->park_x < -50 || s->park_x > 1000 || s->park_y < -50 || s->park_y > 1000) {
         return "Parkposition: -50–1000 mm";
+    }
+    if (s->plot_draw < 1 || s->plot_draw > 250 || s->plot_travel < 1 || s->plot_travel > 250) {
+        return "Plotter-Geschwindigkeit: 1–250 mm/s";
+    }
+    if (s->plot_accel < 100 || s->plot_accel > 10000) {
+        return "Plotter-Beschleunigung: 100–10000 mm/s²";
+    }
+    if (s->pen_servo != 0 && s->pen_servo != 1) {
+        return "Unbekannter Stift-Servo";
+    }
+    if (s->pen_up < 0 || s->pen_up > 100 || s->pen_down < 0 || s->pen_down > 100) {
+        return "Stifthöhen: 0–100 %";
+    }
+    if (s->pen_up <= s->pen_down) {
+        return "Stift oben muss höher sein als Stift unten";
+    }
+    if (s->pen_delay < 0 || s->pen_delay > 1000) {
+        return "Wartezeit des Stifts: 0–1000 ms";
     }
     const int pins[] = {s->sd_mosi, s->sd_miso, s->sd_sclk, s->sd_cs};
     for (int i = 0; i < 4; i++) {
