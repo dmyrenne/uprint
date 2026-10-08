@@ -17,6 +17,7 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "axidraw.h"
 #include "captive.h"
 #include "http_util.h"
 #include "printer.h"
@@ -423,6 +424,13 @@ static esp_err_t wifi_delete(httpd_req_t *req)
     return send_result(req, wifi_forget(), "");
 }
 
+static bool printer_busy(void)
+{
+    printer_status_t st;
+    printer_get_status(&st);
+    return st.state == PRINTER_PRINTING || st.state == PRINTER_PAUSED;
+}
+
 static esp_err_t settings_get_handler(httpd_req_t *req)
 {
     settings_t c;
@@ -437,10 +445,10 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     http_json_escape(host, sizeof(host), c.hostname);
     http_json_escape(pass, sizeof(pass), c.ap_password);
     snprintf(body, sizeof(body),
-             "{\"device_name\":\"%s\",\"hostname\":\"%s\",\"ap_password\":\"%s\",\"baud\":%d,\"pause_lift\":%d,\"cancel_lift\":%d"
+             "{\"device_name\":\"%s\",\"hostname\":\"%s\",\"ap_password\":\"%s\",\"device_type\":%d,\"baud\":%d,\"pause_lift\":%d,\"cancel_lift\":%d"
              ",\"park_x\":%d,\"park_y\":%d,\"sd_mosi\":%d,\"sd_miso\":%d,\"sd_sclk\":%d,\"sd_cs\":%d"
              ",\"reboot_required\":%s,\"version\":\"%s\",\"variant\":\"%s\",\"api_key\":\"%s\"}",
-             name, host, pass, c.baud, c.pause_lift, c.cancel_lift, c.park_x, c.park_y,
+             name, host, pass, c.device_type, c.baud, c.pause_lift, c.cancel_lift, c.park_x, c.park_y,
              c.sd_mosi, c.sd_miso, c.sd_sclk, c.sd_cs, settings_reboot_required() ? "true" : "false", version, uprint_variant(), c.api_key);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
@@ -505,6 +513,8 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
         strlcpy(c.ap_password, buf, sizeof(c.ap_password));
     }
     bool bad = false;
+    int old_device = c.device_type;
+    form_int(body, "device_type", &c.device_type, &bad);
     form_int(body, "baud", &c.baud, &bad);
     form_int(body, "pause_lift", &c.pause_lift, &bad);
     form_int(body, "cancel_lift", &c.cancel_lift, &bad);
@@ -518,10 +528,17 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
         return http_send_error(req, "400 Bad Request", "Bitte nur ganze Zahlen eingeben");
     }
 
+    bool device_changed = c.device_type != old_device;
+    if (device_changed && printer_busy()) {
+        return http_send_error(req, "409 Conflict", "Gerätetyp lässt sich während eines Drucks nicht ändern");
+    }
     const char *error = NULL;
     esp_err_t err = settings_update(&c, &error);
     if (err != ESP_OK) {
         return http_send_error(req, err == ESP_ERR_INVALID_ARG ? "400 Bad Request" : "500 Internal Server Error", error);
+    }
+    if (device_changed) {
+        printer_device_changed();
     }
     wifi_apply_device_name();
     return settings_get_handler(req);
@@ -550,13 +567,6 @@ static void schedule_restart(void)
         esp_timer_create(&args, &timer);
     }
     esp_timer_start_once(timer, 800 * 1000);
-}
-
-static bool printer_busy(void)
-{
-    printer_status_t st;
-    printer_get_status(&st);
-    return st.state == PRINTER_PRINTING || st.state == PRINTER_PAUSED;
 }
 
 // Body: Firmware-Image (build/uprint.bin) als Rohdaten
@@ -636,6 +646,51 @@ static esp_err_t ota_post(httpd_req_t *req)
     schedule_restart();
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
+}
+
+// ---------- AxiDraw-Testmodus ----------
+
+static esp_err_t axidraw_test_get(httpd_req_t *req)
+{
+    axidraw_test_status_t st;
+    char prompt[sizeof(st.prompt) * 6];
+    char body[sizeof(prompt) + 96];
+    axidraw_test_status(&st);
+    http_json_escape(prompt, sizeof(prompt), st.prompt);
+    snprintf(body, sizeof(body), "{\"running\":%s,\"done\":%s,\"prompt\":\"%s\",\"log_len\":%u}",
+             st.running ? "true" : "false", st.done ? "true" : "false", prompt, (unsigned)st.log_len);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, body);
+}
+
+// ?motion=1 fährt zusätzlich ein kleines Quadrat
+static esp_err_t axidraw_test_post(httpd_req_t *req)
+{
+    char query[32], val[4];
+    bool motion = httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
+                  httpd_query_key_value(query, "motion", val, sizeof(val)) == ESP_OK && strcmp(val, "1") == 0;
+    return send_result(req, axidraw_test_start(motion), "Kein AxiDraw verbunden oder Test läuft bereits");
+}
+
+static esp_err_t axidraw_abort_post(httpd_req_t *req)
+{
+    axidraw_test_abort();
+    return http_send_ok(req);
+}
+
+static esp_err_t axidraw_log_get(httpd_req_t *req)
+{
+    char buf[1024];
+    size_t off = 0, n;
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    while ((n = axidraw_test_log(buf, sizeof(buf), off)) > 0) {
+        if (httpd_resp_send_chunk(req, buf, n) != ESP_OK) {
+            return ESP_FAIL;
+        }
+        off += n;
+    }
+    return httpd_resp_send_chunk(req, NULL, 0);
 }
 
 static esp_err_t reboot_post(httpd_req_t *req)
@@ -733,6 +788,10 @@ esp_err_t web_start(void)
         {.uri = "/api/settings/apikey", .method = HTTP_POST, .handler = api_key_post},
         {.uri = "/api/ota",       .method = HTTP_POST,   .handler = ota_post},
         {.uri = "/api/download",  .method = HTTP_GET,    .handler = download_get},
+        {.uri = "/api/axidraw/test",  .method = HTTP_GET,  .handler = axidraw_test_get},
+        {.uri = "/api/axidraw/test",  .method = HTTP_POST, .handler = axidraw_test_post},
+        {.uri = "/api/axidraw/abort", .method = HTTP_POST, .handler = axidraw_abort_post},
+        {.uri = "/api/axidraw/log",   .method = HTTP_GET,  .handler = axidraw_log_get},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &routes[i]), TAG, "route %s", routes[i].uri);

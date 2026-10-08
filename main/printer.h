@@ -45,5 +45,8 @@ esp_err_t printer_resume(void);
 // Bricht einen Druck ab bzw. quittiert einen Fehler.
 esp_err_t printer_cancel(void);
 
+// Nach Änderung des Gerätetyps: neu verbinden. ESP_ERR_INVALID_STATE während eines Drucks.
+esp_err_t printer_device_changed(void);
+
 // true, wenn die Datei gerade gedruckt wird (nicht löschen/überschreiben).
 bool printer_is_using(storage_vol_t vol, const char *name);

@@ -194,6 +194,8 @@
   .illu .cut { stroke: var(--warn); stroke-width: 2.4; stroke-linecap: round; }
   .illu .mu { fill: var(--ink); font: 700 30px var(--sans); }
   .illu .led { fill: var(--warn); }
+  .illu .art { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  .illu .pen { fill: var(--accent); }
   .illu.wait .cable { stroke: var(--accent); stroke-dasharray: 3 5; animation: flow 1s linear infinite; }
   .illu.wait .led { fill: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
   .illu.wait .x { display: none; }
@@ -216,6 +218,12 @@
   button.danger { color: var(--warn); }
   button.danger:hover:not(:disabled) { border-color: var(--warn); background: var(--warn-bg); }
 
+  .axi-prompt { font-size: 15px; font-weight: 600; margin-top: 14px; }
+  .axi-log { font: 500 11px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+             margin: 14px 0 0; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .axi-obs { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .axi-obs textarea { font: 13px var(--sans, inherit); color: var(--ink); background: var(--field); border: 1px solid var(--line-strong);
+                      border-radius: 6px; padding: 7px 9px; resize: vertical; }
   .msg { padding: 8px 11px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); white-space: pre-wrap; font-size: 13px; }
   .msg.ok { background: var(--accent-soft); color: var(--ink); }
   .foot { width: 100%; max-width: 1180px; margin: 0 auto; padding: 4px 24px 24px; font-size: 12px; color: var(--muted); text-align: center; }
@@ -296,6 +304,33 @@
           <circle class="led" cx="252" cy="47" r="2.4"/>
         </svg>
       </div>
+      <div class="anim illu" id="illuAxi" hidden>
+        <svg viewBox="0 0 276 126" aria-hidden="true">
+          <!-- AxiDraw von oben: X-Schiene mit Motoren hinten, Schlitten, Arm nach vorn, Stifthalter über dem Papier -->
+          <rect class="thin" x="14" y="34" width="96" height="74" rx="1.5"/>
+          <path class="art" d="M24 99C40 99 46 97 52 93S58 85 62 89S70 99 76 97S90 99 100 99"/>
+          <path class="art" d="M24 93C38 93 44 92 50 88S56 79 60 82S64 86 66 85"/>
+          <rect class="frame solid" x="8" y="10" width="108" height="9" rx="2"/>
+          <path class="thin" d="M22 14.5H102"/>
+          <rect class="frame solid" x="5" y="5" width="16" height="19" rx="2"/>
+          <circle class="thin" cx="13" cy="14.5" r="3.5"/>
+          <rect class="frame solid" x="103" y="5" width="16" height="19" rx="2"/>
+          <circle class="thin" cx="111" cy="14.5" r="3.5"/>
+          <rect class="frame solid" x="48" y="7" width="24" height="15" rx="2"/>
+          <rect class="frame solid" x="56" y="22" width="9" height="52" rx="1.5"/>
+          <path class="thin" d="M60.5 26V70"/>
+          <rect class="frame solid" x="51" y="72" width="19" height="13" rx="2"/>
+          <circle class="pen" cx="66" cy="85" r="2.6"/>
+          <!-- USB-Kabel, getrennt -->
+          <path class="cable" d="M119 14C142 14 132 98 152 98C172 98 172 64 191 64"/>
+          <g class="x"><circle class="solid" cx="152" cy="98" r="9"/><path class="cut" d="M147 93l10 10M157 93l-10 10"/></g>
+          <!-- µprint -->
+          <rect class="frame" x="191" y="59" width="5" height="10" rx="1"/>
+          <rect class="frame" x="196" y="38" width="66" height="52" rx="7"/>
+          <text class="mu" x="229" y="75" text-anchor="middle">µ</text>
+          <circle class="led" cx="252" cy="47" r="2.4"/>
+        </svg>
+      </div>
       <div class="print-main">
         <div class="job-title" id="jobTitle"></div>
         <div class="job-sub" id="jobSub"></div>
@@ -314,6 +349,27 @@
       </div>
     </div>
   </section>
+
+  <details class="card wide" id="axiBox" open hidden>
+    <summary data-i18n="h.axidraw"></summary>
+    <p class="hint" data-i18n="axi.intro" style="margin-top:0"></p>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="axiMotion"> <span data-i18n="axi.motion"></span></label>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="primary" id="axiStart" data-i18n="axi.start"></button>
+      <button type="button" class="danger" id="axiAbort" data-i18n="axi.abort"></button>
+    </div>
+    <div class="derived axi-prompt" id="axiPrompt" hidden></div>
+    <div class="axi-obs" id="axiObs" hidden>
+      <p class="sub" data-i18n="axi.obs"></p>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.pen"> <span data-i18n="axi.obs.pen"></span></label>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.square"> <span data-i18n="axi.obs.square"></span></label>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.lm"> <span data-i18n="axi.obs.lm"></span></label>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.home"> <span data-i18n="axi.obs.home"></span></label>
+      <label><span data-i18n="axi.notes"></span><textarea id="axiNotes" rows="3"></textarea></label>
+      <div class="row"><button type="button" class="primary" id="axiDownload" data-i18n="axi.download"></button></div>
+    </div>
+    <pre class="axi-log" id="axiLog" hidden></pre>
+  </details>
 
   <div class="cols">
   <div class="col">
@@ -390,6 +446,11 @@
       <p class="hint full" id="slicerHint"></p>
 
       <p class="sub full" data-i18n="set.printer"></p>
+      <label class="full"><span data-i18n="set.device_type"></span><select name="device_type">
+        <option value="0" data-i18n="set.device_type.printer"></option>
+        <option value="1" data-i18n="set.device_type.axidraw"></option>
+      </select></label>
+      <p class="hint full" data-i18n="set.device_type.hint"></p>
       <label class="full"><span data-i18n="set.baud"></span><select name="baud"></select></label>
       <p class="hint full" data-i18n="set.baud.hint"></p>
 
@@ -499,7 +560,43 @@ function profile(seed) {
 }
 function hash(str) { let h = 2166136261; for (const c of str) h = Math.imul(h ^ c.codePointAt(0), 16777619); return h >>> 0; }
 
+// Logo im AxiDraw-Modus: Wellenlinien wie auf „Unknown Pleasures“ (Verfahren wie in µgen): von vorn nach
+// hinten zeichnen, je Spalte die höchste Stelle merken, verdeckte Teile weglassen. Vorderste Linie im Akzent.
+function drawWaves() {
+  let s = (Math.random() * 2 ** 32) >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const grid = Array.from({ length: 24 }, () => Array.from({ length: 12 }, rnd));
+  const smooth = (t) => t * t * (3 - 2 * t);
+  const noise = (x, r) => {   // Wertrauschen, glatt in x, je Linie eigene Werte
+    const i = Math.floor(x), f = smooth(x - i), row = grid[r % grid.length];
+    return row[i % row.length] * (1 - f) + row[(i + 1) % row.length] * f;
+  };
+  const n = 9, x0 = 5, x1 = 29, step = .5, cols = Math.round((x1 - x0) / step) + 1;
+  const horizon = new Array(cols).fill(Infinity), out = [];
+  for (let r = n - 1; r >= 0; r--) {   // vorn (unten) zuerst
+    const y = 12 + r * 2.1, runs = [];
+    let run = null;
+    for (let c = 0; c < cols; c++) {
+      const x = x0 + c * step, u = (x - 17) / 12;
+      const env = Math.exp(-Math.pow(Math.abs(u) / .42, 2));
+      const py = y - 7 * env * Math.pow(noise(x / 2.2, r), 2) - noise(x / .9, r + 7) * .25 * (1 - env);
+      if (py <= horizon[c]) {
+        horizon[c] = py;
+        if (!run) { run = []; runs.push(run); }
+        run.push(x.toFixed(1) + ' ' + py.toFixed(2));
+      } else run = null;
+    }
+    const front = r === n - 1;
+    for (const p of runs) if (p.length > 1)
+      out.push(`<path d="M${p.join('L')}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="${front ? 'var(--accent)' : 'var(--panel)'}" stroke-width="${front ? 1.3 : .8}" opacity="${front ? 1 : .85}"/>`);
+  }
+  $('mark').innerHTML = out.join('');
+}
+
+let markAxi = false;
 function drawMark() {   // Logo: bei jedem Laden (und Klick) ein neues Gefäß, die oberste Schicht im Akzent
+  markAxi = axiMode();
+  if (markAxi) return drawWaves();
   const r = profile(Math.random() * 2 ** 32), n = 11, out = [];
   for (let i = 0; i < n; i++) {
     const y = 28 - i * 2.2, half = r(i / (n - 1)) * 12, top = i === n - 1;
@@ -555,7 +652,7 @@ function renderStatus() {
   const s = st || {}, a = !offline && active(), done = finished(), show = a || done;
   const state = offline ? 'offline' : s.state || 'connecting';
   const tab = $('tab');
-  tab.textContent = t('state.' + state);
+  tab.textContent = t(state === 'disconnected' && axiMode() ? 'state.axiDisconnected' : 'state.' + state);
   tab.className = 'tab ' + ({ idle: 'on', printing: 'on busy', paused: 'on', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
 
   const pct = a && s.size ? s.pos / s.size * 100 : done ? 100 : 0;
@@ -582,7 +679,7 @@ function renderStatus() {
   let title, sub = s.message || '', bad = s.state === 'error';
   if (offline) { title = t('stage.offline'); sub = t('stage.offlineHint'); bad = true; }
   else if (show) title = s.file;
-  else if (s.state === 'disconnected') { title = t('stage.disconnected'); sub = t('stage.disconnectedHint'); }
+  else if (s.state === 'disconnected') { const k = axiMode() ? 'stage.axiDisconnected' : 'stage.disconnected'; title = t(k); sub = t(k + 'Hint'); }
   else if (s.state === 'connecting') { title = t('stage.connecting'); sub = ''; }
   else if (s.state === 'error') { title = t('state.error'); sub = s.message; }
   else if (chosen) { title = chosen.name; sub = volName(chosen.storage) + ' · ' + fmtSize(chosen.size) + ' · ' + t('job.ready'); }
@@ -605,8 +702,10 @@ function renderStatus() {
   else layersKey = '';
   // Ohne Drucker: Grafik mit getrenntem Kabel, beim Verbinden läuft das Kabel
   const unplugged = !offline && (s.state === 'disconnected' || s.state === 'connecting');
-  $('illu').hidden = !unplugged;
-  $('illu').classList.toggle('wait', s.state === 'connecting');
+  for (const [id, on] of [['illu', !axiMode()], ['illuAxi', axiMode()]]) {
+    $(id).hidden = !unplugged || !on;
+    $(id).classList.toggle('wait', s.state === 'connecting');
+  }
   renderFiles(); renderOta();
 }
 $('bStart').onclick = () => { const f = selected() || finishedFile(); if (f) act('POST', '/api/print' + fileQuery(f)); };
@@ -935,7 +1034,7 @@ $('wifiForget').onclick = async () => {
 async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1000 : 4000); }
 
 // ---------- Einstellungen ----------
-const SET_KEYS = ['device_name', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y', 'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
+const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y', 'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm');
 let settings = null;
@@ -961,7 +1060,7 @@ function renderSettings() {
     bar.classList.toggle('floating', mod);
   }
   $('rebootBox').hidden = !settings || !settings.reboot_required;
-  renderOta(); renderSlicer(); renderName();
+  renderOta(); renderSlicer(); renderName(); renderAxi();
 }
 async function loadSettings() {
   try { settings = await api('GET', '/api/settings'); } catch { return; }
@@ -981,6 +1080,61 @@ $('setRevert').onclick = () => { writeSettings(settings); renderSettings(); say(
 $('rebootBtn').onclick = async () => {
   if (!confirm(t('confirm.reboot'))) return;
   try { await api('POST', '/api/reboot'); say(t('set.rebooting')); } catch (e) { say(e.message, true); }
+};
+
+// ---------- AxiDraw-Testmodus ----------
+// Nur sichtbar, wenn als Gerätetyp AxiDraw gespeichert ist. Das Log kommt vom Gerät,
+// die Beobachtungen hängt der Browser beim Herunterladen an.
+let axi = null, axiLog = '', axiTimer = null;
+const axiMode = () => !!settings && settings.device_type === 1;
+function renderAxi() {
+  if (markAxi !== axiMode()) drawMark();
+  $('axiBox').hidden = !axiMode();
+  if (!axiMode()) return;
+  const run = !!axi && axi.running, ready = !offline && !!st && st.state === 'idle';
+  $('axiStart').disabled = run || !ready;
+  $('axiMotion').disabled = run;
+  $('axiAbort').hidden = !run;
+  $('axiPrompt').hidden = !axi || !(run || axi.done);
+  $('axiPrompt').textContent = axi ? axi.prompt : '';
+  $('axiObs').hidden = !axi || run || !axi.done;
+  $('axiLog').hidden = !axiLog;
+  if ($('axiLog').textContent !== axiLog) {
+    const el = $('axiLog'), end = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+    el.textContent = axiLog;
+    if (end) el.scrollTop = el.scrollHeight;   // mitlaufen, außer der Nutzer hat hochgescrollt
+  }
+}
+async function pollAxi() {
+  clearTimeout(axiTimer);
+  if (axiMode()) {
+    try {
+      axi = await api('GET', '/api/axidraw/test');
+      if (axi.log_len !== axiLog.length) axiLog = await (await fetch('/api/axidraw/log')).text();
+    } catch {}
+    renderAxi();
+  }
+  axiTimer = setTimeout(pollAxi, axi && axi.running ? 700 : 3000);
+}
+$('axiStart').onclick = async () => {
+  if ($('axiMotion').checked && !confirm(t('confirm.axi_motion'))) return;
+  try {
+    await api('POST', '/api/axidraw/test' + ($('axiMotion').checked ? '?motion=1' : ''));
+    for (const c of $('axiObs').querySelectorAll('input')) c.checked = false;
+    axiLog = ''; pollAxi();
+  } catch (e) { say(e.message, true); }
+};
+$('axiAbort').onclick = async () => { try { await api('POST', '/api/axidraw/abort'); } catch (e) { say(e.message, true); } };
+$('axiDownload').onclick = () => {
+  const obs = [...$('axiObs').querySelectorAll('input[data-obs]')]
+    .map((c) => (c.checked ? '[x] ' : '[ ] ') + t(c.dataset.obs));
+  const notes = $('axiNotes').value.trim();
+  const text = axiLog + '\n---- ' + t('axi.obs') + ' ----\n' + obs.join('\n') + '\n' + (notes ? '\n' + notes + '\n' : '');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  a.download = 'uprint-axidraw-test-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.txt';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
 // ---------- Gerätename ----------
@@ -1049,13 +1203,14 @@ $('lang').onchange = () => {
   try { localStorage.setItem('uprint-lang', LANG); } catch {}
   applyI18n(); renderName(); renderStatus(); renderVolumes(); renderUpload(); renderWifi();
   if (settings) { const cur = readSettings(); writeSettings({ ...settings, ...cur, baud: +cur.baud }); }
+  renderAxi();
 };
 
 // ---------- Start ----------
 applyI18n();
 drawMark(); $('mark').onclick = drawMark;
 renderStatus(); renderUpload();
-poll(); pollWifi(); loadSettings();
+poll(); pollWifi(); loadSettings(); pollAxi();
 </script>
 </body>
 </html>

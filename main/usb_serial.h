@@ -20,6 +20,9 @@ bool usb_serial_connected(void);
 // Wird bei jeder neuen Verbindung erhöht, damit Nutzer einen Reconnect erkennen.
 uint32_t usb_serial_generation(void);
 
+// Beschreibung des zuletzt verbundenen Geräts (VID/PID/Klasse, Treiber), für Diagnose
+void usb_serial_info(char *out, size_t len);
+
 esp_err_t usb_serial_write(const char *data, size_t len);
 
 // Liest eine Zeile ohne Zeilenende. Rückgabe: Länge, oder -1 bei Timeout.
