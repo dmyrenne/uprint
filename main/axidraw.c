@@ -7,8 +7,11 @@
  * So lässt sich an einem echten Gerät klären, wie es sich verhält, bevor der eigentliche
  * Plotter-Modus entsteht (siehe docs/axidraw.md).
  *
- * Protokoll: Befehle enden mit CR. Die meisten werden mit "OK" bestätigt, Abfragen liefern
- * stattdessen (oder zusätzlich) eine Datenzeile, Fehler beginnen mit "!".
+ * Protokoll: Befehle enden mit CR. Wie die Antwort aussieht, hängt von der Firmware ab (ebb_syntax_t):
+ * - FW 2.x (Legacy, am Gerät mit 2.8.1 geprüft): Befehle werden mit "OK" bestätigt, die meisten Abfragen
+ *   liefern eine Datenzeile und dann "OK". V, QG und QM liefern nur die Datenzeile, ohne "OK".
+ * - FW 3.x (Beta, nur nach Dokumentation): nach CU,10,1 genau eine Zeile "Befehl[,Daten]", kein "OK".
+ * Fehler beginnen mit "!" (bei FW 3.x "Befehl,!…").
  */
 #include <inttypes.h>
 #include <stdarg.h>
@@ -31,7 +34,7 @@ static const char *TAG = "axidraw";
 
 #define LOG_SIZE          (16 * 1024)
 #define LOG_RESERVE       64      // Platz für den Hinweis, dass das Log voll ist
-#define REPLY_SILENCE_MS  250     // nach der letzten Zeile so lange auf weitere warten
+#define REPLY_SILENCE_MS  250     // Firmware unbekannt: nach der letzten Zeile so lange auf weitere warten
 #define REPLY_TIMEOUT_MS  2000
 #define IDLE_TIMEOUT_MS   10000
 #define STEPS_PER_MM      80      // 2032 Schritte/Zoll bei 1/16-Mikroschritt
@@ -40,10 +43,20 @@ static const char *TAG = "axidraw";
 #define LIVE_BUTTON_S     15
 #define LATCH_WAIT_S      8
 
-// QG-Statusbyte (FW 3.x)
-#define QG_BUTTON         0x20
+// QG-Statusbyte (ab FW 2.6.2). Bit 6/7 sind bei FW 2.x nur Pin-Zustände (RB2/RB5), erst ab FW 3
+// bedeuten sie "Spannung war weg" und "Endschalter ausgelöst".
+#define QG_LIMIT          0x80
+#define QG_POWER_LOST     0x40
+#define QG_BUTTON         0x20    // seit der letzten QG/QB-Abfrage gedrückt; beide teilen sich das Flag
 #define QG_PEN_UP         0x10
 #define QG_BUSY           0x0f    // Befehl läuft, Motor 1/2 bewegt sich, FIFO nicht leer
+#define QG_STATE          (QG_BUTTON | QG_PEN_UP | QG_BUSY)
+
+typedef enum {
+    EBB_UNKNOWN,   // Firmware nicht erkannt: sammeln bis "OK", Fehler oder kurze Stille
+    EBB_LEGACY,    // FW 2.x: "OK" bzw. Daten + "OK"; V, QG, QM ohne "OK"
+    EBB_FUTURE,    // FW 3.x nach CU,10,1 (Beta): genau eine Zeile "Befehl[,Daten]"
+} ebb_syntax_t;
 
 static SemaphoreHandle_t s_lock;
 static char s_log[LOG_SIZE];
@@ -60,6 +73,7 @@ static volatile bool s_abort;
 static int64_t s_t0;
 static char s_version[96];
 static int s_fw[3];
+static ebb_syntax_t s_syntax;
 
 #define LOCK()   xSemaphoreTake(s_lock, portMAX_DELAY)
 #define UNLOCK() xSemaphoreGive(s_lock)
@@ -138,14 +152,34 @@ static bool wait_ms(int ms)
     return alive();
 }
 
-// Sendet einen Befehl und sammelt die Antwort bis "OK", einer Fehlerzeile ("!…") oder kurzer Stille.
-// reply bekommt die erste Datenzeile (alles außer "OK"). Rückgabe: Zahl der Antwortzeilen, -1 ohne Verbindung.
+// Legacy: Antworten ohne abschließendes "OK", nur eine Datenzeile (bei FW 2.8.1 so beobachtet)
+static bool legacy_without_ok(const char *name)
+{
+    return strcmp(name, "V") == 0 || strcmp(name, "QG") == 0 || strcmp(name, "QM") == 0;
+}
+
+// "QS,12,-3" → "12,-3", wenn die Zeile mit dem Befehlsnamen beginnt; sonst NULL
+static const char *strip_name(const char *line, const char *name)
+{
+    size_t n = strlen(name);
+    if (strncmp(line, name, n) != 0) {
+        return NULL;
+    }
+    return line[n] == ',' ? line + n + 1 : line[n] == '\0' ? line + n : NULL;
+}
+
+// Sendet einen Befehl und sammelt die Antwort im Format der erkannten Firmware (s_syntax).
+// reply bekommt die Daten ohne "OK" und ohne vorangestellten Befehlsnamen ("QM,0,0,0,0" → "0,0,0,0"),
+// bei einem Fehler die Fehlerzeile ab "!". Rückgabe: Zahl der Antwortzeilen, -1 ohne Verbindung.
 // quiet: nur Auffälliges protokollieren (für häufige Statusabfragen).
 static int ebb_cmd(const char *cmd, char *reply, size_t reply_len, bool quiet)
 {
     char buf[80];
     char line[160];
+    char name[8];
     int n = snprintf(buf, sizeof(buf), "%s\r", cmd);
+    size_t nl = strcspn(cmd, ",");
+    strlcpy(name, cmd, nl < sizeof(name) ? nl + 1 : sizeof(name));
     if (reply) {
         reply[0] = '\0';
     }
@@ -156,34 +190,65 @@ static int ebb_cmd(const char *cmd, char *reply, size_t reply_len, bool quiet)
         tlog("> %s: Senden fehlgeschlagen", cmd);
         return -1;
     }
+    // V hat in keinem Format ein "OK", auch wenn die Firmware noch unbekannt ist
+    bool one_line = strcmp(name, "V") == 0 || (s_syntax == EBB_LEGACY && legacy_without_ok(name));
+    bool complete = false, error = false;
     int lines = 0;
     int64_t start = now_ms();
     int64_t last = start;
     for (;;) {
         int64_t t = now_ms();
-        if (t - start > REPLY_TIMEOUT_MS || (lines > 0 && t - last > REPLY_SILENCE_MS)) {
+        if (t - start > REPLY_TIMEOUT_MS) {
+            break;
+        }
+        // Nach einem Fehler kommt bei Legacy evtl. noch ein "OK", ohne Firmware ist das Ende unklar
+        if ((error || s_syntax == EBB_UNKNOWN) && lines > 0 && t - last > REPLY_SILENCE_MS) {
+            complete = true;
             break;
         }
         if (usb_serial_readline(line, sizeof(line), pdMS_TO_TICKS(50)) <= 0) {
             continue;
         }
-        lines++;
         last = now_ms();
+        if (s_syntax == EBB_FUTURE) {
+            const char *data = strip_name(line, name);
+            if (!data) {
+                tlog("< %s (unerwartet auf %s)", line, name);
+                continue;
+            }
+            lines++;
+            if (!quiet || data[0] == '!') {
+                tlog("< %s", line);
+            }
+            if (reply) {
+                strlcpy(reply, data, reply_len);
+            }
+            complete = true;
+            break;
+        }
+        lines++;
         if (!quiet || line[0] == '!') {
             tlog("< %s", line);
         }
         if (strcmp(line, "OK") == 0) {
+            complete = true;
             break;
         }
         if (reply && !reply[0]) {
-            strlcpy(reply, line, reply_len);
+            const char *data = s_syntax == EBB_LEGACY ? strip_name(line, name) : NULL;
+            strlcpy(reply, data ? data : line, reply_len);
         }
         if (line[0] == '!') {
+            error = true;
+        } else if (one_line) {
+            complete = true;
             break;
         }
     }
     if (lines == 0) {
         tlog("> %s: keine Antwort", cmd);
+    } else if (!complete) {
+        tlog("> %s: Antwort unvollständig (%d Zeile(n), Ende fehlt)", cmd, lines);
     }
     return lines;
 }
@@ -223,12 +288,47 @@ static bool fw_at_least(int major, int minor, int patch)
     return true;
 }
 
-// QG-Antwort: "3E" (Legacy) oder "QG,3E"
+static const char *syntax_name(void)
+{
+    switch (s_syntax) {
+    case EBB_LEGACY: return "Legacy (FW 2.x, getestet)";
+    case EBB_FUTURE: return "CU,10,1 (FW 3.x, Beta)";
+    default:         return "unbekannt (Ende der Antwort per Zeitablauf)";
+    }
+}
+
+// Fragt die Firmware ab und legt fest, welches Antwortformat erwartet wird. Bei FW 3.x wird auf
+// CU,10,1 umgestellt; ob das greift, zeigt die Antwort auf QT (beginnt dann mit "QT").
+static void ebb_detect(void)
+{
+    char r[96];
+    s_syntax = EBB_UNKNOWN;
+    s_version[0] = '\0';
+    ebb("V", r, sizeof(r));
+    strlcpy(s_version, r, sizeof(s_version));
+    if (!parse_version(r, s_fw)) {
+        tlog("  → Firmwareversion nicht erkannt, Antwortformat %s", syntax_name());
+        return;
+    }
+    if (!fw_at_least(3, 0, 0)) {
+        s_syntax = EBB_LEGACY;
+    } else if (strncmp(r, "V,", 2) == 0) {
+        s_syntax = EBB_FUTURE;   // Board steht noch von einer früheren Verbindung auf CU,10,1
+    } else {
+        ebb("CU,10,1", NULL, 0);
+        ebb("QT", r, sizeof(r));
+        s_syntax = strip_name(r, "QT") ? EBB_FUTURE : EBB_LEGACY;
+    }
+    tlog("  → Firmware %d.%d.%d, LM %s, Antwortformat %s", s_fw[0], s_fw[1], s_fw[2],
+         fw_at_least(2, 7, 0) ? "vorhanden" : "fehlt (erst ab 2.7.0)", syntax_name());
+    if (fw_at_least(3, 0, 0)) {
+        tlog("  → FW 3.x ist in µprint noch Beta: bitte dieses Log an den Entwickler schicken");
+    }
+}
+
+// QG-Antwort: Statusbyte in Hex ("3E"), der Befehlsname ist schon entfernt
 static bool parse_qg(const char *s, int *out)
 {
-    if (strncmp(s, "QG,", 3) == 0) {
-        s += 3;
-    }
     char *end;
     long v = strtol(s, &end, 16);
     if (end == s || v < 0 || v > 0xff) {
@@ -258,8 +358,9 @@ static bool wait_idle(void)
             if (!(qg & QG_BUSY)) {
                 return true;
             }
-        } else if (ebb_cmd("QM", r, sizeof(r), true) > 0 && strncmp(r, "QM,", 3) == 0) {
-            if (strcmp(r, "QM,0,0,0,0") == 0 || strcmp(r, "QM,0,0,0") == 0) {
+        } else if (ebb_cmd("QM", r, sizeof(r), true) > 0 && r[0] != '!') {
+            const char *qm = strip_name(r, "QM") ? strip_name(r, "QM") : r;
+            if (strcmp(qm, "0,0,0,0") == 0 || strcmp(qm, "0,0,0") == 0) {
                 return true;
             }
         } else {
@@ -278,6 +379,10 @@ static void log_qg(void)
     if (query_qg(&qg, false)) {
         tlog("  → QG %02X: Stift %s, Taste %s, %s", qg, qg & QG_PEN_UP ? "oben" : "unten",
              qg & QG_BUTTON ? "gedrückt" : "nicht gedrückt", qg & QG_BUSY ? "beschäftigt" : "ruhig");
+        if (fw_at_least(3, 0, 0) && (qg & (QG_LIMIT | QG_POWER_LOST))) {
+            tlog("  → QG %02X:%s%s", qg, qg & QG_POWER_LOST ? " Spannung war weg" : "",
+                 qg & QG_LIMIT ? " Endschalter ausgelöst" : "");
+        }
     }
 }
 
@@ -303,18 +408,9 @@ static bool test_connection(void)
 
 static bool test_status(void)
 {
-    char r[96];
     section("2. Firmware und Status");
     prompt("Firmware und Status werden abgefragt …");
-    ebb("V", r, sizeof(r));
-    strlcpy(s_version, r, sizeof(s_version));
-    if (parse_version(r, s_fw)) {
-        tlog("  → Firmware %d.%d.%d, LM %s, QG-Tastenbit %s", s_fw[0], s_fw[1], s_fw[2],
-             fw_at_least(2, 5, 3) ? "vorhanden" : "fehlt (erst ab 2.5.3)",
-             fw_at_least(3, 0, 0) ? "ab FW 3 dokumentiert" : "vor FW 3 nicht dokumentiert");
-    } else {
-        tlog("  → Firmwareversion nicht erkannt");
-    }
+    ebb_detect();
     const char *queries[] = {"QT", "QC", "QE", "QG", "QM", "QS", "QB"};
     for (size_t i = 0; i < sizeof(queries) / sizeof(queries[0]) && alive(); i++) {
         ebb(queries[i], NULL, 0);
@@ -367,7 +463,7 @@ static bool test_motion(void)
     ebb("QS", NULL, 0);
     tlog("  → erwartet: 0,0 (zurück am Start)");
 
-    if (!fw_at_least(2, 5, 3)) {
+    if (!fw_at_least(2, 7, 0)) {
         tlog("LM übersprungen, Firmware zu alt");
     } else {
         // LM zählt Motorschritte: nach rechts heißt beide Motoren gleich weit
@@ -401,8 +497,8 @@ static bool test_motion(void)
 static bool test_button_live(void)
 {
     section("5. PRG-Taste, live");
-    ebb("QB", NULL, 0);   // gespeicherten Druck verwerfen
-    int last = -1, presses = 0;
+    int last = -1, presses = 0, qg;
+    query_qg(&qg, true);   // gespeicherten Druck verwerfen (QG und QB teilen sich das Flag)
     int64_t end = now_ms() + LIVE_BUTTON_S * 1000;
     tlog("QG alle 100 ms, nur Änderungen werden protokolliert");
     while (now_ms() < end) {
@@ -410,7 +506,6 @@ static bool test_button_live(void)
             return false;
         }
         prompt("Jetzt die PRG-Taste ein paar Mal drücken (noch %d s).", (int)((end - now_ms() + 999) / 1000));
-        int qg;
         if (!query_qg(&qg, true)) {
             tlog("QG nicht verfügbar, frage stattdessen QB ab");
             char r[16];
@@ -423,7 +518,8 @@ static bool test_button_live(void)
             }
             break;
         }
-        if (qg != last) {
+        // Bit 6/7 ignorieren: bei FW 2.x Pin-Zustände, bei FW 3.x Merker, die QG selbst löscht
+        if (last < 0 || (qg & QG_STATE) != (last & QG_STATE)) {
             tlog("  QG %02X (Taste %s)", qg, qg & QG_BUTTON ? "gedrückt" : "nicht gedrückt");
             if ((qg & QG_BUTTON) && (last < 0 || !(last & QG_BUTTON))) {
                 presses++;
@@ -438,9 +534,7 @@ static bool test_button_live(void)
 
 static bool test_button_latch(void)
 {
-    char r[32];
     section("6. PRG-Taste, gespeichert?");
-    ebb("QB", NULL, 0);
     log_qg();
     int64_t end = now_ms() + LATCH_WAIT_S * 1000;
     tlog("Keine Abfragen für %d s", LATCH_WAIT_S);
@@ -456,10 +550,7 @@ static bool test_button_latch(void)
     if (query_qg(&qg, false)) {
         tlog("  → QG merkt sich den Druck: %s", qg & QG_BUTTON ? "ja" : "nein");
     }
-    if (ebb("QB", r, sizeof(r)) > 0) {
-        tlog("  → QB merkt sich den Druck: %s", strcmp(r, "1") == 0 ? "ja" : strcmp(r, "0") == 0 ? "nein" : "?");
-    }
-    log_qg();
+    log_qg();   // erwartet: Taste nicht gedrückt, das vorige QG hat den Merker gelöscht
     return alive();
 }
 
@@ -469,9 +560,6 @@ static void run_test(bool motion)
     char info[128];
     settings_get(&cfg);
     usb_serial_info(info, sizeof(info));
-    s_version[0] = '\0';
-    s_fw[0] = s_fw[1] = s_fw[2] = 0;
-
     tlog("µprint %s (%s), AxiDraw-Test", esp_app_get_description()->version, uprint_variant());
     tlog("Gerätename: %s", cfg.device_name[0] ? cfg.device_name : "–");
     tlog("USB: %s", info);
@@ -505,14 +593,17 @@ esp_err_t axidraw_init(void)
 
 void axidraw_link(char *msg, size_t len)
 {
-    char r[96];
     // Kurz warten, falls das Board nach dem Öffnen des Ports noch etwas meldet
     vTaskDelay(pdMS_TO_TICKS(300));
     usb_serial_flush_rx();
-    if (ebb_cmd("V", r, sizeof(r), false) > 0 && parse_version(r, s_fw)) {
+    ebb_detect();
+    if (s_syntax == EBB_FUTURE || (s_syntax == EBB_LEGACY && fw_at_least(3, 0, 0))) {
+        snprintf(msg, len, "AxiDraw verbunden (EBB-Firmware %d.%d.%d, Beta: bitte AxiDraw-Test laufen lassen "
+                 "und das Log schicken)", s_fw[0], s_fw[1], s_fw[2]);
+    } else if (s_syntax == EBB_LEGACY) {
         snprintf(msg, len, "AxiDraw verbunden (EBB-Firmware %d.%d.%d), nur Testmodus", s_fw[0], s_fw[1], s_fw[2]);
-    } else if (r[0]) {
-        snprintf(msg, len, "Gerät verbunden, antwortet unerwartet: %.60s", r);
+    } else if (s_version[0]) {
+        snprintf(msg, len, "Gerät verbunden, antwortet unerwartet: %.60s", s_version);
     } else {
         snprintf(msg, len, "Gerät verbunden, antwortet nicht auf V");
     }
