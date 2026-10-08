@@ -436,7 +436,7 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     settings_t c;
     char host[33 * 6];
     char pass[64 * 6];
-    char body[1536];
+    char body[1792];
     char version[32 * 6];
     char name[33 * 6];
     settings_get(&c);
@@ -447,9 +447,11 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     snprintf(body, sizeof(body),
              "{\"device_name\":\"%s\",\"hostname\":\"%s\",\"ap_password\":\"%s\",\"device_type\":%d,\"baud\":%d,\"pause_lift\":%d,\"cancel_lift\":%d"
              ",\"park_x\":%d,\"park_y\":%d,\"sd_mosi\":%d,\"sd_miso\":%d,\"sd_sclk\":%d,\"sd_cs\":%d"
+             ",\"plot_draw\":%d,\"plot_travel\":%d,\"plot_accel\":%d,\"pen_servo\":%d,\"pen_up\":%d,\"pen_down\":%d,\"pen_delay\":%d"
              ",\"reboot_required\":%s,\"version\":\"%s\",\"variant\":\"%s\",\"api_key\":\"%s\"}",
              name, host, pass, c.device_type, c.baud, c.pause_lift, c.cancel_lift, c.park_x, c.park_y,
-             c.sd_mosi, c.sd_miso, c.sd_sclk, c.sd_cs, settings_reboot_required() ? "true" : "false", version, uprint_variant(), c.api_key);
+             c.sd_mosi, c.sd_miso, c.sd_sclk, c.sd_cs, c.plot_draw, c.plot_travel, c.plot_accel, c.pen_servo, c.pen_up,
+             c.pen_down, c.pen_delay, settings_reboot_required() ? "true" : "false", version, uprint_variant(), c.api_key);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
 }
@@ -483,7 +485,7 @@ static bool form_int(const char *body, const char *key, int *out, bool *bad)
 // Body: urlencodierte Felder wie bei GET; fehlende Felder bleiben unverändert
 static esp_err_t settings_post_handler(httpd_req_t *req)
 {
-    char body[1024];
+    char body[1280];
     if (req->content_len == 0 || req->content_len >= sizeof(body)) {
         return http_send_error(req, "400 Bad Request", "Ungültige Anfrage");
     }
@@ -524,6 +526,13 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     form_int(body, "sd_miso", &c.sd_miso, &bad);
     form_int(body, "sd_sclk", &c.sd_sclk, &bad);
     form_int(body, "sd_cs", &c.sd_cs, &bad);
+    form_int(body, "plot_draw", &c.plot_draw, &bad);
+    form_int(body, "plot_travel", &c.plot_travel, &bad);
+    form_int(body, "plot_accel", &c.plot_accel, &bad);
+    form_int(body, "pen_servo", &c.pen_servo, &bad);
+    form_int(body, "pen_up", &c.pen_up, &bad);
+    form_int(body, "pen_down", &c.pen_down, &bad);
+    form_int(body, "pen_delay", &c.pen_delay, &bad);
     if (bad) {
         return http_send_error(req, "400 Bad Request", "Bitte nur ganze Zahlen eingeben");
     }
@@ -669,6 +678,9 @@ static esp_err_t axidraw_test_post(httpd_req_t *req)
     char query[32], val[4];
     bool motion = httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
                   httpd_query_key_value(query, "motion", val, sizeof(val)) == ESP_OK && strcmp(val, "1") == 0;
+    if (printer_busy()) {
+        return http_send_error(req, "409 Conflict", "Während eines Plots ist kein Test möglich");
+    }
     return send_result(req, axidraw_test_start(motion), "Kein AxiDraw verbunden oder Test läuft bereits");
 }
 
