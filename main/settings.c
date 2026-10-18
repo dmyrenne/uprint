@@ -42,19 +42,27 @@ static SemaphoreHandle_t s_lock;
 static settings_t s_cur;
 static settings_t s_boot;   // Stand beim Start, für "Neustart nötig"
 
-typedef struct {
-    const char *key;
-    size_t offset;
-} int_field_t;
-
 #define FIELD(name) {#name, offsetof(settings_t, name)}
-static const int_field_t INT_FIELDS[] = {
+const settings_int_field_t SETTINGS_INT_FIELDS[] = {
     FIELD(device_type), FIELD(baud), FIELD(pause_lift), FIELD(cancel_lift), FIELD(park_x), FIELD(park_y),
     FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs),
     FIELD(plot_draw), FIELD(plot_travel), FIELD(plot_accel), FIELD(pen_servo), FIELD(pen_up), FIELD(pen_down), FIELD(pen_delay),
 };
+const size_t SETTINGS_INT_FIELD_COUNT = sizeof(SETTINGS_INT_FIELDS) / sizeof(SETTINGS_INT_FIELDS[0]);
 
-#define INT_AT(s, f) (*(int *)((char *)(s) + (f)->offset))
+// Zeichenketten im NVS; fehlt ein Eintrag, gilt der Wert aus DEFAULTS
+typedef struct {
+    const char *key;
+    size_t offset;
+    size_t size;
+} str_field_t;
+
+#define STR_FIELD(name) {#name, offsetof(settings_t, name), sizeof(((settings_t *)0)->name)}
+static const str_field_t STR_FIELDS[] = {
+    STR_FIELD(hostname), STR_FIELD(device_name), STR_FIELD(api_key), STR_FIELD(ap_password),
+};
+
+#define STR_AT(s, f) ((char *)(s) + (f)->offset)
 
 void settings_init(void)
 {
@@ -63,26 +71,17 @@ void settings_init(void)
 
     nvs_handle_t nvs;
     if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs) == ESP_OK) {
-        size_t len = sizeof(s_cur.hostname);
-        if (nvs_get_str(nvs, "hostname", s_cur.hostname, &len) != ESP_OK) {
-            strlcpy(s_cur.hostname, DEFAULTS.hostname, sizeof(s_cur.hostname));
+        for (size_t i = 0; i < sizeof(STR_FIELDS) / sizeof(STR_FIELDS[0]); i++) {
+            const str_field_t *f = &STR_FIELDS[i];
+            size_t len = f->size;
+            if (nvs_get_str(nvs, f->key, STR_AT(&s_cur, f), &len) != ESP_OK) {
+                strlcpy(STR_AT(&s_cur, f), STR_AT(&DEFAULTS, f), f->size);
+            }
         }
-        len = sizeof(s_cur.device_name);
-        if (nvs_get_str(nvs, "device_name", s_cur.device_name, &len) != ESP_OK) {
-            s_cur.device_name[0] = '\0';
-        }
-        len = sizeof(s_cur.api_key);
-        if (nvs_get_str(nvs, "api_key", s_cur.api_key, &len) != ESP_OK) {
-            s_cur.api_key[0] = '\0';
-        }
-        len = sizeof(s_cur.ap_password);
-        if (nvs_get_str(nvs, "ap_password", s_cur.ap_password, &len) != ESP_OK) {
-            strlcpy(s_cur.ap_password, DEFAULTS.ap_password, sizeof(s_cur.ap_password));
-        }
-        for (size_t i = 0; i < sizeof(INT_FIELDS) / sizeof(INT_FIELDS[0]); i++) {
+        for (size_t i = 0; i < SETTINGS_INT_FIELD_COUNT; i++) {
             int32_t v;
-            if (nvs_get_i32(nvs, INT_FIELDS[i].key, &v) == ESP_OK) {
-                INT_AT(&s_cur, &INT_FIELDS[i]) = v;
+            if (nvs_get_i32(nvs, SETTINGS_INT_FIELDS[i].key, &v) == ESP_OK) {
+                SETTINGS_INT(&s_cur, &SETTINGS_INT_FIELDS[i]) = v;
             }
         }
         nvs_close(nvs);
@@ -190,20 +189,11 @@ esp_err_t settings_update(const settings_t *in, const char **error)
 
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs, "hostname", in->hostname);
+    for (size_t i = 0; err == ESP_OK && i < sizeof(STR_FIELDS) / sizeof(STR_FIELDS[0]); i++) {
+        err = nvs_set_str(nvs, STR_FIELDS[i].key, STR_AT(in, &STR_FIELDS[i]));
     }
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs, "ap_password", in->ap_password);
-    }
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs, "api_key", in->api_key);
-    }
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs, "device_name", in->device_name);
-    }
-    for (size_t i = 0; err == ESP_OK && i < sizeof(INT_FIELDS) / sizeof(INT_FIELDS[0]); i++) {
-        err = nvs_set_i32(nvs, INT_FIELDS[i].key, INT_AT(in, &INT_FIELDS[i]));
+    for (size_t i = 0; err == ESP_OK && i < SETTINGS_INT_FIELD_COUNT; i++) {
+        err = nvs_set_i32(nvs, SETTINGS_INT_FIELDS[i].key, SETTINGS_INT(in, &SETTINGS_INT_FIELDS[i]));
     }
     if (err == ESP_OK) {
         err = nvs_commit(nvs);

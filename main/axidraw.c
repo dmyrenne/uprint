@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -63,7 +64,7 @@ typedef enum {
 } ebb_syntax_t;
 
 static SemaphoreHandle_t s_lock;
-static char s_log[LOG_SIZE];
+static char *s_log;   // erst beim ersten Test angelegt (bei n16r8 im PSRAM), danach behalten
 static size_t s_log_len;
 static bool s_log_full;
 static char s_prompt[sizeof(((axidraw_test_status_t *)0)->prompt)];
@@ -390,18 +391,6 @@ static void log_qg(void)
     }
 }
 
-// Rate für LM: Schritte/s × 2^31 / 25000 (Akkumulator wird alle 40 µs addiert)
-static int32_t lm_rate(int steps_per_s)
-{
-    return (int32_t)((int64_t)steps_per_s * 0x80000000LL / 25000);
-}
-
-// Beschleunigung für LM: Schritte/s² × 2^31 / 25000²
-static int32_t lm_accel(int steps_per_s2)
-{
-    return (int32_t)((int64_t)steps_per_s2 * 0x80000000LL / 25000 / 25000);
-}
-
 static bool test_connection(void)
 {
     section("1. Verbindung");
@@ -471,7 +460,7 @@ static bool test_motion(void)
         tlog("LM übersprungen, Firmware zu alt");
     } else {
         // LM zählt Motorschritte: nach rechts heißt beide Motoren gleich weit
-        int32_t rate = lm_rate(TEST_RATE);
+        int32_t rate = plot_lm_rate(TEST_RATE);
         tlog("LM: konstant %d Schritte/s, hin und zurück", TEST_RATE);
         ebbf("LM,%" PRId32 ",%d,0,%" PRId32 ",%d,0", rate, TEST_STEPS, rate, TEST_STEPS);
         ebbf("LM,%" PRId32 ",%d,0,%" PRId32 ",%d,0", rate, -TEST_STEPS, rate, -TEST_STEPS);
@@ -482,7 +471,7 @@ static bool test_motion(void)
 
         // Rampe: auf halber Strecke von 0 auf TEST_RATE beschleunigen, dann wieder auf 0
         int half = TEST_STEPS / 2;
-        int32_t acc = lm_accel(TEST_RATE * TEST_RATE / (2 * half));
+        int32_t acc = plot_lm_accel(TEST_RATE * TEST_RATE / (2.0f * half));
         tlog("LM: mit Rampe 0 → %d → 0 Schritte/s, hin und zurück (Accel %" PRId32 ")", TEST_RATE, acc);
         ebbf("LM,0,%d,%" PRId32 ",0,%d,%" PRId32, half, acc, half, acc);
         ebbf("LM,%" PRId32 ",%d,%" PRId32 ",%" PRId32 ",%d,%" PRId32, rate, half, -acc, rate, half, -acc);
@@ -764,6 +753,8 @@ esp_err_t axidraw_test_start(bool motion)
     LOCK();
     if (s_running || cfg.device_type != DEVICE_AXIDRAW || !usb_serial_connected()) {
         err = ESP_ERR_INVALID_STATE;
+    } else if (!s_log && !(s_log = heap_caps_malloc_prefer(LOG_SIZE, 2, MALLOC_CAP_SPIRAM, MALLOC_CAP_DEFAULT))) {
+        err = ESP_ERR_NO_MEM;
     } else {
         s_running = true;
         s_req_start = true;

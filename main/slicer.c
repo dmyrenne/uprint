@@ -197,40 +197,10 @@ static esp_err_t file_put(httpd_req_t *req)
     if (failure) {
         return http_send_error(req, "415 Unsupported Media Type", failure);
     }
-    if (req->content_len == 0) {
-        return http_send_error(req, "400 Bad Request", "Leere Datei");
-    }
-
-    upload_t up;
     const char *status;
-    failure = upload_begin(&up, vol, name, req->content_len, &status);
+    failure = http_upload_body(req, vol, name, &status);
     if (failure) {
         return http_send_error(req, status, failure);
-    }
-    char *buf = malloc(HTTP_CHUNK);
-    if (!buf) {
-        upload_abort(&up);
-        return http_send_error(req, "500 Internal Server Error", "Kein Speicher");
-    }
-    size_t remaining = req->content_len;
-    while (remaining > 0 && !failure) {
-        int r = http_recv(req, buf, remaining < HTTP_CHUNK ? remaining : HTTP_CHUNK);
-        if (r <= 0) {
-            failure = "Upload abgebrochen";
-        } else if (!upload_write(&up, buf, r)) {
-            failure = "Schreibfehler (Speicher voll?)";
-        } else {
-            remaining -= r;
-        }
-    }
-    free(buf);
-    if (failure) {
-        upload_abort(&up);
-        return http_send_error(req, "500 Internal Server Error", failure);
-    }
-    failure = upload_finish(&up);
-    if (failure) {
-        return http_send_error(req, "500 Internal Server Error", failure);
     }
     if (header_true(req, "Print-After-Upload")) {
         failure = start_after_upload(vol, name);
@@ -573,18 +543,9 @@ static esp_err_t job_post(httpd_req_t *req)
         return deny(req);
     }
     char body[256];
-    if (req->content_len == 0 || req->content_len >= sizeof(body)) {
+    if (!http_recv_body(req, body, sizeof(body))) {
         return http_send_error(req, "400 Bad Request", "Ungültige Anfrage");
     }
-    size_t got = 0;
-    while (got < req->content_len) {
-        int r = http_recv(req, body + got, req->content_len - got);
-        if (r <= 0) {
-            return ESP_FAIL;
-        }
-        got += r;
-    }
-    body[got] = '\0';
 
     esp_err_t err;
     if (strstr(body, "\"cancel\"")) {

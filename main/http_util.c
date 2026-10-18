@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
@@ -78,6 +79,23 @@ int http_recv(httpd_req_t *req, char *buf, size_t len)
             return r;
         }
     }
+}
+
+bool http_recv_body(httpd_req_t *req, char *buf, size_t len)
+{
+    if (req->content_len == 0 || req->content_len >= len) {
+        return false;
+    }
+    size_t got = 0;
+    while (got < req->content_len) {
+        int r = http_recv(req, buf + got, req->content_len - got);
+        if (r <= 0) {
+            return false;
+        }
+        got += r;
+    }
+    buf[got] = '\0';
+    return true;
 }
 
 bool http_is_gcode(const char *name)
@@ -174,4 +192,40 @@ void upload_abort(upload_t *u)
         storage_release(u->vol);
         u->held = false;
     }
+}
+
+const char *http_upload_body(httpd_req_t *req, storage_vol_t vol, const char *name, const char **status)
+{
+    *status = "400 Bad Request";
+    if (req->content_len == 0) {
+        return "Leere Datei";
+    }
+    upload_t up;
+    const char *failure = upload_begin(&up, vol, name, req->content_len, status);
+    if (failure) {
+        return failure;
+    }
+    *status = "500 Internal Server Error";
+    char *buf = malloc(HTTP_CHUNK);
+    if (!buf) {
+        upload_abort(&up);
+        return "Kein Speicher";
+    }
+    size_t remaining = req->content_len;
+    while (remaining > 0 && !failure) {
+        int r = http_recv(req, buf, remaining < HTTP_CHUNK ? remaining : HTTP_CHUNK);
+        if (r <= 0) {
+            failure = "Upload abgebrochen";
+        } else if (!upload_write(&up, buf, r)) {
+            failure = "Schreibfehler (Speicher voll?)";
+        } else {
+            remaining -= r;
+        }
+    }
+    free(buf);
+    if (failure) {
+        upload_abort(&up);
+        return failure;
+    }
+    return upload_finish(&up);
 }
