@@ -6,6 +6,7 @@ dependencies:
   espressif/usb_host_cp210x_vcp: "^2"
   espressif/usb_host_ftdi_vcp: "^2"
   espressif/mdns: ">=1.2.0"
+  espressif/led_strip: "^3"
   # Ab IDF 6.0 ist der USB-Host-Stack nicht mehr Teil von IDF
   espressif/usb:
     version: "*"

@@ -15,6 +15,16 @@ typedef enum {
     DEVICE_AXIDRAW = 1,   // AxiDraw/NextDraw (EiBotBoard)
 } device_type_t;
 
+typedef enum {
+    LED_TYPE_WS2812 = 0,
+    LED_TYPE_SK6812 = 1,
+    LED_TYPE_WS2811 = 2,
+} led_type_t;
+
+typedef enum {
+    LED_ORDER_RGB, LED_ORDER_RBG, LED_ORDER_GRB, LED_ORDER_GBR, LED_ORDER_BRG, LED_ORDER_BGR,
+} led_order_t;
+
 typedef struct {
     // Anzeigename des Geräts, leer = "µprint" (sofort wirksam)
     char device_name[33];
@@ -44,6 +54,13 @@ typedef struct {
     int sd_miso;
     int sd_sclk;
     int sd_cs;
+    // Status-LEDs (adressierbar, z. B. SK6812), sofort wirksam
+    int led_pin;          // -1 = aus
+    int led_count;        // 0 = aus
+    int led_brightness;   // Gesamthelligkeit in %, zusätzlich zur Helligkeit je Zustand (status_led.c)
+    int led_type;         // led_type_t
+    int led_order;        // led_order_t: Reihenfolge der Farbkanäle
+    int led_white;        // 1 = RGBW (Weißkanal nach den Farben)
     // Schlüssel für Slicer (PrusaLink/OctoPrint-API), wird beim ersten Start erzeugt
     char api_key[33];
 } settings_t;

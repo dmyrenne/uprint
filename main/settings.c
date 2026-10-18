@@ -45,6 +45,16 @@ static const settings_t DEFAULTS = {
     .sd_sclk = 12,
     .sd_cs = 10,
 #endif
+#ifdef UPRINT_BOARD_XIAO
+    .led_pin = 1,          // D0
+#else
+    .led_pin = -1,
+#endif
+    .led_count = 0,
+    .led_brightness = 100,
+    .led_type = LED_TYPE_SK6812,
+    .led_order = LED_ORDER_GRB,
+    .led_white = 0,
 };
 
 static SemaphoreHandle_t s_lock;
@@ -56,6 +66,7 @@ const settings_int_field_t SETTINGS_INT_FIELDS[] = {
     FIELD(device_type), FIELD(baud), FIELD(pause_lift), FIELD(cancel_lift), FIELD(park_x), FIELD(park_y),
     FIELD(sd_enable), FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs),
     FIELD(plot_draw), FIELD(plot_travel), FIELD(plot_accel), FIELD(pen_servo), FIELD(pen_up), FIELD(pen_down), FIELD(pen_delay),
+    FIELD(led_pin), FIELD(led_count), FIELD(led_brightness), FIELD(led_type), FIELD(led_order), FIELD(led_white),
 };
 const size_t SETTINGS_INT_FIELD_COUNT = sizeof(SETTINGS_INT_FIELDS) / sizeof(SETTINGS_INT_FIELDS[0]);
 
@@ -74,6 +85,7 @@ static const str_field_t STR_FIELDS[] = {
 #define STR_AT(s, f) ((char *)(s) + (f)->offset)
 
 static const char *sd_pins_error(const settings_t *s);
+static const char *led_error(const settings_t *s);
 
 void settings_init(void)
 {
@@ -104,6 +116,15 @@ void settings_init(void)
         s_cur.sd_miso = DEFAULTS.sd_miso;
         s_cur.sd_sclk = DEFAULTS.sd_sclk;
         s_cur.sd_cs = DEFAULTS.sd_cs;
+    }
+    if (led_error(&s_cur)) {
+        ESP_LOGW(TAG, "Gespeicherte LED-Einstellungen ungültig, nehme die Standardwerte");
+        s_cur.led_pin = DEFAULTS.led_pin;
+        s_cur.led_count = DEFAULTS.led_count;
+        s_cur.led_brightness = DEFAULTS.led_brightness;
+        s_cur.led_type = DEFAULTS.led_type;
+        s_cur.led_order = DEFAULTS.led_order;
+        s_cur.led_white = DEFAULTS.led_white;
     }
     s_boot = s_cur;
     if (strlen(s_cur.api_key) != 32) {
@@ -154,6 +175,26 @@ static const char *sd_pins_error(const settings_t *s)
                 return "SD-Pins müssen verschieden sein";
             }
         }
+    }
+    return NULL;
+}
+
+static const char *led_error(const settings_t *s)
+{
+    if (s->led_count < 0 || s->led_count > 100) {
+        return "Anzahl LEDs: 0–100";
+    }
+    if (s->led_brightness < 1 || s->led_brightness > 100) {
+        return "LED-Helligkeit: 1–100 %";
+    }
+    if (s->led_type < LED_TYPE_WS2812 || s->led_type > LED_TYPE_WS2811 || s->led_order < LED_ORDER_RGB ||
+        s->led_order > LED_ORDER_BGR || (s->led_white != 0 && s->led_white != 1)) {
+        return "Unbekannter LED-Typ oder unbekannte Farbreihenfolge";
+    }
+    bool on_sd = s->sd_enable && (s->led_pin == s->sd_mosi || s->led_pin == s->sd_miso || s->led_pin == s->sd_sclk ||
+                                  s->led_pin == s->sd_cs);
+    if (s->led_pin != -1 && (!pin_usable(s->led_pin) || on_sd)) {
+        return "LED-Pin: -1 (aus) oder ein freier Pin, der nicht von der SD-Karte belegt ist";
     }
     return NULL;
 }
@@ -217,7 +258,8 @@ static const char *validate(const settings_t *s)
     if (s->sd_enable != 0 && s->sd_enable != 1) {
         return "microSD: 0 (aus) oder 1 (an)";
     }
-    return s->sd_enable ? sd_pins_error(s) : NULL;
+    const char *err = s->sd_enable ? sd_pins_error(s) : NULL;
+    return err ? err : led_error(s);
 }
 
 esp_err_t settings_update(const settings_t *in, const char **error)

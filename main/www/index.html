@@ -218,6 +218,28 @@
   button.danger { color: var(--warn); }
   button.danger:hover:not(:disabled) { border-color: var(--warn); background: var(--warn-bg); }
 
+  /* ---------- Status-LEDs ---------- */
+  .led-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--line-strong); }
+  body.leds main > :not(#ledsView):not(#messages) { display: none; }
+  .leds-view { max-width: 920px; width: 100%; margin: 0 auto; }
+  .leds-view .back { font-size: 13px; display: inline-block; margin-bottom: 12px; }
+  .led-rows { margin: 8px -6px 0; }
+  .led-row { display: grid; grid-template-columns: minmax(130px, 1.2fr) 44px minmax(140px, 1.2fr) minmax(150px, 1fr) auto; gap: 8px 12px;
+             align-items: center; padding: 9px 6px; border-top: 1px solid var(--line); }
+  .led-row .name { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .led-row .name small { font: 500 10px var(--mono); color: var(--muted); }
+  .led-row.unsaved { background: var(--accent-soft); border-radius: 8px; border-top-color: transparent; }
+  .led-row .bright { display: flex; flex-direction: row; align-items: center; gap: 8px; font: 500 12px var(--mono); color: var(--muted); }
+  .led-row .bright span { width: 38px; text-align: right; }
+  input[type=color] { width: 44px; height: 30px; padding: 2px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--field); cursor: pointer; }
+  input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .leds-actions { margin-top: 16px; }
+  .leds-actions .spacer { flex: 1; }
+  @media (max-width: 700px) {
+    .led-row { grid-template-columns: 1fr 44px; }
+    .led-row select, .led-row .bright { grid-column: 1 / -1; }
+  }
+
   .axi-prompt { font-size: 15px; font-weight: 600; margin-top: 14px; }
   .axi-log { font: 500 11px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
              margin: 14px 0 0; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -260,6 +282,7 @@
   <div class="brand">
     <svg id="mark" viewBox="0 0 34 34" role="img" aria-label="μprint"></svg>
     <h1><span id="devName">µprint</span><small id="tagline" data-i18n="tagline"></small></h1>
+    <span class="led-dot" id="ledDot" data-i18n-aria="leds.dot" hidden></span>
   </div>
   <div class="stats" id="stats"></div>
   <div class="spacer"></div>
@@ -272,6 +295,28 @@
 <main>
   <div id="messages"></div>
   <div id="setupSlot"></div>
+
+  <!-- Unterseite #leds: Darstellung der Status-LEDs je Zustand -->
+  <section class="card leds-view" id="ledsView" hidden>
+    <a class="back" href="#" data-i18n="leds.back"></a>
+    <h2 data-i18n="leds.title"></h2>
+    <p class="hint" data-i18n="leds.intro"></p>
+    <div class="led-rows" id="ledRows"></div>
+    <p class="sub" style="margin-top:20px" data-i18n="leds.id"></p>
+    <div class="grid" style="margin-top:12px">
+      <label><span data-i18n="leds.seg1"></span><input type="color" id="ledSeg1"></label>
+      <label><span data-i18n="leds.seg2"></span><input type="color" id="ledSeg2"></label>
+      <label class="full"><span data-i18n="leds.interval"></span><select id="ledInterval"></select></label>
+    </div>
+    <p class="hint" data-i18n="leds.id.hint"></p>
+    <div class="row leds-actions">
+      <button type="button" class="primary" id="ledSave" data-i18n="save"></button>
+      <button type="button" id="ledRevert" data-i18n="revert"></button>
+      <button type="button" id="ledFind2" data-i18n="leds.find"></button>
+      <span class="spacer"></span>
+      <button type="button" class="warn" id="ledReset" data-i18n="leds.reset"></button>
+    </div>
+  </section>
 
   <section class="card">
     <h2 data-i18n="h.print"></h2>
@@ -492,6 +537,24 @@
       <label><span>SCLK</span><input type="number" name="sd_sclk" min="0" max="48"></label>
       <label><span>CS</span><input type="number" name="sd_cs" min="0" max="48"></label>
       <p class="hint full" id="sdPinHint" hidden data-i18n="set.sd.hint.xiao"></p>
+
+      <p class="sub full" data-i18n="set.leds"></p>
+      <label><span data-i18n="set.led_pin"></span><input type="number" name="led_pin" min="-1" max="48"></label>
+      <label><span data-i18n="set.led_count"></span><input type="number" name="led_count" min="0" max="100"></label>
+      <label><span data-i18n="set.led_type"></span><select name="led_type">
+        <option value="0">WS2812</option><option value="1">SK6812</option><option value="2">WS2811</option>
+      </select></label>
+      <label><span data-i18n="set.led_order"></span><select name="led_order">
+        <option value="0">RGB</option><option value="1">RBG</option><option value="2">GRB</option>
+        <option value="3">GBR</option><option value="4">BRG</option><option value="5">BGR</option>
+      </select></label>
+      <label><span data-i18n="set.led_white"></span><select name="led_white">
+        <option value="0">RGB</option><option value="1">RGBW</option>
+      </select></label>
+      <label><span data-i18n="set.led_brightness"></span><input type="number" name="led_brightness" min="1" max="100"></label>
+      <div class="row full"><button type="button" class="small" id="ledFind" data-i18n="leds.find"></button>
+        <a href="#leds" data-i18n="leds.open"></a></div>
+      <p class="hint full" data-i18n="set.leds.hint"></p>
     </form>
     <div class="row set-actions" id="setActions">
       <span class="unsaved" data-i18n="set.unsaved"></span>
@@ -651,7 +714,7 @@ async function refreshStatus() {
     // Beim Druckstart die Auswahl lösen, damit danach „Druck fertig“ erscheint
     if (changed && st && (s.state === 'printing' || s.state === 'paused')) selKey = null;
     st = s; offline = false;
-    renderStatus();
+    renderStatus(); renderLedDot();
     if (changed) loadFiles();
     if (back) loadSettings();
   } catch (e) {
@@ -1052,7 +1115,8 @@ async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1
 // ---------- Einstellungen ----------
 const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y',
   'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay',
-  'hostname', 'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
+  'hostname', 'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs',
+  'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm');
 let settings = null;
@@ -1067,14 +1131,15 @@ const XIAO_PINS = [[1, 'D0'], [2, 'D1'], [3, 'D2'], [4, 'D3'], [5, 'D4'], [6, 'D
 function xiaoPins(s) {
   $('sdPinHint').hidden = s.variant !== 'xiao';
   if (s.variant !== 'xiao') return;
-  for (const k of SD_PINS) {
+  for (const k of [...SD_PINS, 'led_pin']) {
     let sel = setForm.elements[k];
     if (sel.tagName !== 'SELECT') {
       sel = document.createElement('select');
       sel.name = k;
       setForm.elements[k].replaceWith(sel);
     }
-    const pins = k === 'sd_cs' ? [...XIAO_PINS, [21, t('set.sd.slot')]] : XIAO_PINS;
+    const pins = k === 'sd_cs' ? [...XIAO_PINS, [21, t('set.sd.slot')]] : k === 'led_pin' ? [[-1, t('leds.off')], ...XIAO_PINS]
+      : [...XIAO_PINS];
     if (!pins.some(([g]) => g === s[k])) pins.push([s[k], 'GPIO ' + s[k]]);   // sollte die Firmware nie liefern
     sel.replaceChildren(...pins.map(([g, label]) => new Option(label, g)));
   }
@@ -1184,6 +1249,96 @@ $('axiDownload').onclick = () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
+// ---------- Status-LEDs ----------
+// Unterseite #leds: Effekt, Farbe und Helligkeit je Zustand. leds = gespeicherter Stand mit Standardwerten,
+// edit = Eingaben. Die Vorschau zeigt die Eingaben auf dem Strip, auch ungespeichert.
+let leds = null, ledEdit = null;
+const LED_INTERVALS = [0, 10, 30, 60];
+const lookKey = (l) => l.effect + '|' + l.color.toLowerCase() + '|' + l.bright;
+function renderLedDot() {
+  const c = st && st.led_id;
+  $('ledDot').hidden = !c;
+  if (c) { $('ledDot').style.background = c; $('ledDot').title = t('leds.dot'); }
+}
+function ledEditModified() {
+  if (!leds || !ledEdit) return false;
+  return ledEdit.states.some((s, i) => lookKey(s) !== lookKey(leds.states[i])) ||
+    ledEdit.seg.some((c, i) => c.toLowerCase() !== leds.seg[i].toLowerCase()) || ledEdit.id_interval !== leds.id_interval;
+}
+function buildLedRows() {
+  const rows = ledEdit.states.map((s, i) => {
+    const row = el('div', 'led-row');
+    const name = el('div', 'name', t('ls.' + s.id));
+    const custom = el('small', null, t('leds.custom'));
+    name.append(custom);
+    const color = el('input'); color.type = 'color'; color.value = s.color; color.setAttribute('aria-label', t('leds.color'));
+    const fx = el('select'); fx.setAttribute('aria-label', t('leds.effect'));
+    for (const e of s.effects) fx.add(new Option(t('fx.' + e), e));
+    fx.value = s.effect;
+    const bright = el('label', 'bright'); const range = el('input'); range.type = 'range'; range.min = 0; range.max = 100; range.value = s.bright;
+    range.setAttribute('aria-label', t('leds.bright'));
+    const pct = el('span', null, s.bright + ' %'); bright.append(range, pct);
+    const prev = el('button', 'small', t('leds.preview')); prev.type = 'button';
+    const update = () => {
+      s.color = color.value; s.effect = +fx.value; s.bright = +range.value; pct.textContent = s.bright + ' %';
+      custom.hidden = lookKey(s) === lookKey(s.default);
+      row.classList.toggle('unsaved', lookKey(s) !== lookKey(leds.states[i]));
+      renderLedActions();
+    };
+    color.oninput = fx.onchange = range.oninput = update;
+    prev.onclick = async () => {
+      const q = new URLSearchParams({ state: s.id, effect: s.effect, color: s.color.slice(1), bright: s.bright });
+      try { await api('POST', '/api/leds/preview?' + q); } catch (e) { say(e.message, true); }
+    };
+    row.append(name, color, fx, bright, prev);
+    update();
+    return row;
+  });
+  $('ledRows').replaceChildren(...rows);
+  $('ledSeg1').value = ledEdit.seg[0]; $('ledSeg2').value = ledEdit.seg[1];
+  const iv = $('ledInterval');
+  iv.replaceChildren(...LED_INTERVALS.map((v) => new Option(v ? t('leds.every', { s: v }) : t('leds.off'), v)));
+  iv.value = ledEdit.id_interval;
+  renderLedActions();
+}
+function renderLedActions() {
+  const mod = ledEditModified();
+  $('ledSave').disabled = !mod;
+  $('ledRevert').disabled = !mod;
+}
+$('ledSeg1').oninput = () => { ledEdit.seg[0] = $('ledSeg1').value; renderLedActions(); };
+$('ledSeg2').oninput = () => { ledEdit.seg[1] = $('ledSeg2').value; renderLedActions(); };
+$('ledInterval').onchange = () => { ledEdit.id_interval = +$('ledInterval').value; renderLedActions(); };
+function setLeds(j) { leds = j; ledEdit = structuredClone(j); buildLedRows(); }
+async function loadLeds() {
+  try { setLeds(await api('GET', '/api/leds')); } catch (e) { say(e.message, true); }
+}
+$('ledSave').onclick = async () => {
+  const p = new URLSearchParams();
+  for (const s of ledEdit.states) {
+    p.set(s.id + '_effect', s.effect); p.set(s.id + '_color', s.color); p.set(s.id + '_bright', s.bright);
+  }
+  p.set('seg1', ledEdit.seg[0]); p.set('seg2', ledEdit.seg[1]); p.set('id_interval', ledEdit.id_interval);
+  try { setLeds(await api('POST', '/api/leds', p)); say(t('leds.saved')); refreshStatus(); }
+  catch (e) { say(e.message, true); }
+};
+$('ledRevert').onclick = () => { setLeds(leds); say(t('set.discarded')); };
+$('ledReset').onclick = async () => {
+  if (!confirm(t('confirm.leds_reset'))) return;
+  try { setLeds(await api('POST', '/api/leds/reset')); say(t('leds.resetDone')); refreshStatus(); }
+  catch (e) { say(e.message, true); }
+};
+$('ledFind').onclick = $('ledFind2').onclick = async () => {
+  try { await api('POST', '/api/led/find'); say(t('leds.finding')); } catch (e) { say(e.message, true); }
+};
+function ledView() {
+  const on = location.hash === '#leds';
+  document.body.classList.toggle('leds', on);
+  $('ledsView').hidden = !on;
+  if (on) { loadLeds(); window.scrollTo(0, 0); }
+}
+window.addEventListener('hashchange', ledView);
+
 // ---------- Gerätename ----------
 // Gespeicherter Name oben und im Browser-Tab; ohne Namen wie gewohnt „µprint“
 function renderName() {
@@ -1249,6 +1404,7 @@ $('lang').onchange = () => {
   LANG = $('lang').value;
   try { localStorage.setItem('uprint-lang', LANG); } catch {}
   applyI18n(); renderName(); renderStatus(); renderVolumes(); renderUpload(); renderWifi();
+  if (ledEdit) buildLedRows();
   if (settings) { const cur = readSettings(); writeSettings({ ...settings, ...cur, baud: +cur.baud }); }
   renderAxi();
 };
@@ -1257,7 +1413,7 @@ $('lang').onchange = () => {
 applyI18n();
 drawMark(); $('mark').onclick = drawMark;
 renderStatus(); renderUpload();
-poll(); pollWifi(); loadSettings(); pollAxi();
+poll(); pollWifi(); loadSettings(); pollAxi(); ledView();
 </script>
 </body>
 </html>
