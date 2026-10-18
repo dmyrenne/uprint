@@ -60,7 +60,7 @@ contracts and are the best entry point.
   (`main/www/index.html`, `i18n.js`, fonts) is embedded via `EMBED_FILES` in `main/CMakeLists.txt` — new
   assets must be added there. `slicer.c` registers PrusaLink/OctoPrint-compatible endpoints on the same server
   (API key auth, routes listed in `slicer.h`). `captive.c` provides DNS + redirects when accessed via the
-  device's own AP. `max_uri_handlers` is fixed in `web_start` (48, 39 used); raise it when adding routes.
+  device's own AP. `max_uri_handlers` is fixed in `web_start` (48, 40 used); raise it when adding routes.
 - **status_led.c** — addressable status LEDs (`espressif/led_strip`, RMT). Own low-priority task that polls
   `printer_get_status`/`wifi_get_status`, picks the highest-priority state and renders its effect; per-state look
   (effect, color, brightness) and the print-farm identification (one color per LED) live in NVS namespace `leds`, pin/count/type/order

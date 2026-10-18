@@ -98,10 +98,11 @@ static esp_err_t status_get(httpd_req_t *req)
              "{\"state\":\"%s\",\"file\":\"%s\",\"size\":%" PRIu32 ",\"pos\":%" PRIu32
              ",\"elapsed\":%" PRIu32 ",\"hotend\":%.1f,\"hotend_target\":%.1f"
              ",\"bed\":%.1f,\"bed_target\":%.1f,\"message\":\"%s\",\"storage\":\"%s\""
-             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 ",\"led_id\":\"%s\",\"led_ma\":%d}",
+             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 ",\"led_id\":\"%s\",\"led_ma\":%d,\"unresponsive\":%s}",
              printer_state_name(st.state), file, st.file_size, st.file_pos, st.elapsed_s,
              st.hotend, st.hotend_target, st.bed, st.bed_target, msg, storage_id(st.vol),
-             st.finished ? "true" : "false", st.duration_s, storage_revision(), led_id, status_led_current_ma());
+             st.finished ? "true" : "false", st.duration_s, storage_revision(), led_id, status_led_current_ma(),
+             st.unresponsive ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
 }
@@ -261,6 +262,16 @@ static esp_err_t download_get(httpd_req_t *req)
     return err;
 }
 
+// Während eines Drucks sind Einstellungen und WLAN gesperrt (#16); true = Antwort schon gesendet
+static bool locked_while_printing(httpd_req_t *req)
+{
+    if (!printer_busy()) {
+        return false;
+    }
+    http_send_error(req, "409 Conflict", "Während eines Drucks gesperrt");
+    return true;
+}
+
 static esp_err_t send_result(httpd_req_t *req, esp_err_t err, const char *conflict_msg)
 {
     if (err == ESP_ERR_INVALID_STATE) {
@@ -301,6 +312,11 @@ static esp_err_t pause_post(httpd_req_t *req)
 static esp_err_t resume_post(httpd_req_t *req)
 {
     return send_result(req, printer_resume(), "Druck ist nicht pausiert");
+}
+
+static esp_err_t retry_post(httpd_req_t *req)
+{
+    return send_result(req, printer_retry(), "Drucker wartet gerade nicht auf eine Verbindung");
 }
 
 static esp_err_t cancel_post(httpd_req_t *req)
@@ -359,6 +375,9 @@ static esp_err_t wifi_scan_get(httpd_req_t *req)
 // Body: ssid=<…>&password=<…> (application/x-www-form-urlencoded)
 static esp_err_t wifi_post(httpd_req_t *req)
 {
+    if (locked_while_printing(req)) {
+        return ESP_OK;
+    }
     char body[512];
     char ssid[33 * 3 + 1];
     char pass[64 * 3 + 1];
@@ -382,6 +401,9 @@ static esp_err_t wifi_post(httpd_req_t *req)
 
 static esp_err_t wifi_ap_only_post(httpd_req_t *req)
 {
+    if (locked_while_printing(req)) {
+        return ESP_OK;
+    }
     esp_err_t err = wifi_set_ap_only();
     if (err != ESP_OK) {
         return http_send_error(req, "500 Internal Server Error", "Konnte nicht gespeichert werden");
@@ -391,6 +413,9 @@ static esp_err_t wifi_ap_only_post(httpd_req_t *req)
 
 static esp_err_t wifi_delete(httpd_req_t *req)
 {
+    if (locked_while_printing(req)) {
+        return ESP_OK;
+    }
     return send_result(req, wifi_forget(), "");
 }
 
@@ -453,6 +478,9 @@ static bool form_int(const char *body, const char *key, int *out, bool *bad)
 // Body: urlencodierte Felder wie bei GET; fehlende Felder bleiben unverändert
 static esp_err_t settings_post_handler(httpd_req_t *req)
 {
+    if (locked_while_printing(req)) {
+        return ESP_OK;
+    }
     char body[1280];
     if (!http_recv_body(req, body, sizeof(body))) {
         return http_send_error(req, "400 Bad Request", "Ungültige Anfrage");
@@ -483,9 +511,6 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     }
 
     bool device_changed = c.device_type != old_device;
-    if (device_changed && printer_busy()) {
-        return http_send_error(req, "409 Conflict", "Gerätetyp lässt sich während eines Drucks nicht ändern");
-    }
     const char *error = NULL;
     esp_err_t err = settings_update(&c, &error);
     if (err != ESP_OK) {
@@ -501,6 +526,9 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
 
 static esp_err_t api_key_post(httpd_req_t *req)
 {
+    if (locked_while_printing(req)) {
+        return ESP_OK;
+    }
     esp_err_t err = settings_new_api_key();
     if (err != ESP_OK) {
         return http_send_error(req, "500 Internal Server Error", esp_err_to_name(err));
@@ -702,6 +730,9 @@ static esp_err_t leds_get(httpd_req_t *req)
 // fehlende Felder bleiben. Statisch, weil der Webserver Anfragen nacheinander abarbeitet.
 static esp_err_t leds_post(httpd_req_t *req)
 {
+    if (locked_while_printing(req)) {
+        return ESP_OK;
+    }
     static char body[3072];
     static char pattern[STATUS_LED_MAX * 12 + 1];   // URL-kodiert: "%23rrggbb%2C" je LED
     if (!http_recv_body(req, body, sizeof(body))) {
@@ -757,6 +788,9 @@ static esp_err_t leds_post(httpd_req_t *req)
 
 static esp_err_t leds_reset_post(httpd_req_t *req)
 {
+    if (locked_while_printing(req)) {
+        return ESP_OK;
+    }
     status_led_reset_config();
     return leds_get(req);
 }
@@ -950,6 +984,7 @@ esp_err_t web_start(void)
         {.uri = "/api/pause",   .method = HTTP_POST,   .handler = pause_post},
         {.uri = "/api/resume",  .method = HTTP_POST,   .handler = resume_post},
         {.uri = "/api/cancel",  .method = HTTP_POST,   .handler = cancel_post},
+        {.uri = "/api/printer/retry", .method = HTTP_POST, .handler = retry_post},
         {.uri = "/api/wifi",      .method = HTTP_GET,    .handler = wifi_get},
         {.uri = "/api/wifi",      .method = HTTP_POST,   .handler = wifi_post},
         {.uri = "/api/wifi",      .method = HTTP_DELETE, .handler = wifi_delete},

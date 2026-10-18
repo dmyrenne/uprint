@@ -218,6 +218,10 @@
   button.danger { color: var(--warn); }
   button.danger:hover:not(:disabled) { border-color: var(--warn); background: var(--warn-bg); }
 
+  /* Während eines Drucks gesperrt (#16): sichtbar, aber nicht bedienbar */
+  [inert] { opacity: .5; }
+  .lock-note { margin: 0 0 12px; }
+
   /* ---------- Status-LEDs ---------- */
   .led-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--line-strong); }
   body.leds main > :not(#ledsView):not(#messages) { display: none; }
@@ -312,18 +316,19 @@
   <section class="card leds-view" id="ledsView" hidden>
     <a class="back" href="#" data-i18n="leds.back"></a>
     <h2 data-i18n="leds.title"></h2>
+    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <p class="hint" data-i18n="leds.intro"></p>
     <div class="led-rows" id="ledRows"></div>
     <p class="sub" style="margin-top:20px" data-i18n="leds.id"></p>
     <p class="hint" data-i18n="leds.id.hint"></p>
-    <div class="row led-paint">
+    <div class="row led-paint" id="ledPaint">
       <label class="brush"><span data-i18n="leds.brush"></span><input type="color" id="ledBrush"></label>
       <button type="button" class="small" id="ledFill" data-i18n="leds.fill"></button>
       <button type="button" class="small" id="ledPatternDefault" data-i18n="leds.pattern.default"></button>
     </div>
     <div class="led-grid" id="ledGrid"></div>
     <p class="hint" id="ledGridHint"></p>
-    <label class="led-interval"><span data-i18n="leds.interval"></span><select id="ledInterval"></select></label>
+    <label class="led-interval" id="ledIntervalRow"><span data-i18n="leds.interval"></span><select id="ledInterval"></select></label>
     <div class="row leds-actions">
       <button type="button" class="primary" id="ledSave" data-i18n="save"></button>
       <button type="button" id="ledRevert" data-i18n="revert"></button>
@@ -405,6 +410,7 @@
           <button type="button" class="big primary" id="bResume" data-i18n="resume" hidden></button>
           <button type="button" class="big danger" id="bCancel" data-i18n="cancel"></button>
           <button type="button" class="big" id="bAck" data-i18n="ack" hidden></button>
+          <button type="button" class="big primary" id="bRetry" data-i18n="retry" hidden></button>
         </div>
       </div>
     </div>
@@ -462,6 +468,7 @@
   <div class="col side">
   <details class="card" id="wifiBox">
     <summary data-i18n="h.wifi"></summary>
+    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <p class="hint setup-only" id="setupIntro" data-i18n="setup.intro" style="margin:0 0 12px"></p>
     <div class="derived" id="wifiStatus"></div>
     <div class="handoff" id="handoff" hidden>
@@ -494,6 +501,7 @@
 
   <details class="card" id="setBox">
     <summary><span data-i18n="h.settings"></span><span class="badge" id="setBadge" data-i18n="modified" hidden></span></summary>
+    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <form id="setForm" class="grid" autocomplete="off" onsubmit="return false">
       <p class="sub full" data-i18n="set.device"></p>
       <label class="full"><span data-i18n="set.device_name"></span><input type="text" name="device_name" maxlength="32" placeholder="µprint"></label>
@@ -570,6 +578,7 @@
   <!-- Hardware: was am ESP angeschlossen ist (Speichern über dieselbe Leiste wie die Einstellungen) -->
   <details class="card" id="hwBox">
     <summary><span data-i18n="h.hardware"></span><span class="badge" id="hwBadge" data-i18n="modified" hidden></span></summary>
+    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <form id="hwForm" class="grid" autocomplete="off" onsubmit="return false">
       <p class="sub full" data-i18n="set.sd"></p>
       <label class="check full"><input type="checkbox" name="sd_enable"> <span data-i18n="set.sd_enable"></span></label>
@@ -596,10 +605,10 @@
       <label><span data-i18n="set.led_max_ma"></span><input type="number" name="led_max_ma" min="0" max="10000" step="50"></label>
       <label><span data-i18n="set.led_ma"></span><input type="number" name="led_ma" min="5" max="100"></label>
       <p class="hint full" id="ledCurrent" hidden></p>
-      <div class="row full"><button type="button" class="small" id="ledFind" data-i18n="leds.find"></button>
-        <a href="#leds" data-i18n="leds.open"></a></div>
       <p class="hint full" data-i18n="set.leds.hint"></p>
     </form>
+    <div class="row" style="margin-top:10px"><button type="button" class="small" id="ledFind" data-i18n="leds.find"></button>
+      <a href="#leds" data-i18n="leds.open"></a></div>
     <div class="derived" id="hwRebootBox" style="margin-top:12px" hidden>
       <div data-i18n="set.reboot"></div>
       <div class="row" style="margin-top:8px"><button type="button" class="small" id="hwRebootBtn" data-i18n="set.rebootNow"></button></div>
@@ -758,7 +767,8 @@ function renderStatus() {
   const s = st || {}, a = !offline && active(), done = finished(), show = a || done;
   const state = offline ? 'offline' : s.state || 'connecting';
   const tab = $('tab');
-  tab.textContent = t(state === 'disconnected' && axiMode() ? 'state.axiDisconnected' : 'state.' + state);
+  tab.textContent = t(s.unresponsive && !offline ? 'state.unresponsive'
+    : state === 'disconnected' && axiMode() ? 'state.axiDisconnected' : 'state.' + state);
   tab.className = 'tab ' + ({ idle: 'on', printing: 'on busy', paused: 'on', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
 
   const pct = a && s.size ? s.pos / s.size * 100 : done ? 100 : 0;
@@ -781,10 +791,12 @@ function renderStatus() {
   $('bResume').hidden = offline || s.state !== 'paused';
   $('bCancel').disabled = !a;
   $('bAck').hidden = offline || s.state !== 'error';
+  $('bRetry').hidden = offline || !s.unresponsive;
 
   let title, sub = s.message || '', bad = s.state === 'error';
   if (offline) { title = t('stage.offline'); sub = t('stage.offlineHint'); bad = true; }
   else if (show) title = s.file;
+  else if (s.state === 'disconnected' && s.unresponsive) { title = t('stage.unresponsive'); sub = t('stage.unresponsiveHint'); bad = true; }
   else if (s.state === 'disconnected') { const k = axiMode() ? 'stage.axiDisconnected' : 'stage.disconnected'; title = t(k); sub = t(k + 'Hint'); }
   else if (s.state === 'connecting') { title = t('stage.connecting'); sub = ''; }
   else if (s.state === 'error') { title = t('state.error'); sub = s.message; }
@@ -812,9 +824,18 @@ function renderStatus() {
     $(id).hidden = !unplugged || !on;
     $(id).classList.toggle('wait', s.state === 'connecting');
   }
-  renderFiles(); renderOta();
+  renderFiles(); renderOta(); renderLock();
+}
+// Während eines Drucks lassen sich WLAN, Einstellungen, Hardware und die LED-Darstellung ansehen, aber nicht ändern
+const LOCKED = ['wifiForm', 'setForm', 'setActions', 'apiNew', 'rebootBox', 'hwForm', 'hwRebootBox',
+  'ledRows', 'ledPaint', 'ledGrid', 'ledIntervalRow', 'ledSave', 'ledRevert', 'ledReset'];
+function renderLock() {
+  const lock = active();
+  for (const id of LOCKED) $(id).inert = lock;
+  for (const n of document.querySelectorAll('.lock-note')) { n.hidden = !lock; n.textContent = t('lock.print'); }   // .axi: „Plot“
 }
 $('bStart').onclick = () => { const f = selected() || finishedFile(); if (f) act('POST', '/api/print' + fileQuery(f)); };
+$('bRetry').onclick = () => act('POST', '/api/printer/retry');
 
 // ---------- Dateien ----------
 async function loadFiles() {
