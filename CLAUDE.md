@@ -77,6 +77,9 @@ Where the project is heading, based on the open issues and branches:
   file up to date as tasks get done. Companion project [µplot](https://github.com/dmyrenne/uplot) produces the
   plotter G-code (SVG → µplot → µprint → AxiDraw), so µprint only translates G-code and does no coordinate
   transforms. Issue #12 (detect 2D/3D G-code) belongs to this.
+- **GRBL machines (planned, after the plotter):** CNC mills (#21) and lasers (#22) as two separate device types
+  sharing one GRBL module for connection, streaming (character counting) and real-time commands; #21 is the base,
+  #22 only covers what differs for lasers (`$32` laser mode, power instead of spindle, framing, safety).
 - **Device hardware:** a custom PCB (`PCB/`, separate repo) with hardware buttons (#4), a display (#5) and
   addressable LEDs (#6). All pins and options are meant to be configurable in the web UI.
 - **Printer features & UX:** preheat presets (#1), G-code thumbnails (#2), flashing printer firmware (#3),
