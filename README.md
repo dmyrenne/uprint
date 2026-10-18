@@ -1,12 +1,12 @@
-# μprint
+# µprint
 
-μprint turns an ESP32-S3 into a small print server for your 3D printer or pen plotter. You upload G-code in the
-browser, μprint stores it on a microSD card or in its internal flash and streams it to the machine over USB. Start,
-pause and cancel from the browser on your computer or phone. No PC needs to keep running. μprint works with 3D
-printers running Marlin or Prusa firmware over USB (for example the Prusa MK3S) and with AxiDraw / NextDraw pen
-plotters (EiBotBoard).
+µprint ("micro print", written `uprint` wherever µ isn't available, as in hostnames) turns an ESP32-S3 into a small
+print server for your 3D printer or pen plotter. You upload G-code in the browser, µprint stores it on a microSD card
+or in its internal flash and streams it to the machine over USB. Start, pause and cancel from the browser on your
+computer or phone. No PC needs to keep running. µprint works with 3D printers running Marlin or Prusa firmware over
+USB (for example the Prusa MK3S) and with AxiDraw / NextDraw pen plotters (EiBotBoard).
 
-![μprint during a print](docs/screenshot.png)
+![µprint during a print](docs/screenshot.png)
 
 ## Features
 
@@ -19,7 +19,7 @@ plotters (EiBotBoard).
 - **Wi-Fi setup** through the device's own access point with a captive portal, or run it access point only
 - **Updates over the air** from the web interface, plus a [web flasher](https://dmyrenne.github.io/uprint/) for the first install
 - **Safe while printing:** Wi-Fi and settings are locked during a print; if the printer is plugged in but doesn't
-  answer, μprint says so and keeps retrying
+  answer, µprint says so and keeps retrying
 
 ## What you need
 
@@ -48,7 +48,7 @@ By default the SD module goes to these pins; you can choose others later under *
 | XIAO ESP32S3 Sense (slot) | D10 | D9 | D8 | slot |
 
 On the XIAO you pick the pins as they are labelled on the board. An external SD module works best on D8 (SCLK),
-D9 (MISO) and D10 (MOSI), with CS on any free pin such as D7. Leave D6 free, μprint writes its log there. If you
+D9 (MISO) and D10 (MOSI), with CS on any free pin such as D7. Leave D6 free, µprint writes its log there. If you
 don't use a microSD card, switch it off under **Hardware**, which frees its pins.
 
 Most boards have two USB ports. Use the one labelled `UART` or `COM` to flash the firmware; the printer later goes
@@ -71,15 +71,15 @@ and after flashing release `BOOT` and press `RESET`, otherwise it stays in the b
 
 ## Setup
 
-After starting, μprint opens its own Wi-Fi called **uprint** (password `uprint123`). Connect to it; your phone or
+After starting, µprint opens its own Wi-Fi called **uprint** (password `uprint123`). Connect to it; your phone or
 laptop should open the setup page by itself, otherwise go to http://192.168.4.1. Under **Wi-Fi** pick your home
-network and enter its password. The page then shows the new address, and from then on you reach μprint at
+network and enter its password. The page then shows the new address, and from then on you reach µprint at
 http://uprint.local. If you'd rather not join a network, choose **Continue without Wi-Fi**: the access point then
 stays on permanently.
 
 Now plug the printer into the board via USB. As soon as it is connected, the status at the top right turns blue.
 Upload a file, click it in the list, press **Print**, done. If the printer is plugged in but doesn't answer
-(switched off, wrong baud rate), μprint shows *Printer not responding* after 30 seconds, keeps retrying in the
+(switched off, wrong baud rate), µprint shows *Printer not responding* after 30 seconds, keeps retrying in the
 background, and offers a **Reconnect** button.
 
 The settings are split into two cards:
@@ -93,18 +93,18 @@ While a print is running, Wi-Fi, settings and hardware can be viewed but not cha
 
 ## Printing from your slicer
 
-μprint speaks the PrusaLink and OctoPrint APIs, so your slicer can send G-code straight to the printer. In
+µprint speaks the PrusaLink and OctoPrint APIs, so your slicer can send G-code straight to the printer. In
 **PrusaSlicer**, add a physical printer: host type **PrusaLink**, hostname `uprint.local` and as API key the value
-from μprint under **Settings → Slicer**. PrusaSlicer also finds μprint on the network via "Browse". **OrcaSlicer**
+from µprint under **Settings → Slicer**. PrusaSlicer also finds µprint on the network via "Browse". **OrcaSlicer**
 and other slicers use the host type **OctoPrint** with the same details. When uploading you can choose whether the
 print starts right away.
 
-μprint can't print binary G-code (`.bgcode`). If your printer profile uses it, turn it off in the slicer's printer
+µprint can't print binary G-code (`.bgcode`). If your printer profile uses it, turn it off in the slicer's printer
 settings.
 
 ## Pen plotter (AxiDraw / NextDraw)
 
-Set **Settings → Device type** to **AxiDraw / NextDraw**. μprint then translates G-code into EiBotBoard commands
+Set **Settings → Device type** to **AxiDraw / NextDraw**. µprint then translates G-code into EiBotBoard commands
 itself, with motion planning (acceleration, cornering) on the ESP32-S3. The files come from
 [µplot](https://github.com/dmyrenne/uplot) in AxiDraw mode (SVG → µplot → µprint → AxiDraw): their first line is
 `; uplot-axidraw 1`, other files are rejected in plotter mode. Speeds, acceleration, pen servo type and pen heights
@@ -117,13 +117,13 @@ Details are in [docs/axidraw.md](docs/axidraw.md) (German).
 
 ## Status LEDs
 
-Optionally, a strip of addressable LEDs (SK6812, WS2812 or WS2811, also RGBW) shows what μprint is doing. The data
+Optionally, a strip of addressable LEDs (SK6812, WS2812 or WS2811, also RGBW) shows what µprint is doing. The data
 line goes to a free GPIO **through a 330–470 Ω resistor close to the pin**, plus 5 V and GND. Without that
 resistor, the ringing data line can disturb Wi-Fi: on the XIAO ESP32S3 it dropped out completely until a 330 Ω
 resistor was added. Pin, number of LEDs, LED type, colour order, brightness and a current limit are set under
 **Hardware → Status LEDs** and apply immediately.
 
-Out of the box, overall brightness is 20 % and the current limit 500 mA. Like WLED, μprint estimates the current
+Out of the box, overall brightness is 20 % and the current limit 500 mA. Like WLED, µprint estimates the current
 (about 55 mA per LED at full white) and dims the whole strip before it would exceed the limit; keep the limit below
 what your 5 V supply can deliver, and feed longer strips directly from the supply. After saving, a rainbow runs
 across all LEDs once. If red shows up as green, the colour order is wrong (SK6812 and WS2812 are usually GRB).
@@ -153,9 +153,9 @@ seconds. The colour of the first LED appears as a dot next to the device name in
 ## Reset and storage
 
 - **Reset settings** (under **Settings**) puts all settings back to factory state, including the LED appearance;
-  Wi-Fi and API key are kept, so μprint stays reachable.
-- **Reset everything** also forgets the Wi-Fi and creates a new API key; μprint then starts its access point for setup
-  again. Without the web interface, hold the `BOOT` button for 10 seconds while μprint is running (this works as long
+  Wi-Fi and API key are kept, so µprint stays reachable.
+- **Reset everything** also forgets the Wi-Fi and creates a new API key; µprint then starts its access point for setup
+  again. Without the web interface, hold the `BOOT` button for 10 seconds while µprint is running (this works as long
   as GPIO 0 isn't used as an SD or LED pin).
 - Files are kept in both cases. To remove them, use **Clear …** next to a storage in the file list: it deletes all
   G-code files on that storage, or formats it completely if you tick the option (also helps with a broken file
@@ -164,8 +164,8 @@ seconds. The colour of the first LED appears as a dot next to the device name in
 ## Updating
 
 New versions appear under [Releases](https://github.com/dmyrenne/uprint/releases). Updating needs no cable: download
-the `uprint-…-ota.bin` file for your variant (`basic`, `n16r8` or `xiao` in the name) and install it in μprint under
-**Settings → Firmware**, which also shows the installed variant. μprint restarts afterwards; your settings, Wi-Fi and
+the `uprint-…-ota.bin` file for your variant (`basic`, `n16r8` or `xiao` in the name) and install it in µprint under
+**Settings → Firmware**, which also shows the installed variant. µprint restarts afterwards; your settings, Wi-Fi and
 all files are kept. You can also simply use the web flasher again, but without erasing the device.
 
 The web flasher also lets you pick an older version if you want to go back. Pre-releases for testing new features
@@ -189,8 +189,8 @@ request, the corresponding part does. The web flasher shows the last 5 releases.
 
 ## How it was made
 
-μprint was developed together with [Claude](https://claude.com/claude-code) (Anthropic).
+µprint was developed together with [Claude](https://claude.com/claude-code) (Anthropic).
 
 ## License
 
-μprint is released under the [MIT License](LICENSE).
+µprint is released under the [MIT License](LICENSE).
