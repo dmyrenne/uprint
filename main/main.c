@@ -3,6 +3,7 @@
 
 #include "printer.h"
 #include "settings.h"
+#include "status_led.h"
 #include "storage.h"
 #include "usb_serial.h"
 #include "web.h"
@@ -28,6 +29,8 @@ void app_main(void)
     ESP_ERROR_CHECK(wifi_init());
     ESP_ERROR_CHECK(usb_serial_init());
     ESP_ERROR_CHECK(printer_init());
+    // Nach Drucker und WLAN, deren Zustand die LEDs anzeigen
+    status_led_init();
     ESP_ERROR_CHECK(web_start());
 
     ESP_LOGI(TAG, "uprint gestartet");

@@ -24,6 +24,7 @@
 #include "slicer.h"
 #include "settings.h"
 #include "variant.h"
+#include "status_led.h"
 #include "storage.h"
 #include "web.h"
 #include "wifi.h"
@@ -77,20 +78,30 @@ static esp_err_t status_get(httpd_req_t *req)
 {
     static char file[ESCAPED_NAME_MAX];
     static char msg[sizeof(((printer_status_t *)0)->message) * 6];
-    static char body[ESCAPED_NAME_MAX + sizeof(msg) + 256];
+    static char body[ESCAPED_NAME_MAX + sizeof(msg) + 320];
     printer_status_t st;
+    settings_t cfg;
+    led_config_t leds;
 
     printer_get_status(&st);
+    settings_get(&cfg);
+    status_led_get_config(&leds);
+    // Kennungsfarbe für den Punkt neben dem Gerätenamen, leer ohne Status-LEDs
+    char led_id[8] = "";
+    if (cfg.led_pin >= 0 && cfg.led_count > 0) {
+        const uint8_t *id = leds.id_pattern[0];
+        snprintf(led_id, sizeof(led_id), "#%02x%02x%02x", id[0], id[1], id[2]);
+    }
     http_json_escape(file, sizeof(file), st.file);
     http_json_escape(msg, sizeof(msg), st.message);
     snprintf(body, sizeof(body),
              "{\"state\":\"%s\",\"file\":\"%s\",\"size\":%" PRIu32 ",\"pos\":%" PRIu32
              ",\"elapsed\":%" PRIu32 ",\"hotend\":%.1f,\"hotend_target\":%.1f"
              ",\"bed\":%.1f,\"bed_target\":%.1f,\"message\":\"%s\",\"storage\":\"%s\""
-             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 "}",
+             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 ",\"led_id\":\"%s\",\"led_ma\":%d}",
              printer_state_name(st.state), file, st.file_size, st.file_pos, st.elapsed_s,
              st.hotend, st.hotend_target, st.bed, st.bed_target, msg, storage_id(st.vol),
-             st.finished ? "true" : "false", st.duration_s, storage_revision());
+             st.finished ? "true" : "false", st.duration_s, storage_revision(), led_id, status_led_current_ma());
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
 }
@@ -484,6 +495,7 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
         printer_device_changed();
     }
     wifi_apply_device_name();
+    status_led_apply();
     return settings_get_handler(req);
 }
 
@@ -510,6 +522,13 @@ static void schedule_restart(void)
         esp_timer_create(&args, &timer);
     }
     esp_timer_start_once(timer, 800 * 1000);
+}
+
+// Fehler nach Beginn der Übertragung: Fortschrittsanzeige der Status-LEDs beenden
+static esp_err_t ota_fail(httpd_req_t *req, const char *status, const char *msg)
+{
+    status_led_ota(-1);
+    return http_send_error(req, status, msg);
 }
 
 // Body: Firmware-Image (build/uprint.bin) als Rohdaten
@@ -540,6 +559,7 @@ static esp_err_t ota_post(httpd_req_t *req)
     ESP_LOGI(TAG, "Firmware-Update: %u Bytes nach %s", (unsigned)req->content_len, part->label);
     const char *failure = NULL;
     size_t remaining = req->content_len;
+    status_led_ota(0);
     while (remaining > 0) {
         int r = http_recv(req, buf, remaining < HTTP_CHUNK ? remaining : HTTP_CHUNK);
         if (r <= 0) {
@@ -552,33 +572,34 @@ static esp_err_t ota_post(httpd_req_t *req)
             break;
         }
         remaining -= r;
+        status_led_ota((int)((req->content_len - remaining) * 100 / req->content_len));
     }
     free(buf);
     if (failure) {
         esp_ota_abort(ota);
-        return http_send_error(req, "400 Bad Request", failure);
+        return ota_fail(req, "400 Bad Request", failure);
     }
     err = esp_ota_end(ota);
     if (err != ESP_OK) {
-        return http_send_error(req, "400 Bad Request",
-                          err == ESP_ERR_OTA_VALIDATE_FAILED ? "Firmware-Datei ist beschädigt oder für einen anderen Chip" : esp_err_to_name(err));
+        return ota_fail(req, "400 Bad Request",
+                        err == ESP_ERR_OTA_VALIDATE_FAILED ? "Firmware-Datei ist beschädigt oder für einen anderen Chip" : esp_err_to_name(err));
     }
 
     // Nur Firmware von uprint annehmen
     esp_app_desc_t desc;
     if (esp_ota_get_partition_description(part, &desc) != ESP_OK || strcmp(desc.project_name, "uprint") != 0) {
-        return http_send_error(req, "400 Bad Request", "Das ist keine uprint-Firmware");
+        return ota_fail(req, "400 Bad Request", "Das ist keine uprint-Firmware");
     }
     // Eine Firmware für ein anderes Board würde nicht starten (Flash-Größe, PSRAM, Partitionen)
     uprint_desc_t id;
     if (!uprint_read_desc(part, &id) || strcmp(id.variant, uprint_variant()) != 0) {
         static char msg[128];
         snprintf(msg, sizeof(msg), "Falsche Variante: dieses Gerät braucht die Firmware \"%s\"", uprint_variant());
-        return http_send_error(req, "400 Bad Request", msg);
+        return ota_fail(req, "400 Bad Request", msg);
     }
     err = esp_ota_set_boot_partition(part);
     if (err != ESP_OK) {
-        return http_send_error(req, "500 Internal Server Error", esp_err_to_name(err));
+        return ota_fail(req, "500 Internal Server Error", esp_err_to_name(err));
     }
 
     char version[sizeof(desc.version) * 6];
@@ -589,6 +610,212 @@ static esp_err_t ota_post(httpd_req_t *req)
     schedule_restart();
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
+}
+
+// ---------- Status-LEDs ----------
+
+static void color_hex(char out[8], const uint8_t rgb[3])
+{
+    snprintf(out, 8, "#%02x%02x%02x", rgb[0], rgb[1], rgb[2]);
+}
+
+// "#rrggbb" oder "rrggbb"
+static bool parse_color(const char *s, uint8_t rgb[3])
+{
+    if (*s == '#') {
+        s++;
+    }
+    if (strlen(s) != 6 || strspn(s, "0123456789abcdefABCDEF") != 6) {
+        return false;
+    }
+    for (int i = 0; i < 3; i++) {
+        char part[3] = {s[2 * i], s[2 * i + 1], '\0'};
+        rgb[i] = (uint8_t)strtol(part, NULL, 16);
+    }
+    return true;
+}
+
+// "rrggbb,rrggbb,…" ab LED 0 (zerlegt s); nicht genannte LEDs bleiben
+static bool parse_pattern(char *s, uint8_t (*out)[3])
+{
+    char *save = NULL;
+    int i = 0;
+    for (char *tok = strtok_r(s, ",", &save); tok; tok = strtok_r(NULL, ",", &save), i++) {
+        if (i >= STATUS_LED_MAX || !parse_color(tok, out[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void look_json(char *out, size_t len, const led_look_t *lk)
+{
+    char color[8];
+    const uint8_t rgb[3] = {lk->r, lk->g, lk->b};
+    color_hex(color, rgb);
+    snprintf(out, len, "\"effect\":%d,\"color\":\"%s\",\"bright\":%d", lk->effect, color, lk->bright);
+}
+
+// Alle Zustände mit erlaubten Effekten und Standardwerten (für die Unterseite)
+static esp_err_t leds_get(httpd_req_t *req)
+{
+    led_config_t cur, def;
+    char item[320], look[64], look_def[64], effects[40];
+    status_led_get_config(&cur);
+    status_led_default_config(&def);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr_chunk(req, "{\"states\":[");
+    for (int i = 0; i < LED_STATE_COUNT; i++) {
+        size_t n = 0;
+        for (int fx = 0; fx < LED_FX_COUNT; fx++) {
+            if (status_led_effect_allowed(i, fx)) {
+                n += snprintf(effects + n, sizeof(effects) - n, "%s%d", n ? "," : "", fx);
+            }
+        }
+        look_json(look, sizeof(look), &cur.look[i]);
+        look_json(look_def, sizeof(look_def), &def.look[i]);
+        snprintf(item, sizeof(item), "%s{\"id\":\"%s\",%s,\"effects\":[%s],\"default\":{%s}}", i ? "," : "",
+                 status_led_state_name(i), look, effects, look_def);
+        httpd_resp_sendstr_chunk(req, item);
+    }
+    // Muster der Kennung, immer für die größtmögliche Anzahl LEDs
+    const led_config_t *src[2] = {&cur, &def};
+    const char *open[2] = {"],\"pattern\":[", "],\"pattern_default\":["};
+    for (int k = 0; k < 2; k++) {
+        httpd_resp_sendstr_chunk(req, open[k]);
+        for (int i = 0; i < STATUS_LED_MAX; i += 10) {
+            size_t n = 0;
+            for (int j = i; j < i + 10 && j < STATUS_LED_MAX; j++) {
+                char color[8];
+                color_hex(color, src[k]->id_pattern[j]);
+                n += snprintf(item + n, sizeof(item) - n, "%s\"%s\"", j ? "," : "", color);
+            }
+            httpd_resp_sendstr_chunk(req, item);
+        }
+    }
+    snprintf(item, sizeof(item), "],\"id_interval\":%d,\"id_interval_default\":%d}", cur.id_interval, def.id_interval);
+    httpd_resp_sendstr_chunk(req, item);
+    return httpd_resp_sendstr_chunk(req, NULL);
+}
+
+// Body: <zustand>_effect, <zustand>_color, <zustand>_bright, pattern (rrggbb,rrggbb,… ab LED 0), id_interval;
+// fehlende Felder bleiben. Statisch, weil der Webserver Anfragen nacheinander abarbeitet.
+static esp_err_t leds_post(httpd_req_t *req)
+{
+    static char body[3072];
+    static char pattern[STATUS_LED_MAX * 12 + 1];   // URL-kodiert: "%23rrggbb%2C" je LED
+    if (!http_recv_body(req, body, sizeof(body))) {
+        return http_send_error(req, "400 Bad Request", "Ungültige Anfrage");
+    }
+    led_config_t c;
+    status_led_get_config(&c);
+    bool bad = false;
+    char key[24], val[16];
+    for (int i = 0; i < LED_STATE_COUNT && !bad; i++) {
+        led_look_t *lk = &c.look[i];
+        int v;
+        snprintf(key, sizeof(key), "%s_effect", status_led_state_name(i));
+        if (form_int(body, key, &v, &bad)) {
+            bad |= v < 0 || v >= LED_FX_COUNT;
+            lk->effect = (uint8_t)v;
+        }
+        snprintf(key, sizeof(key), "%s_bright", status_led_state_name(i));
+        if (form_int(body, key, &v, &bad)) {
+            bad |= v < 0 || v > 100;
+            lk->bright = (uint8_t)v;
+        }
+        snprintf(key, sizeof(key), "%s_color", status_led_state_name(i));
+        uint8_t rgb[3];
+        if (form_value(body, key, val, sizeof(val))) {
+            if (parse_color(val, rgb)) {
+                lk->r = rgb[0];
+                lk->g = rgb[1];
+                lk->b = rgb[2];
+            } else {
+                bad = true;
+            }
+        }
+    }
+    if (!bad && form_value(body, "pattern", pattern, sizeof(pattern))) {
+        bad = !parse_pattern(pattern, c.id_pattern);
+    }
+    int interval;
+    if (!bad && form_int(body, "id_interval", &interval, &bad)) {
+        bad |= interval < 0 || interval > 255;
+        c.id_interval = (uint8_t)interval;
+    }
+    if (bad) {
+        return http_send_error(req, "400 Bad Request", "Ungültiger Wert (Farbe als #rrggbb, Zahlen 0–100)");
+    }
+    const char *error = NULL;
+    esp_err_t err = status_led_set_config(&c, &error);
+    if (err != ESP_OK) {
+        return http_send_error(req, err == ESP_ERR_INVALID_ARG ? "400 Bad Request" : "500 Internal Server Error", error);
+    }
+    return leds_get(req);
+}
+
+static esp_err_t leds_reset_post(httpd_req_t *req)
+{
+    status_led_reset_config();
+    return leds_get(req);
+}
+
+// ?state=<zustand>, optional effect, color (rrggbb), bright: noch nicht gespeicherte Darstellung zeigen.
+// Bei der Kennung optional pattern=rrggbb,… im Body (passt nicht in die URL).
+static esp_err_t leds_preview_post(httpd_req_t *req)
+{
+    static char body[STATUS_LED_MAX * 12 + 16];
+    static char pattern[STATUS_LED_MAX * 12 + 1];
+    static uint8_t colors[STATUS_LED_MAX][3];
+    char query[128], name[16], val[16];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "state", name, sizeof(name)) != ESP_OK) {
+        return http_send_error(req, "400 Bad Request", "Unbekannter Zustand");
+    }
+    for (int i = 0; i < LED_STATE_COUNT; i++) {
+        if (strcmp(name, status_led_state_name(i)) != 0) {
+            continue;
+        }
+        led_config_t c;
+        status_led_get_config(&c);
+        led_look_t look = c.look[i];
+        uint8_t rgb[3];
+        if (httpd_query_key_value(query, "effect", val, sizeof(val)) == ESP_OK) {
+            int fx = atoi(val);
+            if (!status_led_effect_allowed(i, fx)) {
+                return http_send_error(req, "400 Bad Request", "Effekt ist für diesen Zustand nicht möglich");
+            }
+            look.effect = (uint8_t)fx;
+        }
+        if (httpd_query_key_value(query, "color", val, sizeof(val)) == ESP_OK && parse_color(val, rgb)) {
+            look.r = rgb[0];
+            look.g = rgb[1];
+            look.b = rgb[2];
+        }
+        if (httpd_query_key_value(query, "bright", val, sizeof(val)) == ESP_OK) {
+            int b = atoi(val);
+            look.bright = (uint8_t)(b < 0 ? 0 : b > 100 ? 100 : b);
+        }
+        bool with_pattern = false;
+        if (req->content_len > 0) {
+            memcpy(colors, c.id_pattern, sizeof(colors));
+            if (!http_recv_body(req, body, sizeof(body)) ||
+                (form_value(body, "pattern", pattern, sizeof(pattern)) && !parse_pattern(pattern, colors))) {
+                return http_send_error(req, "400 Bad Request", "Ungültiges Muster");
+            }
+            with_pattern = true;
+        }
+        status_led_preview(i, &look, with_pattern ? (const uint8_t (*)[3])colors : NULL);
+        return http_send_ok(req);
+    }
+    return http_send_error(req, "400 Bad Request", "Unbekannter Zustand");
+}
+
+static esp_err_t led_find_post(httpd_req_t *req)
+{
+    status_led_find();
+    return http_send_ok(req);
 }
 
 // ---------- AxiDraw-Testmodus ----------
@@ -700,7 +927,7 @@ static esp_err_t not_found(httpd_req_t *req, httpd_err_code_t err)
 esp_err_t web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 40;
+    cfg.max_uri_handlers = 48;
     cfg.uri_match_fn = httpd_uri_match_wildcard;   // für PUT /api/v1/files/*
     cfg.stack_size = 8192;
     cfg.recv_wait_timeout = 10;
@@ -738,6 +965,11 @@ esp_err_t web_start(void)
         {.uri = "/api/axidraw/test",  .method = HTTP_POST, .handler = axidraw_test_post},
         {.uri = "/api/axidraw/abort", .method = HTTP_POST, .handler = axidraw_abort_post},
         {.uri = "/api/axidraw/log",   .method = HTTP_GET,  .handler = axidraw_log_get},
+        {.uri = "/api/leds",          .method = HTTP_GET,  .handler = leds_get},
+        {.uri = "/api/leds",          .method = HTTP_POST, .handler = leds_post},
+        {.uri = "/api/leds/reset",    .method = HTTP_POST, .handler = leds_reset_post},
+        {.uri = "/api/leds/preview",  .method = HTTP_POST, .handler = leds_preview_post},
+        {.uri = "/api/led/find",      .method = HTTP_POST, .handler = led_find_post},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &routes[i]), TAG, "route %s", routes[i].uri);

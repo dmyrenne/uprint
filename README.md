@@ -78,6 +78,41 @@ denselben Angaben. Beim Hochladen kannst du wählen, ob der Druck gleich startet
 Binären G-Code (`.bgcode`) kann μprint nicht drucken. Falls dein Druckerprofil ihn nutzt, schalte ihn in den
 Druckereinstellungen des Slicers ab.
 
+## Status-LEDs
+
+Optional zeigt ein Strip mit adressierbaren LEDs (SK6812, WS2812 oder WS2811, auch RGBW) den Zustand von μprint.
+Die Datenleitung kommt an einen freien GPIO, dazu 5 V und GND. Pin, Anzahl, LED-Typ, Farbreihenfolge,
+Helligkeit und eine Stromgrenze stellst du unter **Hardware → Status-LEDs** ein, das gilt sofort.
+
+Versorge den Strip direkt vom 5-V-Netzteil und nicht über den 5-V-Pin (VUSB) des Boards, und führe die Masse am
+Netzteil zusammen. Beim XIAO ESP32S3 bricht sonst das WLAN zusammen, sobald der Strip an VUSB hängt, auch wenn er
+gar nicht leuchtet. Ab Werk stehen die Gesamthelligkeit auf 20 % und die Stromgrenze auf 500 mA. Wie in WLED schätzt
+μprint den Strom (etwa 55 mA je LED bei vollem Weiß) und dimmt den ganzen Strip, bevor er die Grenze überschreitet.
+Die Grenze sollte unter dem liegen, was die 5-V-Versorgung liefern kann. Nach dem Speichern läuft einmal ein
+Regenbogen über alle LEDs. Erscheint Rot grün, stimmt die Farbreihenfolge nicht (SK6812 und WS2812 sind meist GRB).
+
+Standardmäßig sieht das so aus. Gelten mehrere Zustände gleichzeitig, gewinnt der obere:
+
+| Zustand | Anzeige |
+| --- | --- |
+| Gerät finden (Knopf unter Hardware) | blinkt weiß, 10 s |
+| Firmware-Update | violetter Balken mit dem Fortschritt |
+| Fehler | rot, atmend |
+| Aufheizen | oranger Balken: aktuelle / Zieltemperatur |
+| Druck oder Plot läuft | blauer Balken mit dem Fortschritt, die Vorderkante atmet |
+| Pausiert | bernsteinfarbener Balken, pulsierend |
+| Fertig | grün, bis der nächste Druck startet |
+| Access Point offen | violett, atmend |
+| WLAN oder Drucker verbindet | cyanfarbenes Lauflicht |
+| Kein Drucker | erste LED schwach bernsteinfarben |
+| Bereit | erste LED schwach grün |
+
+Unter **Zustände anpassen** wählst du für jeden Zustand Effekt, Farbe und Helligkeit, mit einer Vorschau direkt auf dem
+Strip. **Alle auf Standard** stellt die Tabelle oben wieder her. Für eine Printfarm gibt es dort außerdem eine
+Kennung: ein Muster, in dem du jede LED einzeln anmalst (Pinsel wählen, LEDs anklicken oder darüberziehen). Ab Werk
+leuchten alle in einer Farbe, die aus der MAC-Adresse des Geräts kommt. Auf Wunsch zeigt der Strip das Muster alle
+10, 30 oder 60 Sekunden kurz. Die Farbe der ersten LED steht in der Weboberfläche als Punkt neben dem Gerätenamen.
+
 ## Aktualisieren
 
 Neue Versionen erscheinen unter [Releases](https://github.com/dmyrenne/uprint/releases). Zum Aktualisieren brauchst du

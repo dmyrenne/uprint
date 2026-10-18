@@ -218,6 +218,40 @@
   button.danger { color: var(--warn); }
   button.danger:hover:not(:disabled) { border-color: var(--warn); background: var(--warn-bg); }
 
+  /* ---------- Status-LEDs ---------- */
+  .led-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--line-strong); }
+  body.leds main > :not(#ledsView):not(#messages) { display: none; }
+  .leds-view { max-width: 920px; width: 100%; margin: 0 auto; }
+  .leds-view .back { font-size: 13px; display: inline-block; margin-bottom: 12px; }
+  .led-rows { margin: 8px -6px 0; }
+  .led-row { display: grid; grid-template-columns: minmax(130px, 1.2fr) 44px minmax(140px, 1.2fr) minmax(150px, 1fr) auto; gap: 8px 12px;
+             align-items: center; padding: 9px 6px; border-top: 1px solid var(--line); }
+  .led-row .name { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .led-row .name small { font: 500 10px var(--mono); color: var(--muted); }
+  .led-row.unsaved { background: var(--accent-soft); border-radius: 8px; border-top-color: transparent; }
+  .led-row .bright { display: flex; flex-direction: row; align-items: center; gap: 8px; font: 500 12px var(--mono); color: var(--muted); }
+  .led-row .bright span { width: 38px; text-align: right; }
+  input[type=color] { width: 44px; height: 30px; padding: 2px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--field); cursor: pointer; }
+  input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .led-row .noop { visibility: hidden; }
+  .led-paint { margin-top: 10px; align-items: flex-end; }
+  .led-paint .brush { flex-direction: row; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .led-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 6px; margin-top: 12px;
+              padding: 10px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px;
+              touch-action: none; user-select: none; }
+  .led-grid.unsaved { box-shadow: 0 0 0 2px var(--accent); }
+  .led-grid i { aspect-ratio: 1; border-radius: 50%; cursor: crosshair; position: relative;
+                box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .led-grid i span { position: absolute; inset: auto 0 -1px; text-align: center; font: 500 8px var(--mono);
+                     color: #fff; mix-blend-mode: difference; pointer-events: none; }
+  .led-interval { margin-top: 14px; max-width: 320px; }
+  .leds-actions { margin-top: 16px; }
+  .leds-actions .spacer { flex: 1; }
+  @media (max-width: 700px) {
+    .led-row { grid-template-columns: 1fr 44px; }
+    .led-row select, .led-row .bright { grid-column: 1 / -1; }
+  }
+
   .axi-prompt { font-size: 15px; font-weight: 600; margin-top: 14px; }
   .axi-log { font: 500 11px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
              margin: 14px 0 0; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -260,6 +294,7 @@
   <div class="brand">
     <svg id="mark" viewBox="0 0 34 34" role="img" aria-label="μprint"></svg>
     <h1><span id="devName">µprint</span><small id="tagline" data-i18n="tagline"></small></h1>
+    <span class="led-dot" id="ledDot" data-i18n-aria="leds.dot" hidden></span>
   </div>
   <div class="stats" id="stats"></div>
   <div class="spacer"></div>
@@ -272,6 +307,31 @@
 <main>
   <div id="messages"></div>
   <div id="setupSlot"></div>
+
+  <!-- Unterseite #leds: Darstellung der Status-LEDs je Zustand -->
+  <section class="card leds-view" id="ledsView" hidden>
+    <a class="back" href="#" data-i18n="leds.back"></a>
+    <h2 data-i18n="leds.title"></h2>
+    <p class="hint" data-i18n="leds.intro"></p>
+    <div class="led-rows" id="ledRows"></div>
+    <p class="sub" style="margin-top:20px" data-i18n="leds.id"></p>
+    <p class="hint" data-i18n="leds.id.hint"></p>
+    <div class="row led-paint">
+      <label class="brush"><span data-i18n="leds.brush"></span><input type="color" id="ledBrush"></label>
+      <button type="button" class="small" id="ledFill" data-i18n="leds.fill"></button>
+      <button type="button" class="small" id="ledPatternDefault" data-i18n="leds.pattern.default"></button>
+    </div>
+    <div class="led-grid" id="ledGrid"></div>
+    <p class="hint" id="ledGridHint"></p>
+    <label class="led-interval"><span data-i18n="leds.interval"></span><select id="ledInterval"></select></label>
+    <div class="row leds-actions">
+      <button type="button" class="primary" id="ledSave" data-i18n="save"></button>
+      <button type="button" id="ledRevert" data-i18n="revert"></button>
+      <button type="button" id="ledFind2" data-i18n="leds.find"></button>
+      <span class="spacer"></span>
+      <button type="button" class="warn" id="ledReset" data-i18n="leds.reset"></button>
+    </div>
+  </section>
 
   <section class="card">
     <h2 data-i18n="h.print"></h2>
@@ -439,12 +499,6 @@
       <label class="full"><span data-i18n="set.device_name"></span><input type="text" name="device_name" maxlength="32" placeholder="µprint"></label>
       <p class="hint full" data-i18n="set.device.hint"></p>
 
-      <p class="sub full" data-i18n="set.slicer"></p>
-      <label class="full"><span data-i18n="set.api_key"></span>
-        <span class="pick"><input type="text" id="apiKey" readonly spellcheck="false"><button type="button" id="apiCopy" data-i18n="copy"></button><button type="button" id="apiNew" data-i18n="set.api_new"></button></span>
-      </label>
-      <p class="hint full" id="slicerHint"></p>
-
       <p class="sub full" data-i18n="set.printer"></p>
       <label class="full"><span data-i18n="set.device_type"></span><select name="device_type">
         <option value="0" data-i18n="set.device_type.printer"></option>
@@ -480,18 +534,16 @@
       <label data-dev="1"><span data-i18n="set.pen_down"></span><input type="number" name="pen_down" min="0" max="100" step="1"></label>
       <p class="hint full" data-dev="1" data-i18n="set.plotter.hint"></p>
 
+      <p class="sub full" data-i18n="set.slicer"></p>
+      <label class="full"><span data-i18n="set.api_key"></span>
+        <span class="pick"><input type="text" id="apiKey" readonly spellcheck="false"><button type="button" id="apiCopy" data-i18n="copy"></button><button type="button" id="apiNew" data-i18n="set.api_new"></button></span>
+      </label>
+      <p class="hint full" id="slicerHint"></p>
+
       <p class="sub full" data-i18n="set.network"></p>
       <label><span data-i18n="set.hostname"></span><input type="text" name="hostname" maxlength="32" spellcheck="false"></label>
       <label><span data-i18n="set.ap_password"></span><input type="password" name="ap_password" maxlength="63"></label>
       <p class="hint full" data-i18n="set.network.hint"></p>
-
-      <p class="sub full" data-i18n="set.sd"></p>
-      <label class="check full"><input type="checkbox" name="sd_enable"> <span data-i18n="set.sd_enable"></span></label>
-      <label><span>MOSI</span><input type="number" name="sd_mosi" min="0" max="48"></label>
-      <label><span>MISO</span><input type="number" name="sd_miso" min="0" max="48"></label>
-      <label><span>SCLK</span><input type="number" name="sd_sclk" min="0" max="48"></label>
-      <label><span>CS</span><input type="number" name="sd_cs" min="0" max="48"></label>
-      <p class="hint full" id="sdPinHint" hidden data-i18n="set.sd.hint.xiao"></p>
     </form>
     <div class="row set-actions" id="setActions">
       <span class="unsaved" data-i18n="set.unsaved"></span>
@@ -513,6 +565,44 @@
       <div class="bar" id="otaBar" hidden><i></i></div>
       <p class="hint" id="otaHint"></p>
       <input type="file" id="otaFile" accept=".bin" hidden>
+    </div>
+  </details>
+  <!-- Hardware: was am ESP angeschlossen ist (Speichern über dieselbe Leiste wie die Einstellungen) -->
+  <details class="card" id="hwBox">
+    <summary><span data-i18n="h.hardware"></span><span class="badge" id="hwBadge" data-i18n="modified" hidden></span></summary>
+    <form id="hwForm" class="grid" autocomplete="off" onsubmit="return false">
+      <p class="sub full" data-i18n="set.sd"></p>
+      <label class="check full"><input type="checkbox" name="sd_enable"> <span data-i18n="set.sd_enable"></span></label>
+      <label><span>MOSI</span><input type="number" name="sd_mosi" min="0" max="48"></label>
+      <label><span>MISO</span><input type="number" name="sd_miso" min="0" max="48"></label>
+      <label><span>SCLK</span><input type="number" name="sd_sclk" min="0" max="48"></label>
+      <label><span>CS</span><input type="number" name="sd_cs" min="0" max="48"></label>
+      <p class="hint full" id="sdPinHint" hidden data-i18n="set.sd.hint.xiao"></p>
+
+      <p class="sub full" data-i18n="set.leds"></p>
+      <label><span data-i18n="set.led_pin"></span><input type="number" name="led_pin" min="-1" max="48"></label>
+      <label><span data-i18n="set.led_count"></span><input type="number" name="led_count" min="0" max="100"></label>
+      <label><span data-i18n="set.led_type"></span><select name="led_type">
+        <option value="0">WS2812</option><option value="1">SK6812</option><option value="2">WS2811</option>
+      </select></label>
+      <label><span data-i18n="set.led_order"></span><select name="led_order">
+        <option value="0">RGB</option><option value="1">RBG</option><option value="2">GRB</option>
+        <option value="3">GBR</option><option value="4">BRG</option><option value="5">BGR</option>
+      </select></label>
+      <label><span data-i18n="set.led_white"></span><select name="led_white">
+        <option value="0">RGB</option><option value="1">RGBW</option>
+      </select></label>
+      <label><span data-i18n="set.led_brightness"></span><input type="number" name="led_brightness" min="1" max="100"></label>
+      <label><span data-i18n="set.led_max_ma"></span><input type="number" name="led_max_ma" min="0" max="10000" step="50"></label>
+      <label><span data-i18n="set.led_ma"></span><input type="number" name="led_ma" min="5" max="100"></label>
+      <p class="hint full" id="ledCurrent" hidden></p>
+      <div class="row full"><button type="button" class="small" id="ledFind" data-i18n="leds.find"></button>
+        <a href="#leds" data-i18n="leds.open"></a></div>
+      <p class="hint full" data-i18n="set.leds.hint"></p>
+    </form>
+    <div class="derived" id="hwRebootBox" style="margin-top:12px" hidden>
+      <div data-i18n="set.reboot"></div>
+      <div class="row" style="margin-top:8px"><button type="button" class="small" id="hwRebootBtn" data-i18n="set.rebootNow"></button></div>
     </div>
   </details>
   </div>
@@ -651,7 +741,7 @@ async function refreshStatus() {
     // Beim Druckstart die Auswahl lösen, damit danach „Druck fertig“ erscheint
     if (changed && st && (s.state === 'printing' || s.state === 'paused')) selKey = null;
     st = s; offline = false;
-    renderStatus();
+    renderStatus(); renderLedDot();
     if (changed) loadFiles();
     if (back) loadSettings();
   } catch (e) {
@@ -1052,14 +1142,16 @@ async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1
 // ---------- Einstellungen ----------
 const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y',
   'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay',
-  'hostname', 'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
+  'hostname', 'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs',
+  'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness', 'led_max_ma', 'led_ma'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
-const setForm = $('setForm');
+const setForm = $('setForm'), hwForm = $('hwForm');
+const field = (k) => setForm.elements[k] || hwForm.elements[k];
 let settings = null;
 
 const setValue = (e) => (e.type === 'checkbox' ? (e.checked ? '1' : '0') : e.value.trim());
 function readSettings() {
-  return Object.fromEntries(SET_KEYS.map((k) => [k, setValue(setForm.elements[k])]));
+  return Object.fromEntries(SET_KEYS.map((k) => [k, setValue(field(k))]));
 }
 // XIAO: Pins mit ihrer Beschriftung auf dem Board statt als GPIO-Nummer, D6 ist die Log-Ausgabe der Konsole
 const SD_PINS = ['sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
@@ -1067,14 +1159,15 @@ const XIAO_PINS = [[1, 'D0'], [2, 'D1'], [3, 'D2'], [4, 'D3'], [5, 'D4'], [6, 'D
 function xiaoPins(s) {
   $('sdPinHint').hidden = s.variant !== 'xiao';
   if (s.variant !== 'xiao') return;
-  for (const k of SD_PINS) {
-    let sel = setForm.elements[k];
+  for (const k of [...SD_PINS, 'led_pin']) {
+    let sel = field(k);
     if (sel.tagName !== 'SELECT') {
       sel = document.createElement('select');
       sel.name = k;
-      setForm.elements[k].replaceWith(sel);
+      field(k).replaceWith(sel);
     }
-    const pins = k === 'sd_cs' ? [...XIAO_PINS, [21, t('set.sd.slot')]] : XIAO_PINS;
+    const pins = k === 'sd_cs' ? [...XIAO_PINS, [21, t('set.sd.slot')]] : k === 'led_pin' ? [[-1, t('leds.off')], ...XIAO_PINS]
+      : [...XIAO_PINS];
     if (!pins.some(([g]) => g === s[k])) pins.push([s[k], 'GPIO ' + s[k]]);   // sollte die Firmware nie liefern
     sel.replaceChildren(...pins.map(([g, label]) => new Option(label, g)));
   }
@@ -1084,16 +1177,19 @@ function writeSettings(s) {
   const sel = setForm.elements.baud, bauds = BAUDS.includes(s.baud) ? BAUDS : [...BAUDS, s.baud].sort((a, b) => a - b);
   sel.replaceChildren(...bauds.map((b) => new Option(String(b), b)));
   for (const k of SET_KEYS) {
-    const e = setForm.elements[k];
+    const e = field(k);
     if (e.type === 'checkbox') e.checked = s[k] === 1; else e.value = s[k];
   }
 }
-const setModified = () => !!settings && SET_KEYS.some((k) => String(settings[k]) !== readSettings()[k]);
+// Geändert insgesamt bzw. in einem der beiden Formulare (für das Abzeichen der Karte)
+const setModified = (form) => !!settings &&
+  SET_KEYS.some((k) => (!form || form.elements[k]) && String(settings[k]) !== readSettings()[k]);
 function renderSettings() {
   const mod = setModified(), dev = setForm.elements.device_type.value;
   for (const e of setForm.querySelectorAll('[data-dev]')) e.hidden = e.dataset.dev !== dev;
-  for (const k of SD_PINS) setForm.elements[k].disabled = !setForm.elements.sd_enable.checked;
-  $('setBadge').hidden = !mod;
+  for (const k of SD_PINS) field(k).disabled = !field('sd_enable').checked;
+  $('setBadge').hidden = !setModified(setForm);
+  $('hwBadge').hidden = !setModified(hwForm);
   $('setSave').disabled = !mod;
   $('setRevert').disabled = !mod;
   // Schwebend vor den Footer, sonst unsichtbar, solange die Karte zugeklappt ist (geschlossenes details rendert nichts)
@@ -1102,16 +1198,16 @@ function renderSettings() {
     if (mod) document.querySelector('.foot').before(bar); else $('setForm').after(bar);
     bar.classList.toggle('floating', mod);
   }
-  $('rebootBox').hidden = !settings || !settings.reboot_required;
+  $('rebootBox').hidden = $('hwRebootBox').hidden = !settings || !settings.reboot_required;
   renderOta(); renderSlicer(); renderName(); renderAxi();
 }
 async function loadSettings() {
   try { settings = await api('GET', '/api/settings'); } catch { return; }
-  if (!setModified() || !$('setBox').open) writeSettings(settings);   // laufende Eingaben nicht überschreiben
+  if (!setModified() || !($('setBox').open || $('hwBox').open)) writeSettings(settings);   // laufende Eingaben nicht überschreiben
   renderSettings();
+  if (ledEdit) buildLedGrid();   // Anzahl LEDs für das Muster der Kennung
 }
-setForm.addEventListener('input', renderSettings);
-setForm.addEventListener('change', renderSettings);
+for (const f of [setForm, hwForm]) { f.addEventListener('input', renderSettings); f.addEventListener('change', renderSettings); }
 $('setSave').onclick = async () => {
   try {
     const s = readSettings();
@@ -1123,7 +1219,7 @@ $('setSave').onclick = async () => {
   } catch (e) { say(e.message, true); }
 };
 $('setRevert').onclick = () => { writeSettings(settings); renderSettings(); say(t('set.discarded')); };
-$('rebootBtn').onclick = async () => {
+$('rebootBtn').onclick = $('hwRebootBtn').onclick = async () => {
   if (!confirm(t('confirm.reboot'))) return;
   try { await api('POST', '/api/reboot'); say(t('set.rebooting')); } catch (e) { say(e.message, true); }
 };
@@ -1183,6 +1279,158 @@ $('axiDownload').onclick = () => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
+
+// ---------- Status-LEDs ----------
+// Unterseite #leds: Effekt, Farbe und Helligkeit je Zustand. leds = gespeicherter Stand mit Standardwerten,
+// edit = Eingaben. Die Vorschau zeigt die Eingaben auf dem Strip, auch ungespeichert.
+let leds = null, ledEdit = null;
+const LED_INTERVALS = [0, 10, 30, 60];
+const lookKey = (l) => l.effect + '|' + l.color.toLowerCase() + '|' + l.bright;
+function renderLedDot() {
+  const on = !!st && !!st.led_id;
+  $('ledCurrent').hidden = !on;
+  if (on) $('ledCurrent').textContent = settings && settings.led_max_ma
+    ? t('leds.current', { ma: st.led_ma, max: settings.led_max_ma }) : t('leds.current.nolimit', { ma: st.led_ma });
+  const c = st && st.led_id;
+  $('ledDot').hidden = !c;
+  if (c) { $('ledDot').style.background = c; $('ledDot').title = t('leds.dot'); }
+}
+const samePattern = (a, b) => a.every((c, i) => c.toLowerCase() === b[i].toLowerCase());
+function ledEditModified() {
+  if (!leds || !ledEdit) return false;
+  return ledEdit.states.some((s, i) => lookKey(s) !== lookKey(leds.states[i])) ||
+    !samePattern(ledEdit.pattern, leds.pattern) || ledEdit.id_interval !== leds.id_interval;
+}
+function buildLedRows() {
+  const rows = ledEdit.states.map((s, i) => {
+    const row = el('div', 'led-row');
+    const name = el('div', 'name', t('ls.' + s.id));
+    const custom = el('small', null, t('leds.custom'));
+    name.append(custom);
+    const color = el('input'); color.type = 'color'; color.value = s.color; color.setAttribute('aria-label', t('leds.color'));
+    const fx = el('select'); fx.setAttribute('aria-label', t('leds.effect'));
+    for (const e of s.effects) fx.add(new Option(t('fx.' + e), e));
+    fx.value = s.effect;
+    const bright = el('label', 'bright'); const range = el('input'); range.type = 'range'; range.min = 0; range.max = 100; range.value = s.bright;
+    range.setAttribute('aria-label', t('leds.bright'));
+    const pct = el('span', null, s.bright + ' %'); bright.append(range, pct);
+    const prev = el('button', 'small', t('leds.preview')); prev.type = 'button';
+    // Kennung: Farben kommen aus dem Muster darunter
+    if (s.id === 'id') color.classList.add('noop');
+    const update = () => {
+      s.color = color.value; s.effect = +fx.value; s.bright = +range.value; pct.textContent = s.bright + ' %';
+      custom.hidden = lookKey(s) === lookKey(s.default) && (s.id !== 'id' || samePattern(ledEdit.pattern, ledEdit.pattern_default));
+      row.classList.toggle('unsaved', lookKey(s) !== lookKey(leds.states[i]));
+      renderLedActions();
+    };
+    color.oninput = fx.onchange = range.oninput = update;
+    prev.onclick = async () => {
+      const q = new URLSearchParams({ state: s.id, effect: s.effect, color: s.color.slice(1), bright: s.bright });
+      const body = s.id === 'id' ? new URLSearchParams({ pattern: patternParam() }) : undefined;
+      try { await api('POST', '/api/leds/preview?' + q, body); } catch (e) { say(e.message, true); }
+    };
+    if (s.id === 'id') idRowUpdate = update;
+    row.append(name, color, fx, bright, prev);
+    update();
+    return row;
+  });
+  $('ledRows').replaceChildren(...rows);
+  buildLedGrid();
+  const iv = $('ledInterval');
+  iv.replaceChildren(...LED_INTERVALS.map((v) => new Option(v ? t('leds.every', { s: v }) : t('leds.off'), v)));
+  iv.value = ledEdit.id_interval;
+  renderLedActions();
+}
+function renderLedActions() {
+  const mod = ledEditModified();
+  $('ledSave').disabled = !mod;
+  $('ledRevert').disabled = !mod;
+}
+// Muster der Kennung: so viele Felder wie LEDs eingestellt, anmalen per Klick oder Ziehen (auch mit dem Finger),
+// Rechtsklick nimmt die Farbe eines Felds als Pinsel
+let idRowUpdate = null, painting = null;   // letzte Zeigerposition beim Malen
+const ledCount = () => (settings ? Math.min(settings.led_count, ledEdit.pattern.length) : 0);
+const patternParam = () => ledEdit.pattern.slice(0, Math.max(1, ledCount())).map((c) => c.slice(1)).join(',');
+function paintCell(cell) {
+  const i = +cell.dataset.i, c = $('ledBrush').value;
+  if (ledEdit.pattern[i] === c) return;
+  ledEdit.pattern[i] = c; cell.style.background = c;
+  renderLedGridState();
+}
+function renderLedGridState() {
+  $('ledGrid').classList.toggle('unsaved', !samePattern(ledEdit.pattern, leds.pattern));
+  if (idRowUpdate) idRowUpdate();
+}
+function buildLedGrid() {
+  const n = ledCount(), grid = $('ledGrid');
+  grid.replaceChildren(...Array.from({ length: n }, (_, i) => {
+    const cell = el('i'); cell.dataset.i = i; cell.style.background = ledEdit.pattern[i];
+    cell.title = 'LED ' + (i + 1); cell.append(el('span', null, i + 1));
+    return cell;
+  }));
+  grid.hidden = !n;
+  $('ledGridHint').textContent = n ? t('leds.pattern.hint') : t('leds.pattern.none');
+  if (!$('ledBrush').dataset.set) $('ledBrush').value = ledEdit.pattern[0];
+  renderLedGridState();
+}
+$('ledBrush').oninput = () => { $('ledBrush').dataset.set = '1'; };
+$('ledGrid').addEventListener('pointerdown', (e) => {
+  const cell = e.target.closest('i');
+  if (!cell || e.button === 2) return;
+  painting = { x: e.clientX, y: e.clientY }; paintCell(cell); e.preventDefault();
+});
+// Zwischen zwei Ereignissen die Strecke abtasten, sonst überspringt schnelles Ziehen einzelne LEDs
+$('ledGrid').addEventListener('pointermove', (e) => {
+  if (!painting) return;
+  const dx = e.clientX - painting.x, dy = e.clientY - painting.y, steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 6));
+  for (let k = 1; k <= steps; k++) {
+    const cell = document.elementFromPoint(painting.x + dx * k / steps, painting.y + dy * k / steps);
+    if (cell && cell.parentElement === $('ledGrid')) paintCell(cell);
+  }
+  painting = { x: e.clientX, y: e.clientY };
+});
+window.addEventListener('pointerup', () => { painting = null; });
+$('ledGrid').addEventListener('contextmenu', (e) => {
+  const cell = e.target.closest('i');
+  if (!cell) return;
+  e.preventDefault();
+  $('ledBrush').value = ledEdit.pattern[+cell.dataset.i]; $('ledBrush').dataset.set = '1';
+});
+$('ledFill').onclick = () => {
+  for (let i = 0; i < ledEdit.pattern.length; i++) ledEdit.pattern[i] = $('ledBrush').value;
+  buildLedGrid();
+};
+$('ledPatternDefault').onclick = () => { ledEdit.pattern = [...ledEdit.pattern_default]; buildLedGrid(); };
+$('ledInterval').onchange = () => { ledEdit.id_interval = +$('ledInterval').value; renderLedActions(); };
+function setLeds(j) { leds = j; ledEdit = structuredClone(j); buildLedRows(); }
+async function loadLeds() {
+  try { setLeds(await api('GET', '/api/leds')); } catch (e) { say(e.message, true); }
+}
+$('ledSave').onclick = async () => {
+  const p = new URLSearchParams();
+  for (const s of ledEdit.states) {
+    p.set(s.id + '_effect', s.effect); p.set(s.id + '_color', s.color); p.set(s.id + '_bright', s.bright);
+  }
+  p.set('pattern', ledEdit.pattern.map((c) => c.slice(1)).join(',')); p.set('id_interval', ledEdit.id_interval);
+  try { setLeds(await api('POST', '/api/leds', p)); say(t('leds.saved')); refreshStatus(); }
+  catch (e) { say(e.message, true); }
+};
+$('ledRevert').onclick = () => { setLeds(leds); say(t('set.discarded')); };
+$('ledReset').onclick = async () => {
+  if (!confirm(t('confirm.leds_reset'))) return;
+  try { setLeds(await api('POST', '/api/leds/reset')); say(t('leds.resetDone')); refreshStatus(); }
+  catch (e) { say(e.message, true); }
+};
+$('ledFind').onclick = $('ledFind2').onclick = async () => {
+  try { await api('POST', '/api/led/find'); say(t('leds.finding')); } catch (e) { say(e.message, true); }
+};
+function ledView() {
+  const on = location.hash === '#leds';
+  document.body.classList.toggle('leds', on);
+  $('ledsView').hidden = !on;
+  if (on) { loadLeds(); window.scrollTo(0, 0); }
+}
+window.addEventListener('hashchange', ledView);
 
 // ---------- Gerätename ----------
 // Gespeicherter Name oben und im Browser-Tab; ohne Namen wie gewohnt „µprint“
@@ -1249,6 +1497,7 @@ $('lang').onchange = () => {
   LANG = $('lang').value;
   try { localStorage.setItem('uprint-lang', LANG); } catch {}
   applyI18n(); renderName(); renderStatus(); renderVolumes(); renderUpload(); renderWifi();
+  if (ledEdit) buildLedRows();
   if (settings) { const cur = readSettings(); writeSettings({ ...settings, ...cur, baud: +cur.baud }); }
   renderAxi();
 };
@@ -1257,7 +1506,7 @@ $('lang').onchange = () => {
 applyI18n();
 drawMark(); $('mark').onclick = drawMark;
 renderStatus(); renderUpload();
-poll(); pollWifi(); loadSettings(); pollAxi();
+poll(); pollWifi(); loadSettings(); pollAxi(); ledView();
 </script>
 </body>
 </html>
