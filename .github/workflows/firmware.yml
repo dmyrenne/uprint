@@ -106,7 +106,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        variant: [n16r8, basic]
+        variant: [n16r8, basic, xiao]
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:

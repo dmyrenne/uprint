@@ -15,15 +15,17 @@ Claude attribution lines to PR descriptions; the Claude credit lives in the READ
 
 ## Build & flash
 
-Requires ESP-IDF v6.1 (CI uses `v6.1`; `idf_component.yml` allows `>=5.3`). Two board variants, each built in
+Requires ESP-IDF v6.1 (CI uses `v6.1`; `idf_component.yml` allows `>=5.3`). Three board variants, each built in
 its own directory with its own `sdkconfig` (generated, never committed — edit `sdkconfig.defaults*` instead):
 
     idf.py -DUPRINT_VARIANT=basic -B build-basic build      # any ESP32-S3 ≥4 MB flash, SD only
     idf.py -DUPRINT_VARIANT=n16r8 -B build-n16r8 build      # 16 MB flash + 8 MB PSRAM, adds internal FAT storage
+    idf.py -DUPRINT_VARIANT=xiao -B build-xiao build        # XIAO ESP32S3 (Sense): 8 MB flash + 8 MB PSRAM, SD on GPIO 7/8/9/21
     idf.py -DUPRINT_VARIANT=basic -B build-basic -p <port> flash monitor
 
 `n16r8` is the default if `UPRINT_VARIANT` is omitted. Variant config = `sdkconfig.defaults` +
-`sdkconfig.defaults.<variant>` + `partitions-<variant>.csv`. The console is on UART0 only, because the native
+`sdkconfig.defaults.<variant>` + `partitions-<variant>.csv`; code checks the variant via `UPRINT_BOARD_<VARIANT>` (e.g. `UPRINT_BOARD_XIAO`
+for the SD pin defaults and `pin_usable()` in `settings.c`). The console is on UART0 only, because the native
 USB port is used as USB host for the printer.
 
 There are no automated tests. For UI work without hardware, `tools/mock_server.py` (gitignored, local only, Python
@@ -48,7 +50,7 @@ contracts and are the best entry point.
 - **usb_serial.cpp** — USB host with CDC-ACM, CH34x, CP210x and FTDI drivers (C++ because `usb_host_vcp`
   needs exceptions). `usb_serial_readline` must only be called from the printer task; `usb_serial_generation()`
   lets consumers detect reconnects.
-- **storage.c** — volumes `STORAGE_SD` and `STORAGE_FLASH` (flash only in n16r8, check `storage_present`).
+- **storage.c** — volumes `STORAGE_SD` and `STORAGE_FLASH` (flash only in n16r8 and xiao, check `storage_present`).
   Every file access must be wrapped in `storage_acquire`/`storage_release` so a hot-removed SD card isn't
   unmounted mid-access. Only flat filenames in the root directory (`storage_name_valid`). `storage_changed()`
   bumps a revision counter the UI polls.
@@ -60,7 +62,7 @@ contracts and are the best entry point.
   (API key auth, routes listed in `slicer.h`). `captive.c` provides DNS + redirects when accessed via the
   device's own AP. `max_uri_handlers` is fixed in `web_start`; raise it when adding routes.
 - **variant.c** — writes a `uprint_desc_t` (magic `UPRINT1` + variant name) right after `esp_app_desc_t` in the
-  image; OTA upload checks it so a basic image can't be flashed onto n16r8 and vice versa.
+  image; OTA upload checks it so an image for one variant can't be flashed onto another.
 - **Web UI** — a single hand-written `index.html` (vanilla JS/CSS, no build step). All visible strings go
   through `i18n.js` (`de` and `en`; add keys to both).
 
@@ -91,7 +93,7 @@ Where the project is heading, based on the open issues and branches:
 
 ## CI / releases
 
-`.github/workflows/firmware.yml` builds both variants on every push. A push to a branch that changes firmware
+`.github/workflows/firmware.yml` builds all variants on every push. A push to a branch that changes firmware
 paths (`main/`, `CMakeLists.txt`, `dependencies.lock`, `sdkconfig.defaults*`, `partitions-*.csv`) creates a
 pre-release `vX.Y.Z-alpha.N`; merging the PR into `main` creates `vX.Y.Z` (patch bump, or `minor`/`major` via PR
 label) and deletes the related alphas. `PROJECT_VER` comes from `UPRINT_VERSION` in CI, from `git describe`

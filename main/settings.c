@@ -32,10 +32,18 @@ static const settings_t DEFAULTS = {
     .pen_up = 60,        // Vorgaben der AxiDraw-Software
     .pen_down = 30,
     .pen_delay = 200,
+#ifdef UPRINT_BOARD_XIAO
+    // Steckplatz auf dem Kamerabrett des XIAO ESP32S3 Sense (GPIO 10–18 belegt dort die Kamera)
+    .sd_mosi = 9,
+    .sd_miso = 8,
+    .sd_sclk = 7,
+    .sd_cs = 21,
+#else
     .sd_mosi = 11,
     .sd_miso = 13,
     .sd_sclk = 12,
     .sd_cs = 10,
+#endif
 };
 
 static SemaphoreHandle_t s_lock;
@@ -104,11 +112,22 @@ void settings_get(settings_t *out)
     xSemaphoreGive(s_lock);
 }
 
+#ifdef UPRINT_BOARD_XIAO
+// XIAO ESP32S3: herausgeführt sind D0–D10 (GPIO 1–9, dazu 43/44 als Konsole), GPIO 21 ist CS des SD-Steckplatzes
+// auf dem Kamerabrett. Die übrigen GPIOs belegen Kamera, Mikrofon, PSRAM und USB.
+#define PIN_HINT "SD-Pins: GPIO 1–9 oder 21"
+static bool pin_usable(int pin)
+{
+    return (pin >= 1 && pin <= 9) || pin == 21;
+}
+#else
 // ESP32-S3 mit Octal-PSRAM (N16R8): 19/20 USB, 22–25 gibt es nicht, 26–37 Flash/PSRAM, 43/44 Konsole
+#define PIN_HINT "SD-Pins: GPIO 0–18, 21 oder 38–48 (außer 43/44)"
 static bool pin_usable(int pin)
 {
     return pin >= 0 && pin <= 48 && pin != 19 && pin != 20 && !(pin >= 22 && pin <= 37) && pin != 43 && pin != 44;
 }
+#endif
 
 static const char *validate(const settings_t *s)
 {
@@ -169,7 +188,7 @@ static const char *validate(const settings_t *s)
     const int pins[] = {s->sd_mosi, s->sd_miso, s->sd_sclk, s->sd_cs};
     for (int i = 0; i < 4; i++) {
         if (!pin_usable(pins[i])) {
-            return "SD-Pins: GPIO 0–18, 21 oder 38–48 (außer 43/44)";
+            return PIN_HINT;
         }
         for (int j = 0; j < i; j++) {
             if (pins[i] == pins[j]) {
