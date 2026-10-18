@@ -341,3 +341,24 @@ esp_err_t settings_new_api_key(void)
     ESP_LOGI(TAG, "Neuer API-Schlüssel erzeugt");
     return ESP_OK;
 }
+
+esp_err_t settings_reset(bool new_api_key)
+{
+    settings_t cur;
+    settings_get(&cur);
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_erase_all(nvs);
+    // Ohne gespeicherten Schlüssel erzeugt settings_init() beim nächsten Start einen neuen
+    if (err == ESP_OK && !new_api_key) {
+        err = nvs_set_str(nvs, "api_key", cur.api_key);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+    return err;
+}

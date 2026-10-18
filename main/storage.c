@@ -1,5 +1,8 @@
+#include <dirent.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "driver/gpio.h"
 #include "driver/sdspi_host.h"
@@ -30,6 +33,7 @@ typedef struct {
     volatile bool ready;   // eingebunden und erreichbar
     bool mounted;          // nur SD: im VFS eingebunden (kann nach dem Entfernen noch kurz gelten)
     int users;             // offene Zugriffe über storage_acquire()
+    bool wiping;           // storage_wipe() läuft, kein neuer Zugriff
 } volume_t;
 
 static volume_t s_vol[STORAGE_COUNT] = {
@@ -235,7 +239,7 @@ bool storage_acquire(storage_vol_t vol)
         return false;
     }
     LOCK();
-    bool ok = s_vol[vol].ready;
+    bool ok = s_vol[vol].ready && !s_vol[vol].wiping;
     if (ok) {
         s_vol[vol].users++;
     }
@@ -312,4 +316,62 @@ bool storage_name_valid(const char *name)
 void storage_path(char *out, size_t len, storage_vol_t vol, const char *name)
 {
     snprintf(out, len, "%s/%s", s_vol[vol].mount, name);
+}
+
+esp_err_t storage_wipe(storage_vol_t vol, bool format, bool (*match)(const char *name), int *deleted)
+{
+    *deleted = 0;
+    if (vol >= STORAGE_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    volume_t *v = &s_vol[vol];
+    LOCK();
+    bool ok = v->ready && !v->wiping && v->users == 0;
+    if (ok) {
+        v->wiping = true;
+        v->users = 1;   // eine entfernte SD-Karte nicht mittendrin aushängen
+    }
+    UNLOCK();
+    if (!ok) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t err = ESP_OK;
+    if (format) {
+        err = vol == STORAGE_SD ? esp_vfs_fat_sdcard_format(v->mount, s_sd_card)
+                                : esp_vfs_fat_spiflash_format_rw_wl(v->mount, "storage");
+    } else {
+        // Löschen während readdir() kann Einträge überspringen: so lange wiederholen, bis nichts mehr passt
+        char path[STORAGE_PATH_MAX + 256];
+        for (int pass = 0, removed = 1; removed > 0 && pass < 5 && err == ESP_OK; pass++) {
+            removed = 0;
+            DIR *dir = opendir(v->mount);
+            if (!dir) {
+                err = ESP_FAIL;
+                break;
+            }
+            struct dirent *e;
+            while ((e = readdir(dir)) != NULL) {
+                if (e->d_type == DT_DIR || !match(e->d_name)) {
+                    continue;
+                }
+                snprintf(path, sizeof(path), "%s/%s", v->mount, e->d_name);
+                if (unlink(path) == 0) {
+                    removed++;
+                } else {
+                    err = ESP_FAIL;
+                }
+            }
+            closedir(dir);
+            *deleted += removed;
+        }
+    }
+    ESP_LOGI(TAG, "%s %s: %s", v->label, format ? "formatiert" : "geleert", esp_err_to_name(err));
+
+    LOCK();
+    v->users = 0;
+    v->wiping = false;
+    UNLOCK();
+    storage_changed();
+    return err;
 }

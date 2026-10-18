@@ -104,6 +104,11 @@ bool http_is_gcode(const char *name)
     return dot && (strcasecmp(dot, ".gcode") == 0 || strcasecmp(dot, ".gco") == 0 || strcasecmp(dot, ".g") == 0);
 }
 
+bool http_is_wipeable(const char *name)
+{
+    return strcmp(name, UPLOAD_TMP_NAME) == 0 || (storage_name_valid(name) && http_is_gcode(name));
+}
+
 const char *upload_begin(upload_t *u, storage_vol_t vol, const char *name, size_t size, const char **status)
 {
     uint64_t total, avail;

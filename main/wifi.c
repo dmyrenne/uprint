@@ -391,6 +391,20 @@ esp_err_t wifi_set_credentials(const char *ssid, const char *password)
     return ESP_OK;
 }
 
+esp_err_t wifi_erase_stored(void)
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err == ESP_OK) {
+        err = nvs_erase_all(nvs);
+        if (err == ESP_OK) {
+            err = nvs_commit(nvs);
+        }
+        nvs_close(nvs);
+    }
+    return err;
+}
+
 esp_err_t wifi_forget(void)
 {
     nvs_handle_t nvs;

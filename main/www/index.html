@@ -140,7 +140,11 @@
   .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 
   .vols { display: grid; gap: 6px; margin-bottom: 8px; }
-  .vol { display: grid; grid-template-columns: 64px 1fr auto; gap: 10px; align-items: center; font-size: 12px; }
+  .vol { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 10px; align-items: center; font-size: 12px; }
+  .vol button { padding: 1px 8px; font-size: 11px; }
+  .wipe { margin: 4px 0 10px; }
+  .wipe .row { margin-top: 8px; }
+  .wipe label.check { margin-top: 8px; font-size: 12px; }
   .vol .meter { height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; }
   .vol .meter i { display: block; height: 100%; width: 0; background: var(--ink); }
   .vol .meter i.bad { background: var(--warn); }   /* nicht verfügbar oder ab 90 % belegt */
@@ -460,6 +464,15 @@
   <section class="card files-card">
     <h2 data-i18n="h.files"></h2>
     <div class="vols" id="vols"></div>
+    <!-- Speicher leeren (#14): Bestätigung mit Name, Anzahl und Größe -->
+    <div class="derived bad wipe" id="wipeBox" hidden>
+      <div id="wipeText"></div>
+      <label class="check"><input type="checkbox" id="wipeFormat"> <span data-i18n="wipe.format"></span></label>
+      <div class="row">
+        <button type="button" class="small danger" id="wipeGo"></button>
+        <button type="button" class="small" id="wipeCancel" data-i18n="cancelAction"></button>
+      </div>
+    </div>
     <input type="search" class="search" id="fileSearch" data-i18n-placeholder="files.search" autocomplete="off" spellcheck="false" hidden>
     <ul class="files" id="files"></ul>
   </section>
@@ -573,6 +586,14 @@
       <div class="bar" id="otaBar" hidden><i></i></div>
       <p class="hint" id="otaHint"></p>
       <input type="file" id="otaFile" accept=".bin" hidden>
+    </div>
+    <div class="ota" id="resetBox">
+      <p class="sub" data-i18n="reset.title"></p>
+      <div class="row">
+        <button type="button" class="warn" id="resetSettings" data-i18n="reset.settings"></button>
+        <button type="button" class="warn" id="resetAll" data-i18n="reset.all"></button>
+      </div>
+      <p class="hint" data-i18n="reset.hint"></p>
     </div>
   </details>
   <!-- Hardware: was am ESP angeschlossen ist (Speichern über dieselbe Leiste wie die Einstellungen) -->
@@ -824,11 +845,11 @@ function renderStatus() {
     $(id).hidden = !unplugged || !on;
     $(id).classList.toggle('wait', s.state === 'connecting');
   }
-  renderFiles(); renderOta(); renderLock();
+  renderFiles(); renderOta(); renderLock(); renderVolumes();
 }
 // Während eines Drucks lassen sich WLAN, Einstellungen, Hardware und die LED-Darstellung ansehen, aber nicht ändern
 const LOCKED = ['wifiForm', 'setForm', 'setActions', 'apiNew', 'rebootBox', 'hwForm', 'hwRebootBox',
-  'ledRows', 'ledPaint', 'ledGrid', 'ledIntervalRow', 'ledSave', 'ledRevert', 'ledReset'];
+  'ledRows', 'ledPaint', 'ledGrid', 'ledIntervalRow', 'ledSave', 'ledRevert', 'ledReset', 'resetBox'];
 function renderLock() {
   const lock = active();
   for (const id of LOCKED) $(id).inert = lock;
@@ -856,11 +877,45 @@ function renderVolumes() {
     bar.style.width = used * 100 + '%';
     bar.className = bad ? 'bad' : '';
     meter.append(bar);
+    const wipe = el('button', 'small', t('wipe.open')); wipe.type = 'button';
+    wipe.disabled = !v.ready || volBusy(v.id);
+    wipe.onclick = () => openWipe(v.id);
     row.append(el('span', '', volName(v.id)), meter,
-      el('span', 'free' + (bad ? ' bad' : ''), v.ready ? t('vol.free', { free: fmtSize(v.free), total: fmtSize(v.total) }) : t('vol.missing')));
+      el('span', 'free' + (bad ? ' bad' : ''), v.ready ? t('vol.free', { free: fmtSize(v.free), total: fmtSize(v.total) }) : t('vol.missing')),
+      wipe);
     return row;
   }));
+  renderWipe();
 }
+
+// ---------- Speicher leeren (#14) ----------
+// Gesperrt, solange von diesem Speicher gedruckt oder auf ihn hochgeladen wird (die Firmware prüft das auch)
+let wipeVol = null, upStorage = null;
+const isGcode = (n) => /\.(gcode|gco|g)$/i.test(n);
+const volBusy = (id) => (active() && st.storage === id) || (uploading && upStorage === id);
+function openWipe(id) { wipeVol = id; $('wipeFormat').checked = false; renderWipe(); }
+function renderWipe() {
+  const v = volumes.find((x) => x.id === wipeVol);
+  $('wipeBox').hidden = !v || !v.ready;
+  if (!v || !v.ready) return;
+  const g = files.filter((f) => f.storage === v.id && isGcode(f.name)), size = g.reduce((a, f) => a + f.size, 0);
+  const format = $('wipeFormat').checked;
+  $('wipeText').textContent = format ? t('wipe.formatText', { vol: volName(v.id) })
+    : t('wipe.text', { vol: volName(v.id), n: g.length, size: fmtSize(size) });
+  $('wipeGo').textContent = t(format ? 'wipe.formatGo' : 'wipe.go');
+  $('wipeGo').disabled = volBusy(v.id) || (!format && !g.length);
+}
+$('wipeFormat').onchange = renderWipe;
+$('wipeCancel').onclick = () => { wipeVol = null; renderWipe(); };
+$('wipeGo').onclick = async () => {
+  const id = wipeVol, format = $('wipeFormat').checked;
+  try {
+    const r = await api('POST', '/api/storage/wipe?storage=' + encodeURIComponent(id) + '&format=' + (format ? 1 : 0));
+    say(format ? t('wipe.formatted', { vol: volName(id) }) : t('wipe.done', { vol: volName(id), n: r.deleted }));
+    wipeVol = null; selKey = null;
+  } catch (e) { say(e.message, true); }
+  await loadFiles();
+};
 
 // Suche: alle Wörter müssen im Namen vorkommen, ohne Groß-/Kleinschreibung und Akzente
 const fold = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
@@ -970,7 +1025,7 @@ $('upBtn').onclick = async () => {
   if (!f || uploading) return;
   if (files.some((x) => x.name === f.name && x.storage === storage) &&
       !confirm(t('confirm.overwrite', { name: f.name, vol: volName(storage) }))) return;
-  uploading = true; upPct = 0; renderUpload();
+  uploading = true; upStorage = storage; upPct = 0; renderUpload(); renderVolumes();
   const t0 = performance.now();
   try {
     await sendRaw('/api/upload' + fileQuery({ storage, name: f.name }), f, (p) => { upPct = p; renderUpload(); }, (x) => { upXhr = x; });
@@ -981,7 +1036,7 @@ $('upBtn').onclick = async () => {
     if (e.aborted) say(t('upload.cancelled'));
     else say(t('upload.failed', { msg: e.message }), true);
   }
-  uploading = false; upXhr = null;
+  uploading = false; upStorage = null; upXhr = null;
   await loadFiles();
 };
 // Während des Uploads: Übertragung abbrechen (µprint verwirft die halbe Datei), sonst die Auswahl verwerfen
@@ -1240,6 +1295,14 @@ $('setSave').onclick = async () => {
   } catch (e) { say(e.message, true); }
 };
 $('setRevert').onclick = () => { writeSettings(settings); renderSettings(); say(t('set.discarded')); };
+// ---------- Zurücksetzen (#13) ----------
+for (const [id, scope] of [['resetSettings', 'settings'], ['resetAll', 'all']]) {
+  $(id).onclick = async () => {
+    if (!confirm(t('confirm.reset.' + scope, { ssid: wifi ? wifi.ap_ssid : 'uprint' }))) return;
+    try { await api('POST', '/api/reset?scope=' + scope); say(t('reset.done.' + scope, { ssid: wifi ? wifi.ap_ssid : 'uprint' })); }
+    catch (e) { say(e.message, true); }
+  };
+}
 $('rebootBtn').onclick = $('hwRebootBtn').onclick = async () => {
   if (!confirm(t('confirm.reboot'))) return;
   try { await api('POST', '/api/reboot'); say(t('set.rebooting')); } catch (e) { say(e.message, true); }

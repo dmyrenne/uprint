@@ -23,6 +23,9 @@ bool http_recv_body(httpd_req_t *req, char *buf, size_t len);
 
 bool http_is_gcode(const char *name);
 
+// Für "Speicher leeren": G-Code-Dateien und eine liegengebliebene temporäre Upload-Datei
+bool http_is_wipeable(const char *name);
+
 // Datei-Upload in einen Speicher: erst in eine temporäre Datei, am Ende umbenennen.
 // So bleibt eine vorhandene Datei gleichen Namens bis zum erfolgreichen Abschluss erhalten.
 typedef struct {

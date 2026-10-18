@@ -21,6 +21,7 @@
 #include "captive.h"
 #include "http_util.h"
 #include "printer.h"
+#include "reset.h"
 #include "slicer.h"
 #include "settings.h"
 #include "variant.h"
@@ -900,6 +901,43 @@ static esp_err_t axidraw_log_get(httpd_req_t *req)
     return httpd_resp_send_chunk(req, NULL, 0);
 }
 
+// ?scope=settings|all (#13): Einstellungen bzw. alles inklusive WLAN zurücksetzen, danach Neustart
+static esp_err_t reset_post(httpd_req_t *req)
+{
+    char query[32], scope[12];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "scope", scope, sizeof(scope)) != ESP_OK ||
+        (strcmp(scope, "settings") != 0 && strcmp(scope, "all") != 0)) {
+        return http_send_error(req, "400 Bad Request", "scope=settings oder scope=all");
+    }
+    return send_result(req, reset_device(strcmp(scope, "all") == 0), "Während eines Drucks nicht möglich");
+}
+
+// ?storage=<id>&format=0|1 (#14): alle G-Code-Dateien löschen bzw. den Speicher formatieren
+static esp_err_t wipe_post(httpd_req_t *req)
+{
+    char query[64], id[16], format[4] = "0";
+    storage_vol_t vol;
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "storage", id, sizeof(id)) != ESP_OK || !storage_from_id(id, &vol) ||
+        !storage_present(vol)) {
+        return http_send_error(req, "400 Bad Request", "Ungültiger Speicher");
+    }
+    httpd_query_key_value(query, "format", format, sizeof(format));
+    int deleted = 0;
+    esp_err_t err = storage_wipe(vol, strcmp(format, "1") == 0, http_is_wipeable, &deleted);
+    if (err == ESP_ERR_INVALID_STATE) {
+        return http_send_error(req, "409 Conflict", "Speicher wird gerade benutzt (Druck, Upload oder Download) oder ist nicht bereit");
+    }
+    if (err != ESP_OK) {
+        return http_send_error(req, "500 Internal Server Error", "Nicht alle Dateien ließen sich löschen");
+    }
+    char body[48];
+    snprintf(body, sizeof(body), "{\"ok\":true,\"deleted\":%d}", deleted);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, body);
+}
+
 static esp_err_t reboot_post(httpd_req_t *req)
 {
     if (printer_busy()) {
@@ -993,6 +1031,8 @@ esp_err_t web_start(void)
         {.uri = "/api/settings",  .method = HTTP_GET,    .handler = settings_get_handler},
         {.uri = "/api/settings",  .method = HTTP_POST,   .handler = settings_post_handler},
         {.uri = "/api/reboot",    .method = HTTP_POST,   .handler = reboot_post},
+        {.uri = "/api/reset",     .method = HTTP_POST,   .handler = reset_post},
+        {.uri = "/api/storage/wipe", .method = HTTP_POST, .handler = wipe_post},
         {.uri = "/api/settings/apikey", .method = HTTP_POST, .handler = api_key_post},
         {.uri = "/api/ota",       .method = HTTP_POST,   .handler = ota_post},
         {.uri = "/api/download",  .method = HTTP_GET,    .handler = download_get},
