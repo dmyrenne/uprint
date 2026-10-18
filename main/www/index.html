@@ -140,7 +140,11 @@
   .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 
   .vols { display: grid; gap: 6px; margin-bottom: 8px; }
-  .vol { display: grid; grid-template-columns: 64px 1fr auto; gap: 10px; align-items: center; font-size: 12px; }
+  .vol { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 10px; align-items: center; font-size: 12px; }
+  .vol button { padding: 1px 8px; font-size: 11px; }
+  .wipe { margin: 4px 0 10px; }
+  .wipe .row { margin-top: 8px; }
+  .wipe label.check { margin-top: 8px; font-size: 12px; }
   .vol .meter { height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; }
   .vol .meter i { display: block; height: 100%; width: 0; background: var(--ink); }
   .vol .meter i.bad { background: var(--warn); }   /* nicht verfügbar oder ab 90 % belegt */
@@ -217,6 +221,10 @@
   button.big { font-size: 15px; font-weight: 600; padding: 10px 24px; }
   button.danger { color: var(--warn); }
   button.danger:hover:not(:disabled) { border-color: var(--warn); background: var(--warn-bg); }
+
+  /* Während eines Drucks gesperrt (#16): sichtbar, aber nicht bedienbar */
+  [inert] { opacity: .5; }
+  .lock-note { margin: 0 0 12px; }
 
   /* ---------- Status-LEDs ---------- */
   .led-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--line-strong); }
@@ -312,18 +320,19 @@
   <section class="card leds-view" id="ledsView" hidden>
     <a class="back" href="#" data-i18n="leds.back"></a>
     <h2 data-i18n="leds.title"></h2>
+    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <p class="hint" data-i18n="leds.intro"></p>
     <div class="led-rows" id="ledRows"></div>
     <p class="sub" style="margin-top:20px" data-i18n="leds.id"></p>
     <p class="hint" data-i18n="leds.id.hint"></p>
-    <div class="row led-paint">
+    <div class="row led-paint" id="ledPaint">
       <label class="brush"><span data-i18n="leds.brush"></span><input type="color" id="ledBrush"></label>
       <button type="button" class="small" id="ledFill" data-i18n="leds.fill"></button>
       <button type="button" class="small" id="ledPatternDefault" data-i18n="leds.pattern.default"></button>
     </div>
     <div class="led-grid" id="ledGrid"></div>
     <p class="hint" id="ledGridHint"></p>
-    <label class="led-interval"><span data-i18n="leds.interval"></span><select id="ledInterval"></select></label>
+    <label class="led-interval" id="ledIntervalRow"><span data-i18n="leds.interval"></span><select id="ledInterval"></select></label>
     <div class="row leds-actions">
       <button type="button" class="primary" id="ledSave" data-i18n="save"></button>
       <button type="button" id="ledRevert" data-i18n="revert"></button>
@@ -405,6 +414,7 @@
           <button type="button" class="big primary" id="bResume" data-i18n="resume" hidden></button>
           <button type="button" class="big danger" id="bCancel" data-i18n="cancel"></button>
           <button type="button" class="big" id="bAck" data-i18n="ack" hidden></button>
+          <button type="button" class="big primary" id="bRetry" data-i18n="retry" hidden></button>
         </div>
       </div>
     </div>
@@ -454,6 +464,15 @@
   <section class="card files-card">
     <h2 data-i18n="h.files"></h2>
     <div class="vols" id="vols"></div>
+    <!-- Speicher leeren (#14): Bestätigung mit Name, Anzahl und Größe -->
+    <div class="derived bad wipe" id="wipeBox" hidden>
+      <div id="wipeText"></div>
+      <label class="check"><input type="checkbox" id="wipeFormat"> <span data-i18n="wipe.format"></span></label>
+      <div class="row">
+        <button type="button" class="small danger" id="wipeGo"></button>
+        <button type="button" class="small" id="wipeCancel" data-i18n="cancelAction"></button>
+      </div>
+    </div>
     <input type="search" class="search" id="fileSearch" data-i18n-placeholder="files.search" autocomplete="off" spellcheck="false" hidden>
     <ul class="files" id="files"></ul>
   </section>
@@ -462,6 +481,7 @@
   <div class="col side">
   <details class="card" id="wifiBox">
     <summary data-i18n="h.wifi"></summary>
+    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <p class="hint setup-only" id="setupIntro" data-i18n="setup.intro" style="margin:0 0 12px"></p>
     <div class="derived" id="wifiStatus"></div>
     <div class="handoff" id="handoff" hidden>
@@ -494,6 +514,7 @@
 
   <details class="card" id="setBox">
     <summary><span data-i18n="h.settings"></span><span class="badge" id="setBadge" data-i18n="modified" hidden></span></summary>
+    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <form id="setForm" class="grid" autocomplete="off" onsubmit="return false">
       <p class="sub full" data-i18n="set.device"></p>
       <label class="full"><span data-i18n="set.device_name"></span><input type="text" name="device_name" maxlength="32" placeholder="µprint"></label>
@@ -566,10 +587,19 @@
       <p class="hint" id="otaHint"></p>
       <input type="file" id="otaFile" accept=".bin" hidden>
     </div>
+    <div class="ota" id="resetBox">
+      <p class="sub" data-i18n="reset.title"></p>
+      <div class="row">
+        <button type="button" class="warn" id="resetSettings" data-i18n="reset.settings"></button>
+        <button type="button" class="warn" id="resetAll" data-i18n="reset.all"></button>
+      </div>
+      <p class="hint" data-i18n="reset.hint"></p>
+    </div>
   </details>
   <!-- Hardware: was am ESP angeschlossen ist (Speichern über dieselbe Leiste wie die Einstellungen) -->
   <details class="card" id="hwBox">
     <summary><span data-i18n="h.hardware"></span><span class="badge" id="hwBadge" data-i18n="modified" hidden></span></summary>
+    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <form id="hwForm" class="grid" autocomplete="off" onsubmit="return false">
       <p class="sub full" data-i18n="set.sd"></p>
       <label class="check full"><input type="checkbox" name="sd_enable"> <span data-i18n="set.sd_enable"></span></label>
@@ -596,10 +626,10 @@
       <label><span data-i18n="set.led_max_ma"></span><input type="number" name="led_max_ma" min="0" max="10000" step="50"></label>
       <label><span data-i18n="set.led_ma"></span><input type="number" name="led_ma" min="5" max="100"></label>
       <p class="hint full" id="ledCurrent" hidden></p>
-      <div class="row full"><button type="button" class="small" id="ledFind" data-i18n="leds.find"></button>
-        <a href="#leds" data-i18n="leds.open"></a></div>
       <p class="hint full" data-i18n="set.leds.hint"></p>
     </form>
+    <div class="row" style="margin-top:10px"><button type="button" class="small" id="ledFind" data-i18n="leds.find"></button>
+      <a href="#leds" data-i18n="leds.open"></a></div>
     <div class="derived" id="hwRebootBox" style="margin-top:12px" hidden>
       <div data-i18n="set.reboot"></div>
       <div class="row" style="margin-top:8px"><button type="button" class="small" id="hwRebootBtn" data-i18n="set.rebootNow"></button></div>
@@ -758,7 +788,8 @@ function renderStatus() {
   const s = st || {}, a = !offline && active(), done = finished(), show = a || done;
   const state = offline ? 'offline' : s.state || 'connecting';
   const tab = $('tab');
-  tab.textContent = t(state === 'disconnected' && axiMode() ? 'state.axiDisconnected' : 'state.' + state);
+  tab.textContent = t(s.unresponsive && !offline ? 'state.unresponsive'
+    : state === 'disconnected' && axiMode() ? 'state.axiDisconnected' : 'state.' + state);
   tab.className = 'tab ' + ({ idle: 'on', printing: 'on busy', paused: 'on', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
 
   const pct = a && s.size ? s.pos / s.size * 100 : done ? 100 : 0;
@@ -781,10 +812,12 @@ function renderStatus() {
   $('bResume').hidden = offline || s.state !== 'paused';
   $('bCancel').disabled = !a;
   $('bAck').hidden = offline || s.state !== 'error';
+  $('bRetry').hidden = offline || !s.unresponsive;
 
   let title, sub = s.message || '', bad = s.state === 'error';
   if (offline) { title = t('stage.offline'); sub = t('stage.offlineHint'); bad = true; }
   else if (show) title = s.file;
+  else if (s.state === 'disconnected' && s.unresponsive) { title = t('stage.unresponsive'); sub = t('stage.unresponsiveHint'); bad = true; }
   else if (s.state === 'disconnected') { const k = axiMode() ? 'stage.axiDisconnected' : 'stage.disconnected'; title = t(k); sub = t(k + 'Hint'); }
   else if (s.state === 'connecting') { title = t('stage.connecting'); sub = ''; }
   else if (s.state === 'error') { title = t('state.error'); sub = s.message; }
@@ -812,9 +845,18 @@ function renderStatus() {
     $(id).hidden = !unplugged || !on;
     $(id).classList.toggle('wait', s.state === 'connecting');
   }
-  renderFiles(); renderOta();
+  renderFiles(); renderOta(); renderLock(); renderVolumes();
+}
+// Während eines Drucks lassen sich WLAN, Einstellungen, Hardware und die LED-Darstellung ansehen, aber nicht ändern
+const LOCKED = ['wifiForm', 'setForm', 'setActions', 'apiNew', 'rebootBox', 'hwForm', 'hwRebootBox',
+  'ledRows', 'ledPaint', 'ledGrid', 'ledIntervalRow', 'ledSave', 'ledRevert', 'ledReset', 'resetBox'];
+function renderLock() {
+  const lock = active();
+  for (const id of LOCKED) $(id).inert = lock;
+  for (const n of document.querySelectorAll('.lock-note')) { n.hidden = !lock; n.textContent = t('lock.print'); }   // .axi: „Plot“
 }
 $('bStart').onclick = () => { const f = selected() || finishedFile(); if (f) act('POST', '/api/print' + fileQuery(f)); };
+$('bRetry').onclick = () => act('POST', '/api/printer/retry');
 
 // ---------- Dateien ----------
 async function loadFiles() {
@@ -835,11 +877,45 @@ function renderVolumes() {
     bar.style.width = used * 100 + '%';
     bar.className = bad ? 'bad' : '';
     meter.append(bar);
+    const wipe = el('button', 'small', t('wipe.open')); wipe.type = 'button';
+    wipe.disabled = !v.ready || volBusy(v.id);
+    wipe.onclick = () => openWipe(v.id);
     row.append(el('span', '', volName(v.id)), meter,
-      el('span', 'free' + (bad ? ' bad' : ''), v.ready ? t('vol.free', { free: fmtSize(v.free), total: fmtSize(v.total) }) : t('vol.missing')));
+      el('span', 'free' + (bad ? ' bad' : ''), v.ready ? t('vol.free', { free: fmtSize(v.free), total: fmtSize(v.total) }) : t('vol.missing')),
+      wipe);
     return row;
   }));
+  renderWipe();
 }
+
+// ---------- Speicher leeren (#14) ----------
+// Gesperrt, solange von diesem Speicher gedruckt oder auf ihn hochgeladen wird (die Firmware prüft das auch)
+let wipeVol = null, upStorage = null;
+const isGcode = (n) => /\.(gcode|gco|g)$/i.test(n);
+const volBusy = (id) => (active() && st.storage === id) || (uploading && upStorage === id);
+function openWipe(id) { wipeVol = id; $('wipeFormat').checked = false; renderWipe(); }
+function renderWipe() {
+  const v = volumes.find((x) => x.id === wipeVol);
+  $('wipeBox').hidden = !v || !v.ready;
+  if (!v || !v.ready) return;
+  const g = files.filter((f) => f.storage === v.id && isGcode(f.name)), size = g.reduce((a, f) => a + f.size, 0);
+  const format = $('wipeFormat').checked;
+  $('wipeText').textContent = format ? t('wipe.formatText', { vol: volName(v.id) })
+    : t('wipe.text', { vol: volName(v.id), n: g.length, size: fmtSize(size) });
+  $('wipeGo').textContent = t(format ? 'wipe.formatGo' : 'wipe.go');
+  $('wipeGo').disabled = volBusy(v.id) || (!format && !g.length);
+}
+$('wipeFormat').onchange = renderWipe;
+$('wipeCancel').onclick = () => { wipeVol = null; renderWipe(); };
+$('wipeGo').onclick = async () => {
+  const id = wipeVol, format = $('wipeFormat').checked;
+  try {
+    const r = await api('POST', '/api/storage/wipe?storage=' + encodeURIComponent(id) + '&format=' + (format ? 1 : 0));
+    say(format ? t('wipe.formatted', { vol: volName(id) }) : t('wipe.done', { vol: volName(id), n: r.deleted }));
+    wipeVol = null; selKey = null;
+  } catch (e) { say(e.message, true); }
+  await loadFiles();
+};
 
 // Suche: alle Wörter müssen im Namen vorkommen, ohne Groß-/Kleinschreibung und Akzente
 const fold = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
@@ -949,7 +1025,7 @@ $('upBtn').onclick = async () => {
   if (!f || uploading) return;
   if (files.some((x) => x.name === f.name && x.storage === storage) &&
       !confirm(t('confirm.overwrite', { name: f.name, vol: volName(storage) }))) return;
-  uploading = true; upPct = 0; renderUpload();
+  uploading = true; upStorage = storage; upPct = 0; renderUpload(); renderVolumes();
   const t0 = performance.now();
   try {
     await sendRaw('/api/upload' + fileQuery({ storage, name: f.name }), f, (p) => { upPct = p; renderUpload(); }, (x) => { upXhr = x; });
@@ -960,7 +1036,7 @@ $('upBtn').onclick = async () => {
     if (e.aborted) say(t('upload.cancelled'));
     else say(t('upload.failed', { msg: e.message }), true);
   }
-  uploading = false; upXhr = null;
+  uploading = false; upStorage = null; upXhr = null;
   await loadFiles();
 };
 // Während des Uploads: Übertragung abbrechen (µprint verwirft die halbe Datei), sonst die Auswahl verwerfen
@@ -1219,6 +1295,14 @@ $('setSave').onclick = async () => {
   } catch (e) { say(e.message, true); }
 };
 $('setRevert').onclick = () => { writeSettings(settings); renderSettings(); say(t('set.discarded')); };
+// ---------- Zurücksetzen (#13) ----------
+for (const [id, scope] of [['resetSettings', 'settings'], ['resetAll', 'all']]) {
+  $(id).onclick = async () => {
+    if (!confirm(t('confirm.reset.' + scope, { ssid: wifi ? wifi.ap_ssid : 'uprint' }))) return;
+    try { await api('POST', '/api/reset?scope=' + scope); say(t('reset.done.' + scope, { ssid: wifi ? wifi.ap_ssid : 'uprint' })); }
+    catch (e) { say(e.message, true); }
+  };
+}
 $('rebootBtn').onclick = $('hwRebootBtn').onclick = async () => {
   if (!confirm(t('confirm.reboot'))) return;
   try { await api('POST', '/api/reboot'); say(t('set.rebooting')); } catch (e) { say(e.message, true); }

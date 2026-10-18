@@ -2,6 +2,7 @@
 #include "nvs_flash.h"
 
 #include "printer.h"
+#include "reset.h"
 #include "settings.h"
 #include "status_led.h"
 #include "storage.h"
@@ -31,6 +32,7 @@ void app_main(void)
     ESP_ERROR_CHECK(printer_init());
     // Nach Drucker und WLAN, deren Zustand die LEDs anzeigen
     status_led_init();
+    reset_button_start();
     ESP_ERROR_CHECK(web_start());
 
     ESP_LOGI(TAG, "uprint gestartet");

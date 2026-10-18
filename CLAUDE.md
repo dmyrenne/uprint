@@ -60,12 +60,15 @@ contracts and are the best entry point.
   (`main/www/index.html`, `i18n.js`, fonts) is embedded via `EMBED_FILES` in `main/CMakeLists.txt` — new
   assets must be added there. `slicer.c` registers PrusaLink/OctoPrint-compatible endpoints on the same server
   (API key auth, routes listed in `slicer.h`). `captive.c` provides DNS + redirects when accessed via the
-  device's own AP. `max_uri_handlers` is fixed in `web_start` (48, 39 used); raise it when adding routes.
+  device's own AP. `max_uri_handlers` is fixed in `web_start` (48, 42 used); raise it when adding routes.
 - **status_led.c** — addressable status LEDs (`espressif/led_strip`, RMT). Own low-priority task that polls
   `printer_get_status`/`wifi_get_status`, picks the highest-priority state and renders its effect; per-state look
   (effect, color, brightness) and the print-farm identification (one color per LED) live in NVS namespace `leds`, pin/count/type/order
   in `settings_t`. Web handlers only set requests (`status_led_find/preview/ota/apply`). The web UI subpage is
   `#leds` in `index.html`; `tools/mock_server.py` mirrors the effects in a virtual strip, keep both in sync.
+- **reset.c** — factory reset (#13): settings only or everything incl. Wi-Fi, then restart; holding BOOT (GPIO 0)
+  for 10 s while running does the full reset (only if GPIO 0 isn't an SD/LED pin). Wiping a volume is
+  `storage_wipe()` in storage.c (#14).
 - **variant.c** — writes a `uprint_desc_t` (magic `UPRINT1` + variant name) right after `esp_app_desc_t` in the
   image; OTA upload checks it so an image for one variant can't be flashed onto another.
 - **Web UI** — a single hand-written `index.html` (vanilla JS/CSS, no build step). All visible strings go

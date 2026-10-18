@@ -41,3 +41,8 @@ esp_err_t storage_usage(storage_vol_t vol, uint64_t *total, uint64_t *free);
 bool storage_name_valid(const char *name);
 
 void storage_path(char *out, size_t len, storage_vol_t vol, const char *name);
+
+// Leert einen Speicher (#14): format = FAT neu anlegen (alles weg, hilft auch bei kaputtem Dateisystem), sonst nur
+// die Dateien im Wurzelverzeichnis löschen, für die match() true liefert. *deleted = Anzahl gelöschter Dateien.
+// ESP_ERR_INVALID_STATE, wenn der Speicher nicht bereit ist oder gerade benutzt wird (Druck, Upload, Download).
+esp_err_t storage_wipe(storage_vol_t vol, bool format, bool (*match)(const char *name), int *deleted);

@@ -31,6 +31,8 @@ typedef struct {
     // Letzter Druck lief bis zum Dateiende (file, vol, file_size bleiben bis zum nächsten Start erhalten)
     bool finished;
     uint32_t duration_s;
+    // USB-Gerät da, antwortet aber seit CONNECT_TIMEOUT nicht (z. B. Drucker aus); im Hintergrund wird weiter versucht
+    bool unresponsive;
 } printer_status_t;
 
 esp_err_t printer_init(void);
@@ -44,6 +46,10 @@ esp_err_t printer_pause(void);
 esp_err_t printer_resume(void);
 // Bricht einen Druck ab bzw. quittiert einen Fehler.
 esp_err_t printer_cancel(void);
+
+// Antwortet der Drucker nicht (unresponsive): sofort neu versuchen, die Wartezeit beginnt von vorn.
+// ESP_ERR_INVALID_STATE in jedem anderen Zustand.
+esp_err_t printer_retry(void);
 
 // Nach Änderung des Gerätetyps: neu verbinden. ESP_ERR_INVALID_STATE während eines Drucks.
 esp_err_t printer_device_changed(void);

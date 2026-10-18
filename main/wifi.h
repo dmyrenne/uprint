@@ -35,6 +35,10 @@ esp_err_t wifi_set_credentials(const char *ssid, const char *password);
 // Löscht die Zugangsdaten und öffnet den Access Point.
 esp_err_t wifi_forget(void);
 
+// Löscht Zugangsdaten und "nur Access Point" nur im NVS, ohne die laufende Verbindung zu trennen (für einen
+// Werksreset mit anschließendem Neustart)
+esp_err_t wifi_erase_stored(void);
+
 // "Ohne WLAN fortfahren": Access Point bleibt dauerhaft an (auch nach einem Neustart), das Captive Portal
 // ist aus. Neue Zugangsdaten oder wifi_forget() heben das wieder auf.
 esp_err_t wifi_set_ap_only(void);

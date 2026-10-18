@@ -45,6 +45,8 @@ static const char *TAG = "printer";
 #define SYNC_WAIT_US     (2 * 1000000LL)
 #define SYNC_ATTEMPTS    5
 #define ACK_TIMEOUT_US   (30 * 1000000LL)
+#define CONNECT_TIMEOUT_US (30 * 1000000LL)   // so lange "Verbinde …", danach "antwortet nicht"
+#define RETRY_MS         5000                 // danach im Hintergrund weiter versuchen
 
 typedef struct {
     uint32_t n;
@@ -66,6 +68,7 @@ static bool s_req_cancel;
 static bool s_req_pause;
 static bool s_req_resume;
 static bool s_req_relink;      // Gerätetyp geändert: neu verbinden
+static bool s_req_retry;       // "Erneut verbinden" aus der Weboberfläche
 static int s_device;           // device_type_t der aktuellen Verbindung
 
 // Nur im Drucker-Task benutzt
@@ -77,6 +80,7 @@ static uint32_t s_next_n;      // als nächstes zu sendende Nummer (<= s_last_n:
 static bool s_ready;           // letzte Zeile bestätigt, nächste darf raus
 static bool s_need_sync;
 static int64_t s_last_io_us;
+static int64_t s_connect_since;   // Beginn des aktuellen Verbindungsversuchs
 static char s_inject[INJECT_LEN][CMD_BUF];
 static int s_inject_head;
 static int s_inject_count;
@@ -641,7 +645,11 @@ static bool sync_printer(void)
 {
     char line[LINE_BUF];
     bool keep_error = get_state() == PRINTER_ERROR;
-    if (!keep_error) {
+    LOCK();
+    bool unresponsive = s_st.unresponsive;
+    UNLOCK();
+    // Antwortet der Drucker schon länger nicht, bleibt die Meldung stehen, bis er sich meldet
+    if (!keep_error && !unresponsive) {
         set_state(PRINTER_CONNECTING, "Verbinde mit Drucker …");
     }
     usb_serial_flush_rx();
@@ -689,6 +697,9 @@ static bool sync_printer(void)
     s_last_io_us = now_us();
     inject("M155 S2");   // Temperaturen alle 2 s automatisch melden
 
+    LOCK();
+    s_st.unresponsive = false;
+    UNLOCK();
     if (!keep_error) {
         set_state(PRINTER_IDLE, "Drucker bereit");
     }
@@ -842,6 +853,9 @@ static void printer_task(void *arg)
             if (linked) {
                 linked = false;
                 bool active = s_file != NULL;
+                LOCK();
+                s_st.unresponsive = false;
+                UNLOCK();
                 close_job();
                 set_state(PRINTER_DISCONNECTED, active ? "USB-Verbindung verloren, Druck abgebrochen"
                                                        : "Kein Drucker verbunden");
@@ -853,11 +867,20 @@ static void printer_task(void *arg)
 
         LOCK();
         bool relink = s_req_relink;
+        bool retry = s_req_retry;
         s_req_relink = false;
+        s_req_retry = false;
         UNLOCK();
+        if (retry) {
+            s_connect_since = now_us();
+            s_need_sync = true;
+        }
         if (!linked || generation != usb_serial_generation() || s_need_sync || relink) {
             if (linked && generation != usb_serial_generation() && s_file) {
                 fail("USB-Verbindung unterbrochen, Druck abgebrochen");
+            }
+            if (!linked || generation != usb_serial_generation() || relink) {
+                s_connect_since = now_us();   // neues Gerät oder neuer Gerätetyp: wieder 30 s Geduld
             }
             linked = true;
             generation = usb_serial_generation();
@@ -875,9 +898,17 @@ static void printer_task(void *arg)
                 continue;
             }
             if (!sync_printer()) {
-                ESP_LOGW(TAG, "Drucker antwortet nicht, neuer Versuch");
                 s_need_sync = true;
-                vTaskDelay(pdMS_TO_TICKS(1000));
+                bool timed_out = now_us() - s_connect_since >= CONNECT_TIMEOUT_US;
+                LOCK();
+                bool was = s_st.unresponsive;
+                s_st.unresponsive = timed_out && s_st.state != PRINTER_ERROR;
+                UNLOCK();
+                if (timed_out && !was && get_state() != PRINTER_ERROR) {
+                    set_state(PRINTER_DISCONNECTED, "Drucker antwortet nicht. Ist er eingeschaltet und stimmt die Baudrate?");
+                }
+                ESP_LOGW(TAG, "Drucker antwortet nicht, neuer Versuch in %d s", timed_out ? RETRY_MS / 1000 : 1);
+                vTaskDelay(pdMS_TO_TICKS(timed_out ? RETRY_MS : 1000));
             }
             continue;
         }
@@ -1033,6 +1064,22 @@ bool printer_is_using(storage_vol_t vol, const char *name)
     bool using = job_active(s_st.state) && s_st.vol == vol && strcmp(s_st.file, name) == 0;
     UNLOCK();
     return using;
+}
+
+esp_err_t printer_retry(void)
+{
+    esp_err_t err = ESP_OK;
+    LOCK();
+    if (!s_st.unresponsive) {
+        err = ESP_ERR_INVALID_STATE;
+    } else {
+        s_st.unresponsive = false;
+        s_st.state = PRINTER_CONNECTING;
+        strlcpy(s_st.message, "Verbinde mit Drucker …", sizeof(s_st.message));
+        s_req_retry = true;
+    }
+    UNLOCK();
+    return err;
 }
 
 esp_err_t printer_device_changed(void)
