@@ -183,41 +183,9 @@ static esp_err_t upload_post(httpd_req_t *req)
     if (!get_file(req, &vol, name, sizeof(name))) {
         return http_send_error(req, "400 Bad Request", "Ungültiger Speicher oder Dateiname");
     }
-    if (req->content_len == 0) {
-        return http_send_error(req, "400 Bad Request", "Leere Datei");
-    }
-    upload_t up;
     const char *status;
-    const char *failure = upload_begin(&up, vol, name, req->content_len, &status);
-    if (failure) {
-        return http_send_error(req, status, failure);
-    }
-    char *buf = malloc(HTTP_CHUNK);
-    if (!buf) {
-        upload_abort(&up);
-        return http_send_error(req, "500 Internal Server Error", "Kein Speicher");
-    }
-    size_t remaining = req->content_len;
-    while (remaining > 0 && !failure) {
-        int r = http_recv(req, buf, remaining < HTTP_CHUNK ? remaining : HTTP_CHUNK);
-        if (r <= 0) {
-            failure = "Upload abgebrochen";
-        } else if (!upload_write(&up, buf, r)) {
-            failure = "Schreibfehler (Speicher voll?)";
-        } else {
-            remaining -= r;
-        }
-    }
-    free(buf);
-    if (failure) {
-        upload_abort(&up);
-        return http_send_error(req, "500 Internal Server Error", failure);
-    }
-    failure = upload_finish(&up);
-    if (failure) {
-        return http_send_error(req, "500 Internal Server Error", failure);
-    }
-    return http_send_ok(req);
+    const char *failure = http_upload_body(req, vol, name, &status);
+    return failure ? http_send_error(req, status, failure) : http_send_ok(req);
 }
 
 // Dateiname für Content-Disposition (RFC 5987): alles außer A–Z, a–z, 0–9 und -._ prozentkodiert
@@ -383,18 +351,9 @@ static esp_err_t wifi_post(httpd_req_t *req)
     char body[512];
     char ssid[33 * 3 + 1];
     char pass[64 * 3 + 1];
-    if (req->content_len == 0 || req->content_len >= sizeof(body)) {
+    if (!http_recv_body(req, body, sizeof(body))) {
         return http_send_error(req, "400 Bad Request", "Ungültige Anfrage");
     }
-    size_t got = 0;
-    while (got < req->content_len) {
-        int r = httpd_req_recv(req, body + got, req->content_len - got);
-        if (r <= 0) {
-            return ESP_FAIL;
-        }
-        got += r;
-    }
-    body[got] = '\0';
     if (httpd_query_key_value(body, "ssid", ssid, sizeof(ssid)) != ESP_OK) {
         return http_send_error(req, "400 Bad Request", "SSID fehlt");
     }
@@ -424,13 +383,6 @@ static esp_err_t wifi_delete(httpd_req_t *req)
     return send_result(req, wifi_forget(), "");
 }
 
-static bool printer_busy(void)
-{
-    printer_status_t st;
-    printer_get_status(&st);
-    return st.state == PRINTER_PRINTING || st.state == PRINTER_PAUSED;
-}
-
 static esp_err_t settings_get_handler(httpd_req_t *req)
 {
     settings_t c;
@@ -444,14 +396,19 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     http_json_escape(version, sizeof(version), esp_app_get_description()->version);
     http_json_escape(host, sizeof(host), c.hostname);
     http_json_escape(pass, sizeof(pass), c.ap_password);
-    snprintf(body, sizeof(body),
-             "{\"device_name\":\"%s\",\"hostname\":\"%s\",\"ap_password\":\"%s\",\"device_type\":%d,\"baud\":%d,\"pause_lift\":%d,\"cancel_lift\":%d"
-             ",\"park_x\":%d,\"park_y\":%d,\"sd_mosi\":%d,\"sd_miso\":%d,\"sd_sclk\":%d,\"sd_cs\":%d"
-             ",\"plot_draw\":%d,\"plot_travel\":%d,\"plot_accel\":%d,\"pen_servo\":%d,\"pen_up\":%d,\"pen_down\":%d,\"pen_delay\":%d"
-             ",\"reboot_required\":%s,\"version\":\"%s\",\"variant\":\"%s\",\"api_key\":\"%s\"}",
-             name, host, pass, c.device_type, c.baud, c.pause_lift, c.cancel_lift, c.park_x, c.park_y,
-             c.sd_mosi, c.sd_miso, c.sd_sclk, c.sd_cs, c.plot_draw, c.plot_travel, c.plot_accel, c.pen_servo, c.pen_up,
-             c.pen_down, c.pen_delay, settings_reboot_required() ? "true" : "false", version, uprint_variant(), c.api_key);
+    size_t n = snprintf(body, sizeof(body),
+                        "{\"device_name\":\"%s\",\"hostname\":\"%s\",\"ap_password\":\"%s\",\"api_key\":\"%s\""
+                        ",\"reboot_required\":%s,\"version\":\"%s\",\"variant\":\"%s\"",
+                        name, host, pass, c.api_key, settings_reboot_required() ? "true" : "false", version,
+                        uprint_variant());
+    for (size_t i = 0; i < SETTINGS_INT_FIELD_COUNT && n < sizeof(body); i++) {
+        const settings_int_field_t *f = &SETTINGS_INT_FIELDS[i];
+        n += snprintf(body + n, sizeof(body) - n, ",\"%s\":%d", f->key, SETTINGS_INT(&c, f));
+    }
+    if (n < sizeof(body) - 1) {
+        body[n++] = '}';
+        body[n] = '\0';
+    }
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
 }
@@ -486,18 +443,9 @@ static bool form_int(const char *body, const char *key, int *out, bool *bad)
 static esp_err_t settings_post_handler(httpd_req_t *req)
 {
     char body[1280];
-    if (req->content_len == 0 || req->content_len >= sizeof(body)) {
+    if (!http_recv_body(req, body, sizeof(body))) {
         return http_send_error(req, "400 Bad Request", "Ungültige Anfrage");
     }
-    size_t got = 0;
-    while (got < req->content_len) {
-        int r = httpd_req_recv(req, body + got, req->content_len - got);
-        if (r <= 0) {
-            return ESP_FAIL;
-        }
-        got += r;
-    }
-    body[got] = '\0';
 
     settings_t c;
     settings_get(&c);
@@ -516,23 +464,9 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     }
     bool bad = false;
     int old_device = c.device_type;
-    form_int(body, "device_type", &c.device_type, &bad);
-    form_int(body, "baud", &c.baud, &bad);
-    form_int(body, "pause_lift", &c.pause_lift, &bad);
-    form_int(body, "cancel_lift", &c.cancel_lift, &bad);
-    form_int(body, "park_x", &c.park_x, &bad);
-    form_int(body, "park_y", &c.park_y, &bad);
-    form_int(body, "sd_mosi", &c.sd_mosi, &bad);
-    form_int(body, "sd_miso", &c.sd_miso, &bad);
-    form_int(body, "sd_sclk", &c.sd_sclk, &bad);
-    form_int(body, "sd_cs", &c.sd_cs, &bad);
-    form_int(body, "plot_draw", &c.plot_draw, &bad);
-    form_int(body, "plot_travel", &c.plot_travel, &bad);
-    form_int(body, "plot_accel", &c.plot_accel, &bad);
-    form_int(body, "pen_servo", &c.pen_servo, &bad);
-    form_int(body, "pen_up", &c.pen_up, &bad);
-    form_int(body, "pen_down", &c.pen_down, &bad);
-    form_int(body, "pen_delay", &c.pen_delay, &bad);
+    for (size_t i = 0; i < SETTINGS_INT_FIELD_COUNT; i++) {
+        form_int(body, SETTINGS_INT_FIELDS[i].key, &SETTINGS_INT(&c, &SETTINGS_INT_FIELDS[i]), &bad);
+    }
     if (bad) {
         return http_send_error(req, "400 Bad Request", "Bitte nur ganze Zahlen eingeben");
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "esp_err.h"
 
@@ -45,6 +46,16 @@ typedef struct {
     // Schlüssel für Slicer (PrusaLink/OctoPrint-API), wird beim ersten Start erzeugt
     char api_key[33];
 } settings_t;
+
+// Alle ganzzahligen Felder; der Name ist zugleich NVS-Schlüssel und Feldname in der Web-API
+typedef struct {
+    const char *key;
+    size_t offset;
+} settings_int_field_t;
+
+extern const settings_int_field_t SETTINGS_INT_FIELDS[];
+extern const size_t SETTINGS_INT_FIELD_COUNT;
+#define SETTINGS_INT(s, f) (*(int *)((char *)(s) + (f)->offset))
 
 void settings_init(void);
 void settings_get(settings_t *out);

@@ -34,7 +34,9 @@ static const char *TAG = "printer";
 // Prusa/Marlin: MAX_CMD_SIZE 96 inkl. "N12345 " und "*123"
 #define CMD_LIMIT        80
 #define CMD_BUF          (CMD_LIMIT + 1)
-#define HISTORY_LEN      32
+// Mit nur einer Zeile unterwegs fordert der Drucker höchstens die zuletzt gesendete erneut an,
+// ein paar Zeilen Reserve genügen
+#define HISTORY_LEN      8
 #define INJECT_LEN       16
 #define SHUTDOWN_MAX     10
 #define SHUTDOWN_TAIL    4096   // so weit vor Dateiende wird die Endsequenz gesucht
@@ -112,6 +114,11 @@ static void set_state(printer_state_t state, const char *fmt, ...)
     strlcpy(s_st.message, msg, sizeof(s_st.message));
     UNLOCK();
     ESP_LOGI(TAG, "[%s] %s", printer_state_name(state), msg);
+}
+
+static bool job_active(printer_state_t state)
+{
+    return state == PRINTER_PRINTING || state == PRINTER_PAUSED;
 }
 
 static printer_state_t get_state(void)
@@ -611,8 +618,7 @@ static void handle_line(const char *line)
     }
     if (starts_with(line, "start")) {
         // Drucker hat neu gestartet, Zeilennummern sind weg
-        printer_state_t state = get_state();
-        if (state == PRINTER_PRINTING || state == PRINTER_PAUSED) {
+        if (job_active(get_state())) {
             fail("Drucker hat während des Drucks neu gestartet");
         }
         s_need_sync = true;
@@ -779,7 +785,7 @@ static void process_requests(void)
 static void plot_step(void)
 {
     printer_state_t state = get_state();
-    if (state != PRINTER_PRINTING && state != PRINTER_PAUSED) {
+    if (!job_active(state)) {
         vTaskDelay(pdMS_TO_TICKS(20));
         return;
     }
@@ -923,7 +929,7 @@ void printer_get_status(printer_status_t *out)
     LOCK();
     *out = s_st;
     UNLOCK();
-    if (out->state == PRINTER_PRINTING || out->state == PRINTER_PAUSED) {
+    if (job_active(out->state)) {
         out->elapsed_s = (uint32_t)((now_us() - out->started_us) / 1000000LL);
     } else {
         out->elapsed_s = 0;
@@ -1016,11 +1022,15 @@ esp_err_t printer_cancel(void)
     return err;
 }
 
+bool printer_busy(void)
+{
+    return job_active(get_state());
+}
+
 bool printer_is_using(storage_vol_t vol, const char *name)
 {
     LOCK();
-    bool using = (s_st.state == PRINTER_PRINTING || s_st.state == PRINTER_PAUSED) &&
-                 s_st.vol == vol && strcmp(s_st.file, name) == 0;
+    bool using = job_active(s_st.state) && s_st.vol == vol && strcmp(s_st.file, name) == 0;
     UNLOCK();
     return using;
 }
@@ -1029,7 +1039,7 @@ esp_err_t printer_device_changed(void)
 {
     esp_err_t err = ESP_OK;
     LOCK();
-    if (s_st.state == PRINTER_PRINTING || s_st.state == PRINTER_PAUSED) {
+    if (job_active(s_st.state)) {
         err = ESP_ERR_INVALID_STATE;
     } else {
         s_req_relink = true;

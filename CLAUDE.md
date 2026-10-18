@@ -41,8 +41,8 @@ contracts and are the best entry point.
 
 - **printer.c** — single FreeRTOS task that owns the serial link. Web handlers never talk to the printer
   directly: they set request flags (`s_req_start`, `s_req_pause`, …) and read a `printer_status_t` snapshot, all
-  under `s_lock`. Protocol: one line in flight, `N<n> cmd*<xor>` with checksum, wait for `ok`, replay from a
-  32-line history on `Resend:`. Cancel runs heaters-off plus the shutdown sequence found after the
+  under `s_lock`. Protocol: one line in flight, `N<n> cmd*<xor>` with checksum, wait for `ok`, replay from an
+  8-line history on `Resend:`. Cancel runs heaters-off plus the shutdown sequence found after the
   `; -- shutdown` marker near the end of the file (written by µplot). When `device_type` is AxiDraw, the same
   task calls into `axidraw.c` instead (`axidraw_link` / `axidraw_poll`).
 - **usb_serial.cpp** — USB host with CDC-ACM, CH34x, CP210x and FTDI drivers (C++ because `usb_host_vcp`

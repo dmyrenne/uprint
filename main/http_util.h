@@ -18,6 +18,9 @@ esp_err_t http_send_ok(httpd_req_t *req);
 // httpd_req_recv mit Wiederholung bei Zeitüberschreitung; <= 0 bei Abbruch
 int http_recv(httpd_req_t *req, char *buf, size_t len);
 
+// Liest den ganzen Body nullterminiert nach buf; false, wenn er leer, zu lang (>= len) oder abgebrochen ist
+bool http_recv_body(httpd_req_t *req, char *buf, size_t len);
+
 bool http_is_gcode(const char *name);
 
 // Datei-Upload in einen Speicher: erst in eine temporäre Datei, am Ende umbenennen.
@@ -39,3 +42,7 @@ bool upload_write(upload_t *u, const void *data, size_t len);
 // NULL bei Erfolg, sonst Fehlermeldung (die temporäre Datei ist dann gelöscht)
 const char *upload_finish(upload_t *u);
 void upload_abort(upload_t *u);
+
+// Speichert den Body der Anfrage als Datei (upload_begin … upload_finish).
+// NULL bei Erfolg, sonst Fehlermeldung, *status enthält den HTTP-Status.
+const char *http_upload_body(httpd_req_t *req, storage_vol_t vol, const char *name, const char **status);
