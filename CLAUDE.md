@@ -4,9 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-μprint is ESP-IDF firmware (C, one C++ file) that turns an ESP32-S3 into a USB print server: G-code is uploaded
+µprint is ESP-IDF firmware (C, one C++ file) that turns an ESP32-S3 into a USB print server: G-code is uploaded
 via a browser UI, stored on microSD or internal flash, and streamed over USB host to a Marlin/Prusa printer. An
 AxiDraw/NextDraw (EiBotBoard) mode exists in alpha (see `docs/axidraw.md`).
+
+**Name:** always `µprint`, lowercase, with the micro sign `µ` (U+00B5, not the Greek `μ` U+03BC); `uprint` only where
+`µ` isn't possible (repo, hostname, file names, project name in the image).
 
 **Language convention:** the README is in English for an international audience. Code comments, log messages,
 commit messages and PR titles are written in German. Keep it that way. Commit subjects follow the pattern `Bereich: kurze Beschreibung`

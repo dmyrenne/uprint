@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>μprint</title>
+<title>µprint</title>
 <style>
   /* Schriften liegen im Firmware-Image unter /fonts (SIL Open Font License), damit alles auch ohne Internet läuft */
   @font-face { font-family: 'Space Grotesk'; src: url(fonts/space-grotesk.woff2) format('woff2'); font-weight: 300 700; font-display: swap; }
@@ -300,7 +300,7 @@
 <body>
 <header class="top">
   <div class="brand">
-    <svg id="mark" viewBox="0 0 34 34" role="img" aria-label="μprint"></svg>
+    <svg id="mark" viewBox="0 0 34 34" role="img" aria-label="µprint"></svg>
     <h1><span id="devName">µprint</span><small id="tagline" data-i18n="tagline"></small></h1>
     <span class="led-dot" id="ledDot" data-i18n-aria="leds.dot" hidden></span>
   </div>
@@ -1522,7 +1522,7 @@ function renderName() {
   const name = settings && settings.device_name;
   $('devName').textContent = name || 'µprint';
   $('tagline').textContent = t(name ? 'tagline.named' : 'tagline');
-  document.title = name ? name + ' · μprint' : 'μprint';
+  document.title = name ? name + ' · µprint' : 'µprint';
 }
 
 // ---------- Slicer-Anbindung ----------
