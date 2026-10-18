@@ -92,6 +92,10 @@ GitHub Actions automatisch: Jeder Push auf einen Branch, der die Firmware änder
 daraus das Release `v1.2.3`, und die Alphas des Branches verschwinden. Standardmäßig steigt die Patch-Nummer, mit dem
 Label `minor` bzw. `major` am Pull Request die entsprechende Stelle. Der Web-Flasher zeigt die letzten 5 Releases.
 
+## Entstehung
+
+μprint wurde zusammen mit [Claude](https://claude.com/claude-code) (Anthropic) entwickelt.
+
 ## Lizenz
 
 μprint steht unter der [MIT-Lizenz](LICENSE).

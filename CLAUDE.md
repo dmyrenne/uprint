@@ -10,7 +10,8 @@ AxiDraw/NextDraw (EiBotBoard) mode exists in alpha (see `docs/axidraw.md`).
 
 **Language convention:** code comments, log messages, README, commit messages and PR titles are written in
 German. Keep it that way. Commit subjects follow the pattern `Bereich: kurze Beschreibung`
-(e.g. `Einstellungen: …`, `CI: …`, `Web-UI: …`).
+(e.g. `Einstellungen: …`, `CI: …`, `Web-UI: …`). Do not add `Co-Authored-By: Claude` trailers to commits or
+Claude attribution lines to PR descriptions; the Claude credit lives in the README only.
 
 ## Build & flash
 
