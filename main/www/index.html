@@ -578,6 +578,9 @@
         <option value="0">RGB</option><option value="1">RGBW</option>
       </select></label>
       <label><span data-i18n="set.led_brightness"></span><input type="number" name="led_brightness" min="1" max="100"></label>
+      <label><span data-i18n="set.led_max_ma"></span><input type="number" name="led_max_ma" min="0" max="10000" step="50"></label>
+      <label><span data-i18n="set.led_ma"></span><input type="number" name="led_ma" min="5" max="100"></label>
+      <p class="hint full" id="ledCurrent" hidden></p>
       <div class="row full"><button type="button" class="small" id="ledFind" data-i18n="leds.find"></button>
         <a href="#leds" data-i18n="leds.open"></a></div>
       <p class="hint full" data-i18n="set.leds.hint"></p>
@@ -1125,7 +1128,7 @@ async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1
 const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y',
   'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay',
   'hostname', 'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs',
-  'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness'];
+  'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness', 'led_max_ma', 'led_ma'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm'), hwForm = $('hwForm');
 const field = (k) => setForm.elements[k] || hwForm.elements[k];
@@ -1268,6 +1271,10 @@ let leds = null, ledEdit = null;
 const LED_INTERVALS = [0, 10, 30, 60];
 const lookKey = (l) => l.effect + '|' + l.color.toLowerCase() + '|' + l.bright;
 function renderLedDot() {
+  const on = !!st && !!st.led_id;
+  $('ledCurrent').hidden = !on;
+  if (on) $('ledCurrent').textContent = settings && settings.led_max_ma
+    ? t('leds.current', { ma: st.led_ma, max: settings.led_max_ma }) : t('leds.current.nolimit', { ma: st.led_ma });
   const c = st && st.led_id;
   $('ledDot').hidden = !c;
   if (c) { $('ledDot').style.background = c; $('ledDot').title = t('leds.dot'); }

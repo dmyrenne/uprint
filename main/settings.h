@@ -61,6 +61,8 @@ typedef struct {
     int led_type;         // led_type_t
     int led_order;        // led_order_t: Reihenfolge der Farbkanäle
     int led_white;        // 1 = RGBW (Weißkanal nach den Farben)
+    int led_max_ma;       // Strombegrenzung für den ganzen Strip in mA, 0 = keine (wie in WLED)
+    int led_ma;           // Strom einer LED bei vollem Weiß in mA, für die Schätzung
     // Schlüssel für Slicer (PrusaLink/OctoPrint-API), wird beim ersten Start erzeugt
     char api_key[33];
 } settings_t;

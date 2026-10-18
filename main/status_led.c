@@ -41,6 +41,7 @@ static const char *TAG = "status_led";
 #define BAR_EDGE_MS     2000
 #define BAR_PULSE_MS    2500
 #define GAMMA           2.2f
+#define IDLE_MA         1       // Ruhestrom je LED (Schätzung wie in WLED)
 
 typedef struct {
     float r, g, b;
@@ -61,6 +62,9 @@ static led_strip_handle_t s_strip;
 static int s_count;
 static bool s_white;
 static float s_brightness;
+static int s_max_ma;          // 0 = keine Begrenzung
+static int s_led_ma;          // Strom einer LED bei vollem Weiß
+static volatile int s_current_ma;   // geschätzter Strom des letzten Bildes
 static int64_t s_boot_until;
 static px_t s_px[MAX_LEDS];
 
@@ -218,6 +222,9 @@ static void strip_open(void)
     s_count = cfg.led_count;
     s_white = cfg.led_white == 1;
     s_brightness = cfg.led_brightness / 100.0f;
+    s_max_ma = cfg.led_max_ma;
+    s_led_ma = cfg.led_ma;
+    s_current_ma = 0;
     if (cfg.led_pin < 0 || cfg.led_count <= 0) {
         return;
     }
@@ -246,12 +253,37 @@ static void strip_open(void)
     s_boot_until = now_ms() + BOOT_MS;
 }
 
+// Geschätzter Strom in mA: jeder Kanal bei 255 zieht ein Drittel des Stroms bei vollem Weiß (wie in WLED)
+static float estimate_ma(float level_sum)
+{
+    return s_count * IDLE_MA + level_sum / 255.0f * s_led_ma / 3.0f;
+}
+
 static void strip_show(void)
 {
+    // Summe aller Kanäle nach Gesamthelligkeit; der Weißkanal zieht bei RGBW etwa so viel wie ein Farbkanal
+    float sum = 0.0f;
     for (int i = 0; i < s_count; i++) {
-        uint32_t r = (uint32_t)lroundf(fminf(255.0f, s_px[i].r * s_brightness));
-        uint32_t g = (uint32_t)lroundf(fminf(255.0f, s_px[i].g * s_brightness));
-        uint32_t b = (uint32_t)lroundf(fminf(255.0f, s_px[i].b * s_brightness));
+        float r = fminf(255.0f, s_px[i].r * s_brightness);
+        float g = fminf(255.0f, s_px[i].g * s_brightness);
+        float b = fminf(255.0f, s_px[i].b * s_brightness);
+        sum += s_white ? r + g + b - 2.0f * fminf(r, fminf(g, b)) : r + g + b;
+    }
+    // Strombegrenzung: alle LEDs gleichmäßig dunkler, bis die Schätzung unter der Grenze liegt
+    float scale = s_brightness;
+    float ma = estimate_ma(sum);
+    if (s_max_ma > 0 && ma > s_max_ma && sum > 0.0f) {
+        float budget = fmaxf(0.0f, s_max_ma - s_count * IDLE_MA);
+        float k = budget / (ma - s_count * IDLE_MA);
+        scale *= k;
+        ma = estimate_ma(sum * k);
+    }
+    s_current_ma = (int)lroundf(ma);
+
+    for (int i = 0; i < s_count; i++) {
+        uint32_t r = (uint32_t)lroundf(fminf(255.0f, s_px[i].r * scale));
+        uint32_t g = (uint32_t)lroundf(fminf(255.0f, s_px[i].g * scale));
+        uint32_t b = (uint32_t)lroundf(fminf(255.0f, s_px[i].b * scale));
         if (s_white) {
             // Gemeinsamen Weißanteil auf den Weißkanal legen
             uint32_t w = r < g ? (r < b ? r : b) : (g < b ? g : b);
@@ -538,6 +570,11 @@ void status_led_preview(led_state_t state, const led_look_t *look)
     s_preview_look = look ? *look : s_cfg.look[state];
     s_preview_until = now_ms() + PREVIEW_MS;
     UNLOCK();
+}
+
+int status_led_current_ma(void)
+{
+    return s_strip ? s_current_ma : 0;
 }
 
 void status_led_ota(int percent)

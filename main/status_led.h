@@ -74,3 +74,6 @@ void status_led_find(void);                    // 10 s
 // 5 s, Balken bei 60 %; look != NULL zeigt eine noch nicht gespeicherte Darstellung
 void status_led_preview(led_state_t state, const led_look_t *look);
 void status_led_ota(int percent);              // -1 = Update beendet oder abgebrochen
+
+// Geschätzter Strom des Strips in mA (nach der Strombegrenzung), 0 ohne Strip
+int status_led_current_ma(void);

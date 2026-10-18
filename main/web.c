@@ -98,10 +98,10 @@ static esp_err_t status_get(httpd_req_t *req)
              "{\"state\":\"%s\",\"file\":\"%s\",\"size\":%" PRIu32 ",\"pos\":%" PRIu32
              ",\"elapsed\":%" PRIu32 ",\"hotend\":%.1f,\"hotend_target\":%.1f"
              ",\"bed\":%.1f,\"bed_target\":%.1f,\"message\":\"%s\",\"storage\":\"%s\""
-             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 ",\"led_id\":\"%s\"}",
+             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 ",\"led_id\":\"%s\",\"led_ma\":%d}",
              printer_state_name(st.state), file, st.file_size, st.file_pos, st.elapsed_s,
              st.hotend, st.hotend_target, st.bed, st.bed_target, msg, storage_id(st.vol),
-             st.finished ? "true" : "false", st.duration_s, storage_revision(), led_id);
+             st.finished ? "true" : "false", st.duration_s, storage_revision(), led_id, status_led_current_ma());
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, body);
 }
