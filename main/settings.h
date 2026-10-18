@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "esp_err.h"
 
@@ -11,7 +12,7 @@ extern "C" {
 // Alle Einstellungen von uprint; sie liegen im NVS und werden über die Weboberfläche geändert.
 typedef enum {
     DEVICE_PRINTER = 0,   // 3D-Drucker mit Marlin/Prusa-Firmware
-    DEVICE_AXIDRAW = 1,   // AxiDraw/NextDraw (EiBotBoard), vorerst nur Testmodus
+    DEVICE_AXIDRAW = 1,   // AxiDraw/NextDraw (EiBotBoard)
 } device_type_t;
 
 typedef struct {
@@ -29,6 +30,14 @@ typedef struct {
     int cancel_lift;
     int park_x;
     int park_y;
+    // Plotter (AxiDraw), wirksam ab dem nächsten Plot
+    int plot_draw;        // mm/s, Höchstgeschwindigkeit mit Stift unten
+    int plot_travel;      // mm/s, mit Stift oben
+    int plot_accel;       // mm/s²
+    int pen_servo;        // plot_servo_t: 0 Standard (AxiDraw), 1 bürstenlos (NextDraw, Upgrade-Kit)
+    int pen_up;           // Servoposition 0–100 %
+    int pen_down;
+    int pen_delay;        // ms Wartezeit nach jedem Heben/Senken
     // microSD über SPI (wirksam nach Neustart)
     int sd_mosi;
     int sd_miso;
@@ -37,6 +46,16 @@ typedef struct {
     // Schlüssel für Slicer (PrusaLink/OctoPrint-API), wird beim ersten Start erzeugt
     char api_key[33];
 } settings_t;
+
+// Alle ganzzahligen Felder; der Name ist zugleich NVS-Schlüssel und Feldname in der Web-API
+typedef struct {
+    const char *key;
+    size_t offset;
+} settings_int_field_t;
+
+extern const settings_int_field_t SETTINGS_INT_FIELDS[];
+extern const size_t SETTINGS_INT_FIELD_COUNT;
+#define SETTINGS_INT(s, f) (*(int *)((char *)(s) + (f)->offset))
 
 void settings_init(void);
 void settings_get(settings_t *out);

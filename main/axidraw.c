@@ -1,7 +1,10 @@
 /*
- * Testmodus für AxiDraw und NextDraw (EiBotBoard, EBB).
+ * AxiDraw und NextDraw (EiBotBoard, EBB): Verbindung, Plotten und Testmodus.
  *
- * Geplottet wird noch nicht. Ein Knopf in der Weboberfläche startet einen festen Ablauf: Firmware
+ * Plotten: printer.c füttert die Zeilen der Datei, plot.c übersetzt sie in EBB-Befehle, hier werden
+ * sie gesendet und die PRG-Taste abgefragt (Abschnitt "Plotten").
+ *
+ * Testmodus: Ein Knopf in der Weboberfläche startet einen festen Ablauf: Firmware
  * abfragen, Stift bewegen, optional ein kleines Quadrat fahren, die PRG-Taste beobachten. Alles,
  * was gesendet und empfangen wird, landet in einem Log, das sich als Textdatei herunterladen lässt.
  * So lässt sich an einem echten Gerät klären, wie es sich verhält, bevor der eigentliche
@@ -20,12 +23,14 @@
 #include <string.h>
 
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 #include "axidraw.h"
+#include "plot.h"
 #include "settings.h"
 #include "usb_serial.h"
 #include "variant.h"
@@ -59,7 +64,7 @@ typedef enum {
 } ebb_syntax_t;
 
 static SemaphoreHandle_t s_lock;
-static char s_log[LOG_SIZE];
+static char *s_log;   // erst beim ersten Test angelegt (bei n16r8 im PSRAM), danach behalten
 static size_t s_log_len;
 static bool s_log_full;
 static char s_prompt[sizeof(((axidraw_test_status_t *)0)->prompt)];
@@ -386,18 +391,6 @@ static void log_qg(void)
     }
 }
 
-// Rate für LM: Schritte/s × 2^31 / 25000 (Akkumulator wird alle 40 µs addiert)
-static int32_t lm_rate(int steps_per_s)
-{
-    return (int32_t)((int64_t)steps_per_s * 0x80000000LL / 25000);
-}
-
-// Beschleunigung für LM: Schritte/s² × 2^31 / 25000²
-static int32_t lm_accel(int steps_per_s2)
-{
-    return (int32_t)((int64_t)steps_per_s2 * 0x80000000LL / 25000 / 25000);
-}
-
 static bool test_connection(void)
 {
     section("1. Verbindung");
@@ -467,7 +460,7 @@ static bool test_motion(void)
         tlog("LM übersprungen, Firmware zu alt");
     } else {
         // LM zählt Motorschritte: nach rechts heißt beide Motoren gleich weit
-        int32_t rate = lm_rate(TEST_RATE);
+        int32_t rate = plot_lm_rate(TEST_RATE);
         tlog("LM: konstant %d Schritte/s, hin und zurück", TEST_RATE);
         ebbf("LM,%" PRId32 ",%d,0,%" PRId32 ",%d,0", rate, TEST_STEPS, rate, TEST_STEPS);
         ebbf("LM,%" PRId32 ",%d,0,%" PRId32 ",%d,0", rate, -TEST_STEPS, rate, -TEST_STEPS);
@@ -478,7 +471,7 @@ static bool test_motion(void)
 
         // Rampe: auf halber Strecke von 0 auf TEST_RATE beschleunigen, dann wieder auf 0
         int half = TEST_STEPS / 2;
-        int32_t acc = lm_accel(TEST_RATE * TEST_RATE / (2 * half));
+        int32_t acc = plot_lm_accel(TEST_RATE * TEST_RATE / (2.0f * half));
         tlog("LM: mit Rampe 0 → %d → 0 Schritte/s, hin und zurück (Accel %" PRId32 ")", TEST_RATE, acc);
         ebbf("LM,0,%d,%" PRId32 ",0,%d,%" PRId32, half, acc, half, acc);
         ebbf("LM,%" PRId32 ",%d,%" PRId32 ",%" PRId32 ",%d,%" PRId32, rate, half, -acc, rate, half, -acc);
@@ -585,6 +578,127 @@ static void run_test(bool motion)
     }
 }
 
+// ---------- Plotten ----------
+// Alles im Drucker-Task. printer.c liest die Datei und verwaltet Zustand und Fortschritt, hier wird
+// übersetzt und gesendet.
+
+#define BUTTON_POLL_MS        200   // QG-Abfrage während des Plots (kostet einen USB-Rundlauf)
+#define BUTTON_POLL_PAUSED_MS 100
+
+static plot_t s_plot;
+static bool s_plot_failed;
+static char s_plot_error[96];
+static int64_t s_button_at;
+static bool s_button_wait_release;   // Taste löst erst wieder aus, nachdem sie losgelassen war
+
+static void plot_emit(const char *cmd, void *ctx)
+{
+    (void)ctx;
+    if (s_plot_failed) {
+        return;   // nach einem Fehler nichts mehr senden, printer.c bricht ab
+    }
+    char r[48];
+    int n = ebb_cmd(cmd, r, sizeof(r), true);
+    if (n <= 0 || r[0] == '!') {
+        s_plot_failed = true;
+        snprintf(s_plot_error, sizeof(s_plot_error), "AxiDraw: %.24s → %.48s", cmd,
+                 n < 0 ? "Senden fehlgeschlagen" : n == 0 ? "keine Antwort" : r);
+    }
+}
+
+bool axidraw_plot_begin(void)
+{
+    settings_t cfg;
+    settings_get(&cfg);
+    plot_config_t pc = {
+        .steps_per_mm = STEPS_PER_MM,
+        .speed_draw = (float)cfg.plot_draw,
+        .speed_travel = (float)cfg.plot_travel,
+        .accel = (float)cfg.plot_accel,
+        .cornering = 0.05f,
+        .servo = cfg.pen_servo == 1 ? PLOT_SERVO_BRUSHLESS : PLOT_SERVO_STANDARD,
+        .pen_up_pct = cfg.pen_up,
+        .pen_down_pct = cfg.pen_down,
+        .pen_up_ms = cfg.pen_delay,
+        .pen_down_ms = cfg.pen_delay,
+    };
+    s_plot_failed = false;
+    s_plot_error[0] = '\0';
+    s_button_wait_release = false;
+    s_button_at = now_ms();
+    int qg;
+    query_qg(&qg, true);   // Tastendruck von vor dem Start verwerfen
+    plot_begin(&s_plot, &pc, plot_emit, NULL);
+    return !s_plot_failed;
+}
+
+bool axidraw_plot_line(const char *line)
+{
+    if (plot_line(&s_plot, line) == PLOT_ERROR) {
+        strlcpy(s_plot_error, s_plot.error, sizeof(s_plot_error));
+        return false;
+    }
+    return !s_plot_failed;
+}
+
+bool axidraw_plot_end(void)
+{
+    plot_finish(&s_plot);
+    return !s_plot_failed;
+}
+
+void axidraw_plot_pause(void)
+{
+    plot_hold(&s_plot);
+}
+
+void axidraw_plot_resume(void)
+{
+    plot_continue(&s_plot);
+}
+
+void axidraw_plot_cancel(void)
+{
+    // Nach einem Sendefehler trotzdem versuchen, den Stift zu heben und heimzufahren
+    s_plot_failed = false;
+    plot_cancel(&s_plot);
+}
+
+const char *axidraw_plot_error(void)
+{
+    return s_plot_error;
+}
+
+int axidraw_plot_button(bool paused)
+{
+    int64_t t = now_ms();
+    if (t - s_button_at < (paused ? BUTTON_POLL_PAUSED_MS : BUTTON_POLL_MS)) {
+        return 0;
+    }
+    s_button_at = t;
+    int qg;
+    if (!query_qg(&qg, true)) {
+        return 0;   // FW vor 2.6.2 ohne QG: keine Taste
+    }
+    if (!(qg & QG_BUTTON)) {
+        s_button_wait_release = false;
+        return 0;
+    }
+    if (s_button_wait_release) {
+        return 0;   // noch dieselbe gehaltene Taste
+    }
+    s_button_wait_release = true;
+    return 1;
+}
+
+bool axidraw_test_running(void)
+{
+    LOCK();
+    bool running = s_running;
+    UNLOCK();
+    return running;
+}
+
 esp_err_t axidraw_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
@@ -601,7 +715,7 @@ void axidraw_link(char *msg, size_t len)
         snprintf(msg, len, "AxiDraw verbunden (EBB-Firmware %d.%d.%d, Beta: bitte AxiDraw-Test laufen lassen "
                  "und das Log schicken)", s_fw[0], s_fw[1], s_fw[2]);
     } else if (s_syntax == EBB_LEGACY) {
-        snprintf(msg, len, "AxiDraw verbunden (EBB-Firmware %d.%d.%d), nur Testmodus", s_fw[0], s_fw[1], s_fw[2]);
+        snprintf(msg, len, "AxiDraw verbunden (EBB-Firmware %d.%d.%d)", s_fw[0], s_fw[1], s_fw[2]);
     } else if (s_version[0]) {
         snprintf(msg, len, "Gerät verbunden, antwortet unerwartet: %.60s", s_version);
     } else {
@@ -639,6 +753,8 @@ esp_err_t axidraw_test_start(bool motion)
     LOCK();
     if (s_running || cfg.device_type != DEVICE_AXIDRAW || !usb_serial_connected()) {
         err = ESP_ERR_INVALID_STATE;
+    } else if (!s_log && !(s_log = heap_caps_malloc_prefer(LOG_SIZE, 2, MALLOC_CAP_SPIRAM, MALLOC_CAP_DEFAULT))) {
+        err = ESP_ERR_NO_MEM;
     } else {
         s_running = true;
         s_req_start = true;

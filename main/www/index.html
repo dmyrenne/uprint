@@ -451,20 +451,34 @@
         <option value="1" data-i18n="set.device_type.axidraw"></option>
       </select></label>
       <p class="hint full" data-i18n="set.device_type.hint"></p>
-      <label class="full"><span data-i18n="set.baud"></span><select name="baud"></select></label>
-      <p class="hint full" data-i18n="set.baud.hint"></p>
+      <!-- data-dev: nur für den im Formular gewählten Gerätetyp sichtbar -->
+      <label class="full" data-dev="0"><span data-i18n="set.baud"></span><select name="baud"></select></label>
+      <p class="hint full" data-dev="0" data-i18n="set.baud.hint"></p>
 
-      <p class="sub full" data-i18n="set.pause"></p>
-      <label><span data-i18n="set.lift"></span><input type="number" name="pause_lift" min="0" max="50" step="1"></label>
-      <span></span>
-      <p class="hint full" data-i18n="set.pause.hint"></p>
+      <p class="sub full" data-dev="0" data-i18n="set.pause"></p>
+      <label data-dev="0"><span data-i18n="set.lift"></span><input type="number" name="pause_lift" min="0" max="50" step="1"></label>
+      <span data-dev="0"></span>
+      <p class="hint full" data-dev="0" data-i18n="set.pause.hint"></p>
 
-      <p class="sub full" data-i18n="set.cancel"></p>
-      <label><span data-i18n="set.lift"></span><input type="number" name="cancel_lift" min="0" max="100" step="1"></label>
-      <span></span>
-      <label><span data-i18n="set.park_x"></span><input type="number" name="park_x" step="1"></label>
-      <label><span data-i18n="set.park_y"></span><input type="number" name="park_y" step="1"></label>
-      <p class="hint full" data-i18n="set.cancel.hint"></p>
+      <p class="sub full" data-dev="0" data-i18n="set.cancel"></p>
+      <label data-dev="0"><span data-i18n="set.lift"></span><input type="number" name="cancel_lift" min="0" max="100" step="1"></label>
+      <span data-dev="0"></span>
+      <label data-dev="0"><span data-i18n="set.park_x"></span><input type="number" name="park_x" step="1"></label>
+      <label data-dev="0"><span data-i18n="set.park_y"></span><input type="number" name="park_y" step="1"></label>
+      <p class="hint full" data-dev="0" data-i18n="set.cancel.hint"></p>
+
+      <p class="sub full" data-dev="1" data-i18n="set.plotter"></p>
+      <label data-dev="1"><span data-i18n="set.plot_draw"></span><input type="number" name="plot_draw" min="1" max="250" step="1"></label>
+      <label data-dev="1"><span data-i18n="set.plot_travel"></span><input type="number" name="plot_travel" min="1" max="250" step="1"></label>
+      <label data-dev="1"><span data-i18n="set.plot_accel"></span><input type="number" name="plot_accel" min="100" max="10000" step="100"></label>
+      <label data-dev="1"><span data-i18n="set.pen_delay"></span><input type="number" name="pen_delay" min="0" max="1000" step="10"></label>
+      <label class="full" data-dev="1"><span data-i18n="set.pen_servo"></span><select name="pen_servo">
+        <option value="0" data-i18n="set.pen_servo.standard"></option>
+        <option value="1" data-i18n="set.pen_servo.brushless"></option>
+      </select></label>
+      <label data-dev="1"><span data-i18n="set.pen_up"></span><input type="number" name="pen_up" min="0" max="100" step="1"></label>
+      <label data-dev="1"><span data-i18n="set.pen_down"></span><input type="number" name="pen_down" min="0" max="100" step="1"></label>
+      <p class="hint full" data-dev="1" data-i18n="set.plotter.hint"></p>
 
       <p class="sub full" data-i18n="set.network"></p>
       <label><span data-i18n="set.hostname"></span><input type="text" name="hostname" maxlength="32" spellcheck="false"></label>
@@ -661,8 +675,8 @@ function renderStatus() {
     ['stat.progress', show ? num(pct, 1) + ' %' : '–'],
     ['stat.elapsed', a ? fmtTime(s.elapsed) : done ? fmtTime(s.duration) : '–'],
     ['stat.remaining', a && pct > 2 ? fmtTime(s.elapsed * (100 - pct) / pct) : '–'],
-    ['stat.hotend', temp(s.hotend, s.hotend_target)],
-    ['stat.bed', temp(s.bed, s.bed_target)],
+    // Ein Plotter hat keine Temperaturen
+    ...(axiMode() ? [] : [['stat.hotend', temp(s.hotend, s.hotend_target)], ['stat.bed', temp(s.bed, s.bed_target)]]),
   ];
   $('stats').replaceChildren(...items.map(([k, v]) => { const d = el('div', 'stat'); d.append(el('b', '', v), el('span', '', t(k))); return d; }));
 
@@ -1034,7 +1048,9 @@ $('wifiForget').onclick = async () => {
 async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1000 : 4000); }
 
 // ---------- Einstellungen ----------
-const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y', 'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
+const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y',
+  'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay',
+  'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm');
 let settings = null;
@@ -1049,7 +1065,8 @@ function writeSettings(s) {
 }
 const setModified = () => !!settings && SET_KEYS.some((k) => String(settings[k]) !== readSettings()[k]);
 function renderSettings() {
-  const mod = setModified();
+  const mod = setModified(), dev = setForm.elements.device_type.value;
+  for (const e of setForm.querySelectorAll('[data-dev]')) e.hidden = e.dataset.dev !== dev;
   $('setBadge').hidden = !mod;
   $('setSave').disabled = !mod;
   $('setRevert').disabled = !mod;
@@ -1088,6 +1105,7 @@ $('rebootBtn').onclick = async () => {
 let axi = null, axiLog = '', axiTimer = null;
 const axiMode = () => !!settings && settings.device_type === 1;
 function renderAxi() {
+  tVariant = axiMode() ? '.axi' : '';
   if (markAxi !== axiMode()) drawMark();
   $('axiBox').hidden = !axiMode();
   if (!axiMode()) return;

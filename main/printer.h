@@ -48,5 +48,8 @@ esp_err_t printer_cancel(void);
 // Nach Änderung des Gerätetyps: neu verbinden. ESP_ERR_INVALID_STATE während eines Drucks.
 esp_err_t printer_device_changed(void);
 
+// true, solange ein Druck läuft oder pausiert ist
+bool printer_busy(void);
+
 // true, wenn die Datei gerade gedruckt wird (nicht löschen/überschreiben).
 bool printer_is_using(storage_vol_t vol, const char *name);

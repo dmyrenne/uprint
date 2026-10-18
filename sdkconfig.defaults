@@ -19,3 +19,6 @@ CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
 
 # usb_host_vcp nutzt intern C++-Exceptions
 CONFIG_COMPILER_CXX_EXCEPTIONS=y
+
+# Auf Größe optimieren (-Os): weniger Code im internen RAM und im Flash
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y

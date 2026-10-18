@@ -1,5 +1,8 @@
 /*
- * G-Code-Sender für Marlin (und Prusa-Firmware).
+ * G-Code-Sender für Marlin (und Prusa-Firmware) und AxiDraw.
+ *
+ * AxiDraw: Die Zeilen der Datei gehen an axidraw.c, das sie in EBB-Befehle übersetzt (plot_step).
+ * Zustand, Fortschritt, Pause und Abbruch laufen über dieselben Anforderungen wie beim Drucker.
  *
  * Protokoll: Jede Zeile wird als "N<n> <befehl>*<xor-prüfsumme>" gesendet, danach
  * wird auf "ok" gewartet (immer nur eine Zeile unterwegs). Fordert der Drucker mit
@@ -31,7 +34,9 @@ static const char *TAG = "printer";
 // Prusa/Marlin: MAX_CMD_SIZE 96 inkl. "N12345 " und "*123"
 #define CMD_LIMIT        80
 #define CMD_BUF          (CMD_LIMIT + 1)
-#define HISTORY_LEN      32
+// Mit nur einer Zeile unterwegs fordert der Drucker höchstens die zuletzt gesendete erneut an,
+// ein paar Zeilen Reserve genügen
+#define HISTORY_LEN      8
 #define INJECT_LEN       16
 #define SHUTDOWN_MAX     10
 #define SHUTDOWN_TAIL    4096   // so weit vor Dateiende wird die Endsequenz gesucht
@@ -109,6 +114,11 @@ static void set_state(printer_state_t state, const char *fmt, ...)
     strlcpy(s_st.message, msg, sizeof(s_st.message));
     UNLOCK();
     ESP_LOGI(TAG, "[%s] %s", printer_state_name(state), msg);
+}
+
+static bool job_active(printer_state_t state)
+{
+    return state == PRINTER_PRINTING || state == PRINTER_PAUSED;
 }
 
 static printer_state_t get_state(void)
@@ -189,7 +199,8 @@ static void finish_job(void)
     char name[STORAGE_NAME_MAX];
     strlcpy(name, s_st.file, sizeof(name));
     UNLOCK();
-    set_state(PRINTER_IDLE, "Druck fertig: %s (%" PRIu32 " min)", name, minutes);
+    set_state(PRINTER_IDLE, "%s fertig: %s (%" PRIu32 " min)", s_device == DEVICE_AXIDRAW ? "Plot" : "Druck", name,
+              minutes);
 }
 
 static void transmit(uint32_t n, const char *cmd)
@@ -437,12 +448,36 @@ static void abort_job(void)
     const char *msg = s_job_vol == STORAGE_SD ? "SD-Karte entfernt oder nicht lesbar, Druck abgebrochen"
                                               : "Lesefehler im internen Speicher, Druck abgebrochen";
     close_job();
-    s_inject_count = 0;
-    inject_cancel_sequence();
+    if (s_device == DEVICE_AXIDRAW) {
+        axidraw_plot_cancel();
+    } else {
+        s_inject_count = 0;
+        inject_cancel_sequence();
+    }
     LOCK();
     s_st.finished = false;
     UNLOCK();
     set_state(PRINTER_ERROR, "%s", msg);
+}
+
+// AxiDraw: Fehler beim Übersetzen oder Senden. Stift hoch und heimfahren, soweit das noch geht.
+static void plot_fail(const char *msg)
+{
+    char copy[sizeof(s_st.message)];
+    strlcpy(copy, msg, sizeof(copy));
+    close_job();
+    axidraw_plot_cancel();
+    fail("%s", copy);
+}
+
+// Erste Zeile muss die Kennung von µplot sein (Vertrag in docs/axidraw.md)
+static bool plot_file_tagged(void)
+{
+    char raw[LINE_BUF];
+    bool ok = fgets(raw, sizeof(raw), s_file) != NULL;
+    rewind(s_file);
+    size_t n = strlen(AXIDRAW_FILE_TAG);
+    return ok && strncmp(raw, AXIDRAW_FILE_TAG, n) == 0 && (raw[n] == '\0' || isspace((unsigned char)raw[n]));
 }
 
 // 1 = Zeile gelesen, 0 = Dateiende, -1 = Zeile zu lang, -2 = Lesefehler
@@ -583,8 +618,7 @@ static void handle_line(const char *line)
     }
     if (starts_with(line, "start")) {
         // Drucker hat neu gestartet, Zeilennummern sind weg
-        printer_state_t state = get_state();
-        if (state == PRINTER_PRINTING || state == PRINTER_PAUSED) {
+        if (job_active(get_state())) {
             fail("Drucker hat während des Drucks neu gestartet");
         }
         s_need_sync = true;
@@ -678,21 +712,34 @@ static void process_requests(void)
     bool printing = s_st.state == PRINTER_PRINTING;
     UNLOCK();
 
+    bool axi = s_device == DEVICE_AXIDRAW;
     if (cancel) {
         // Beim Quittieren eines Fehlers keine noch laufende Abbruchsequenz verwerfen
         if (s_file) {
             close_job();
-            s_inject_count = 0;
-            inject_cancel_sequence();
+            if (axi) {
+                axidraw_plot_cancel();
+            } else {
+                s_inject_count = 0;
+                inject_cancel_sequence();
+            }
         }
         return;
     }
 
     if (pause && s_file) {
-        pause_lift();
+        if (axi) {
+            axidraw_plot_pause();
+        } else {
+            pause_lift();
+        }
     }
     if (resume && s_file) {
-        resume_lower();
+        if (axi) {
+            axidraw_plot_resume();
+        } else {
+            resume_lower();
+        }
     }
 
     if (start && printing) {
@@ -711,14 +758,66 @@ static void process_requests(void)
         s_job_vol = vol;
         struct stat st;
         uint32_t size = stat(path, &st) == 0 ? (uint32_t)st.st_size : 0;
-        load_shutdown(path);
-        reset_motion();
+        if (axi && !plot_file_tagged()) {
+            close_job();
+            set_state(PRINTER_IDLE, "Keine AxiDraw-Datei: Die erste Zeile muss „%s“ sein (µplot im AxiDraw-Modus)",
+                      AXIDRAW_FILE_TAG);
+            return;
+        }
+        if (!axi) {
+            load_shutdown(path);
+            reset_motion();
+        }
         LOCK();
         s_st.file_size = size;
         s_st.file_pos = 0;
         s_st.started_us = now_us();
         UNLOCK();
-        ESP_LOGI(TAG, "Starte Druck: %s (%s, %" PRIu32 " Bytes)", name, storage_label(vol), size);
+        ESP_LOGI(TAG, "Starte %s: %s (%s, %" PRIu32 " Bytes)", axi ? "Plot" : "Druck", name, storage_label(vol), size);
+        if (axi && !axidraw_plot_begin()) {
+            plot_fail(axidraw_plot_error());
+        }
+    }
+}
+
+// AxiDraw: PRG-Taste abfragen und eine Zeile übersetzen. Blockiert, bis das EBB die Befehle angenommen hat
+// (es puffert nur einen, jeder LM dauert 3–500 ms).
+static void plot_step(void)
+{
+    printer_state_t state = get_state();
+    if (!job_active(state)) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        return;
+    }
+    if (axidraw_plot_button(state == PRINTER_PAUSED) > 0) {
+        if (state == PRINTER_PRINTING) {
+            printer_pause();
+            set_pause_message("Pausiert (PRG-Taste). Fortsetzen mit erneutem Tastendruck oder hier");
+        } else {
+            printer_resume();
+        }
+        return;
+    }
+    if (state == PRINTER_PAUSED) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        return;
+    }
+    char cmd[CMD_BUF];
+    int r = read_file_line(cmd);
+    if (r == 0) {
+        if (axidraw_plot_end()) {
+            finish_job();
+        } else {
+            plot_fail(axidraw_plot_error());
+        }
+    } else if (r == -1) {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "G-Code-Zeile zu lang (max. %d Zeichen)", CMD_LIMIT);
+        plot_fail(msg);
+    } else if (r < 0) {
+        abort_job();
+    } else if (!axidraw_plot_line(cmd)) {
+        plot_fail(axidraw_plot_error());
     }
 }
 
@@ -784,7 +883,14 @@ static void printer_task(void *arg)
         }
 
         if (s_device == DEVICE_AXIDRAW) {
-            axidraw_poll();   // plotten geht noch nicht, nur der Testmodus
+            process_requests();
+            if (s_file && !storage_ready(s_job_vol)) {
+                abort_job();   // SD-Karte während des Plots oder der Pause entfernt
+            } else if (s_file) {
+                plot_step();
+            } else {
+                axidraw_poll();   // Testmodus, sonst eintreffende Zeilen verwerfen
+            }
             continue;
         }
 
@@ -811,7 +917,8 @@ esp_err_t printer_init(void)
     }
     s_st.state = PRINTER_DISCONNECTED;
     strlcpy(s_st.message, "Kein Drucker verbunden", sizeof(s_st.message));
-    if (xTaskCreate(printer_task, "printer", 6144, NULL, 6, NULL) != pdPASS) {
+    // AxiDraw: plot_line → Planer → ebb_cmd → tlog liegen beim Senden alle auf dem Stack
+    if (xTaskCreate(printer_task, "printer", 8192, NULL, 6, NULL) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -822,7 +929,7 @@ void printer_get_status(printer_status_t *out)
     LOCK();
     *out = s_st;
     UNLOCK();
-    if (out->state == PRINTER_PRINTING || out->state == PRINTER_PAUSED) {
+    if (job_active(out->state)) {
         out->elapsed_s = (uint32_t)((now_us() - out->started_us) / 1000000LL);
     } else {
         out->elapsed_s = 0;
@@ -846,7 +953,7 @@ esp_err_t printer_start(storage_vol_t vol, const char *name)
 {
     esp_err_t err = ESP_OK;
     LOCK();
-    if (s_st.state != PRINTER_IDLE || s_device == DEVICE_AXIDRAW) {
+    if (s_st.state != PRINTER_IDLE || (s_device == DEVICE_AXIDRAW && axidraw_test_running())) {
         err = ESP_ERR_INVALID_STATE;
     } else {
         s_st.state = PRINTER_PRINTING;
@@ -915,11 +1022,15 @@ esp_err_t printer_cancel(void)
     return err;
 }
 
+bool printer_busy(void)
+{
+    return job_active(get_state());
+}
+
 bool printer_is_using(storage_vol_t vol, const char *name)
 {
     LOCK();
-    bool using = (s_st.state == PRINTER_PRINTING || s_st.state == PRINTER_PAUSED) &&
-                 s_st.vol == vol && strcmp(s_st.file, name) == 0;
+    bool using = job_active(s_st.state) && s_st.vol == vol && strcmp(s_st.file, name) == 0;
     UNLOCK();
     return using;
 }
@@ -928,7 +1039,7 @@ esp_err_t printer_device_changed(void)
 {
     esp_err_t err = ESP_OK;
     LOCK();
-    if (s_st.state == PRINTER_PRINTING || s_st.state == PRINTER_PAUSED) {
+    if (job_active(s_st.state)) {
         err = ESP_ERR_INVALID_STATE;
     } else {
         s_req_relink = true;

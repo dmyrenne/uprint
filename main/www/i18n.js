@@ -13,6 +13,7 @@ const I18N = {
     'state.connecting': 'Verbinde …',
     'state.idle': 'Verbunden',
     'state.printing': 'Druckt',
+    'state.printing.axi': 'Plottet',
     'state.paused': 'Pausiert',
     'state.error': 'Fehler',
     'state.offline': 'Offline',
@@ -104,8 +105,19 @@ const I18N = {
     'set.baud.hint': 'Prusa MK3S: 115200. Gilt ab der nächsten Verbindung mit dem Drucker.',
     'set.device_type': 'Gerätetyp',
     'set.device_type.printer': '3D-Drucker (Marlin/Prusa)',
-    'set.device_type.axidraw': 'AxiDraw / NextDraw (Alpha: nur Test)',
-    'set.device_type.hint': 'Beim Speichern verbindet µprint neu. AxiDraw kann noch nicht plotten, es gibt vorerst nur einen Test, der das Gerät kennenlernt.',
+    'set.device_type.axidraw': 'AxiDraw / NextDraw (Alpha)',
+    'set.device_type.hint': 'Beim Speichern verbindet µprint neu. Ein AxiDraw plottet Dateien aus µplot im AxiDraw-Modus.',
+    'set.plotter': 'Plotter',
+    'set.plot_draw': 'Zeichnen (mm/s)',
+    'set.plot_travel': 'Verfahren (mm/s)',
+    'set.plot_accel': 'Beschleunigung (mm/s²)',
+    'set.pen_delay': 'Wartezeit Stift (ms)',
+    'set.pen_servo': 'Stift-Servo',
+    'set.pen_servo.standard': 'Standard (AxiDraw V3, SE, MiniKit)',
+    'set.pen_servo.brushless': 'Bürstenlos (NextDraw, AxiDraw mit Upgrade-Kit; Beta)',
+    'set.pen_up': 'Stift oben (%)',
+    'set.pen_down': 'Stift unten (%)',
+    'set.plotter.hint': 'Gilt ab dem nächsten Plot. Die Geschwindigkeit aus der Datei (F) wird auf diese Werte begrenzt. Stifthöhen 0–100 % wie in der AxiDraw-Software, die Wartezeit gilt nach jedem Heben und Senken. Pausieren und Fortsetzen geht auch mit der PRG-Taste am AxiDraw.',
 
     'h.axidraw': 'AxiDraw-Test',
     'axi.intro': 'Dieser Test fragt die Firmware ab, bewegt den Stift und beobachtet die PRG-Taste. Das dauert etwa eine Minute. Bleib dabei am Gerät und folge den Anweisungen, die hier erscheinen. Danach die Beobachtungen ankreuzen und das Log herunterladen.',
@@ -162,10 +174,16 @@ const I18N = {
     'cancel': 'Abbrechen',
     'ack': 'Fehler quittieren',
     'confirm.cancel': 'Druck wirklich abbrechen?',
+    'confirm.cancel.axi': 'Plot wirklich abbrechen? Der Stift fährt danach zum Nullpunkt zurück.',
 
     'stage.done': 'Druck fertig',
+    'stage.done.axi': 'Plot fertig',
     'job.duration': 'Dauer {t}',
     'reprint': 'Nochmal drucken',
+    'reprint.axi': 'Nochmal plotten',
+    'start.axi': 'Plotten',
+    'job.ready.axi': 'bereit zum Plotten',
+    'stage.idle.axi': 'Kein aktiver Plot',
     'files.search': 'Dateien durchsuchen …',
     'files.noMatch': 'Keine Datei passt zu „{q}“.',
     'stage.idle': 'Kein aktiver Druck',
@@ -192,6 +210,7 @@ const I18N = {
     'state.connecting': 'Connecting …',
     'state.idle': 'Connected',
     'state.printing': 'Printing',
+    'state.printing.axi': 'Plotting',
     'state.paused': 'Paused',
     'state.error': 'Error',
     'state.offline': 'Offline',
@@ -283,8 +302,19 @@ const I18N = {
     'set.baud.hint': 'Prusa MK3S: 115200. Applies from the next connection to the printer.',
     'set.device_type': 'Device type',
     'set.device_type.printer': '3D printer (Marlin/Prusa)',
-    'set.device_type.axidraw': 'AxiDraw / NextDraw (alpha: test only)',
-    'set.device_type.hint': 'µprint reconnects when you save. AxiDraw cannot plot yet; for now there is only a test that gets to know the device.',
+    'set.device_type.axidraw': 'AxiDraw / NextDraw (alpha)',
+    'set.device_type.hint': 'µprint reconnects when you save. An AxiDraw plots files from µplot in AxiDraw mode.',
+    'set.plotter': 'Plotter',
+    'set.plot_draw': 'Drawing (mm/s)',
+    'set.plot_travel': 'Travel (mm/s)',
+    'set.plot_accel': 'Acceleration (mm/s²)',
+    'set.pen_delay': 'Pen delay (ms)',
+    'set.pen_servo': 'Pen servo',
+    'set.pen_servo.standard': 'Standard (AxiDraw V3, SE, MiniKit)',
+    'set.pen_servo.brushless': 'Brushless (NextDraw, AxiDraw with upgrade kit; beta)',
+    'set.pen_up': 'Pen up (%)',
+    'set.pen_down': 'Pen down (%)',
+    'set.plotter.hint': 'Applies from the next plot. The speed from the file (F) is capped at these values. Pen heights 0–100 % as in the AxiDraw software; the delay applies after every lift and lower. Pause and resume also work with the PRG button on the AxiDraw.',
 
     'h.axidraw': 'AxiDraw test',
     'axi.intro': 'This test queries the firmware, moves the pen and watches the PRG button. It takes about a minute. Stay at the device and follow the instructions that appear here. Afterwards tick your observations and download the log.',
@@ -341,10 +371,16 @@ const I18N = {
     'cancel': 'Cancel',
     'ack': 'Clear error',
     'confirm.cancel': 'Really cancel the print?',
+    'confirm.cancel.axi': 'Really cancel the plot? The pen then returns to the origin.',
 
     'stage.done': 'Print finished',
+    'stage.done.axi': 'Plot finished',
     'job.duration': 'took {t}',
     'reprint': 'Print again',
+    'reprint.axi': 'Plot again',
+    'start.axi': 'Plot',
+    'job.ready.axi': 'ready to plot',
+    'stage.idle.axi': 'No active plot',
     'files.search': 'Search files …',
     'files.noMatch': 'No file matches “{q}”.',
     'stage.idle': 'No active print',
@@ -372,8 +408,11 @@ function pickLang() {
 }
 let LANG = pickLang();
 
+// Im AxiDraw-Modus ".axi" (index.html setzt das): Schlüssel mit dieser Endung haben Vorrang, z. B. „Plotten“ statt „Drucken“
+let tVariant = '';
 function t(key, vars = {}) {
-  const s = I18N[LANG][key] ?? I18N.de[key] ?? key;
+  const v = tVariant && I18N.de[key + tVariant] !== undefined ? key + tVariant : key;
+  const s = I18N[LANG][v] ?? I18N.de[v] ?? key;
   return s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
 }
 
