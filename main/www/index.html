@@ -484,12 +484,6 @@
       <label class="full"><span data-i18n="set.device_name"></span><input type="text" name="device_name" maxlength="32" placeholder="µprint"></label>
       <p class="hint full" data-i18n="set.device.hint"></p>
 
-      <p class="sub full" data-i18n="set.slicer"></p>
-      <label class="full"><span data-i18n="set.api_key"></span>
-        <span class="pick"><input type="text" id="apiKey" readonly spellcheck="false"><button type="button" id="apiCopy" data-i18n="copy"></button><button type="button" id="apiNew" data-i18n="set.api_new"></button></span>
-      </label>
-      <p class="hint full" id="slicerHint"></p>
-
       <p class="sub full" data-i18n="set.printer"></p>
       <label class="full"><span data-i18n="set.device_type"></span><select name="device_type">
         <option value="0" data-i18n="set.device_type.printer"></option>
@@ -525,11 +519,43 @@
       <label data-dev="1"><span data-i18n="set.pen_down"></span><input type="number" name="pen_down" min="0" max="100" step="1"></label>
       <p class="hint full" data-dev="1" data-i18n="set.plotter.hint"></p>
 
+      <p class="sub full" data-i18n="set.slicer"></p>
+      <label class="full"><span data-i18n="set.api_key"></span>
+        <span class="pick"><input type="text" id="apiKey" readonly spellcheck="false"><button type="button" id="apiCopy" data-i18n="copy"></button><button type="button" id="apiNew" data-i18n="set.api_new"></button></span>
+      </label>
+      <p class="hint full" id="slicerHint"></p>
+
       <p class="sub full" data-i18n="set.network"></p>
       <label><span data-i18n="set.hostname"></span><input type="text" name="hostname" maxlength="32" spellcheck="false"></label>
       <label><span data-i18n="set.ap_password"></span><input type="password" name="ap_password" maxlength="63"></label>
       <p class="hint full" data-i18n="set.network.hint"></p>
-
+    </form>
+    <div class="row set-actions" id="setActions">
+      <span class="unsaved" data-i18n="set.unsaved"></span>
+      <button type="button" class="primary" id="setSave" data-i18n="save"></button>
+      <button type="button" id="setRevert" data-i18n="revert"></button>
+    </div>
+    <div class="derived" id="rebootBox" style="margin-top:12px" hidden>
+      <div data-i18n="set.reboot"></div>
+      <div class="row" style="margin-top:8px"><button type="button" class="small" id="rebootBtn" data-i18n="set.rebootNow"></button></div>
+    </div>
+    <div class="ota">
+      <p class="sub" data-i18n="set.firmware"></p>
+      <p class="hint" id="otaVersion" style="margin:0 0 10px"></p>
+      <div class="row">
+        <button type="button" id="otaPick" data-i18n="ota.choose"></button>
+        <button type="button" class="primary" id="otaBtn" data-i18n="ota.install"></button>
+        <span class="ota-name" id="otaName"></span>
+      </div>
+      <div class="bar" id="otaBar" hidden><i></i></div>
+      <p class="hint" id="otaHint"></p>
+      <input type="file" id="otaFile" accept=".bin" hidden>
+    </div>
+  </details>
+  <!-- Hardware: was am ESP angeschlossen ist (Speichern über dieselbe Leiste wie die Einstellungen) -->
+  <details class="card" id="hwBox">
+    <summary><span data-i18n="h.hardware"></span><span class="badge" id="hwBadge" data-i18n="modified" hidden></span></summary>
+    <form id="hwForm" class="grid" autocomplete="off" onsubmit="return false">
       <p class="sub full" data-i18n="set.sd"></p>
       <label class="check full"><input type="checkbox" name="sd_enable"> <span data-i18n="set.sd_enable"></span></label>
       <label><span>MOSI</span><input type="number" name="sd_mosi" min="0" max="48"></label>
@@ -556,26 +582,9 @@
         <a href="#leds" data-i18n="leds.open"></a></div>
       <p class="hint full" data-i18n="set.leds.hint"></p>
     </form>
-    <div class="row set-actions" id="setActions">
-      <span class="unsaved" data-i18n="set.unsaved"></span>
-      <button type="button" class="primary" id="setSave" data-i18n="save"></button>
-      <button type="button" id="setRevert" data-i18n="revert"></button>
-    </div>
-    <div class="derived" id="rebootBox" style="margin-top:12px" hidden>
+    <div class="derived" id="hwRebootBox" style="margin-top:12px" hidden>
       <div data-i18n="set.reboot"></div>
-      <div class="row" style="margin-top:8px"><button type="button" class="small" id="rebootBtn" data-i18n="set.rebootNow"></button></div>
-    </div>
-    <div class="ota">
-      <p class="sub" data-i18n="set.firmware"></p>
-      <p class="hint" id="otaVersion" style="margin:0 0 10px"></p>
-      <div class="row">
-        <button type="button" id="otaPick" data-i18n="ota.choose"></button>
-        <button type="button" class="primary" id="otaBtn" data-i18n="ota.install"></button>
-        <span class="ota-name" id="otaName"></span>
-      </div>
-      <div class="bar" id="otaBar" hidden><i></i></div>
-      <p class="hint" id="otaHint"></p>
-      <input type="file" id="otaFile" accept=".bin" hidden>
+      <div class="row" style="margin-top:8px"><button type="button" class="small" id="hwRebootBtn" data-i18n="set.rebootNow"></button></div>
     </div>
   </details>
   </div>
@@ -1118,12 +1127,13 @@ const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_li
   'hostname', 'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs',
   'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
-const setForm = $('setForm');
+const setForm = $('setForm'), hwForm = $('hwForm');
+const field = (k) => setForm.elements[k] || hwForm.elements[k];
 let settings = null;
 
 const setValue = (e) => (e.type === 'checkbox' ? (e.checked ? '1' : '0') : e.value.trim());
 function readSettings() {
-  return Object.fromEntries(SET_KEYS.map((k) => [k, setValue(setForm.elements[k])]));
+  return Object.fromEntries(SET_KEYS.map((k) => [k, setValue(field(k))]));
 }
 // XIAO: Pins mit ihrer Beschriftung auf dem Board statt als GPIO-Nummer, D6 ist die Log-Ausgabe der Konsole
 const SD_PINS = ['sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
@@ -1132,11 +1142,11 @@ function xiaoPins(s) {
   $('sdPinHint').hidden = s.variant !== 'xiao';
   if (s.variant !== 'xiao') return;
   for (const k of [...SD_PINS, 'led_pin']) {
-    let sel = setForm.elements[k];
+    let sel = field(k);
     if (sel.tagName !== 'SELECT') {
       sel = document.createElement('select');
       sel.name = k;
-      setForm.elements[k].replaceWith(sel);
+      field(k).replaceWith(sel);
     }
     const pins = k === 'sd_cs' ? [...XIAO_PINS, [21, t('set.sd.slot')]] : k === 'led_pin' ? [[-1, t('leds.off')], ...XIAO_PINS]
       : [...XIAO_PINS];
@@ -1149,16 +1159,19 @@ function writeSettings(s) {
   const sel = setForm.elements.baud, bauds = BAUDS.includes(s.baud) ? BAUDS : [...BAUDS, s.baud].sort((a, b) => a - b);
   sel.replaceChildren(...bauds.map((b) => new Option(String(b), b)));
   for (const k of SET_KEYS) {
-    const e = setForm.elements[k];
+    const e = field(k);
     if (e.type === 'checkbox') e.checked = s[k] === 1; else e.value = s[k];
   }
 }
-const setModified = () => !!settings && SET_KEYS.some((k) => String(settings[k]) !== readSettings()[k]);
+// Geändert insgesamt bzw. in einem der beiden Formulare (für das Abzeichen der Karte)
+const setModified = (form) => !!settings &&
+  SET_KEYS.some((k) => (!form || form.elements[k]) && String(settings[k]) !== readSettings()[k]);
 function renderSettings() {
   const mod = setModified(), dev = setForm.elements.device_type.value;
   for (const e of setForm.querySelectorAll('[data-dev]')) e.hidden = e.dataset.dev !== dev;
-  for (const k of SD_PINS) setForm.elements[k].disabled = !setForm.elements.sd_enable.checked;
-  $('setBadge').hidden = !mod;
+  for (const k of SD_PINS) field(k).disabled = !field('sd_enable').checked;
+  $('setBadge').hidden = !setModified(setForm);
+  $('hwBadge').hidden = !setModified(hwForm);
   $('setSave').disabled = !mod;
   $('setRevert').disabled = !mod;
   // Schwebend vor den Footer, sonst unsichtbar, solange die Karte zugeklappt ist (geschlossenes details rendert nichts)
@@ -1167,16 +1180,15 @@ function renderSettings() {
     if (mod) document.querySelector('.foot').before(bar); else $('setForm').after(bar);
     bar.classList.toggle('floating', mod);
   }
-  $('rebootBox').hidden = !settings || !settings.reboot_required;
+  $('rebootBox').hidden = $('hwRebootBox').hidden = !settings || !settings.reboot_required;
   renderOta(); renderSlicer(); renderName(); renderAxi();
 }
 async function loadSettings() {
   try { settings = await api('GET', '/api/settings'); } catch { return; }
-  if (!setModified() || !$('setBox').open) writeSettings(settings);   // laufende Eingaben nicht überschreiben
+  if (!setModified() || !($('setBox').open || $('hwBox').open)) writeSettings(settings);   // laufende Eingaben nicht überschreiben
   renderSettings();
 }
-setForm.addEventListener('input', renderSettings);
-setForm.addEventListener('change', renderSettings);
+for (const f of [setForm, hwForm]) { f.addEventListener('input', renderSettings); f.addEventListener('change', renderSettings); }
 $('setSave').onclick = async () => {
   try {
     const s = readSettings();
@@ -1188,7 +1200,7 @@ $('setSave').onclick = async () => {
   } catch (e) { say(e.message, true); }
 };
 $('setRevert').onclick = () => { writeSettings(settings); renderSettings(); say(t('set.discarded')); };
-$('rebootBtn').onclick = async () => {
+$('rebootBtn').onclick = $('hwRebootBtn').onclick = async () => {
   if (!confirm(t('confirm.reboot'))) return;
   try { await api('POST', '/api/reboot'); say(t('set.rebooting')); } catch (e) { say(e.message, true); }
 };
