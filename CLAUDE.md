@@ -72,14 +72,17 @@ confirmations, settings in the web UI instead of menuconfig, etc.). Labels: `enh
 (printer-specific), and `minor`/`major`, which also control the version bump when the PR is merged (see below).
 
 Where the project is heading, based on the open issues and branches:
-- **Pen plotter support (current focus):** AxiDraw/NextDraw. The test mode shipped in `v0.4.0` (PR #11); plotting
-  (G-code → EBB, `main/plot.c`) is on branch `axidraw-plotter` → `v0.5.0`. The plan, the protocol research and the numbered task list are in `docs/axidraw.md`; keep that
-  file up to date as tasks get done. Companion project [µplot](https://github.com/dmyrenne/uplot) produces the
+- **Pen plotter support:** AxiDraw/NextDraw. The test mode shipped in `v0.4.0` (PR #11), plotting (G-code → EBB,
+  `main/plot.c`) in `v0.5.0` (PR #19). The plan, the protocol research and the numbered task list are in
+  `docs/axidraw.md`; keep that file up to date as tasks get done. Companion project [µplot](https://github.com/dmyrenne/uplot) produces the
   plotter G-code (SVG → µplot → µprint → AxiDraw), so µprint only translates G-code and does no coordinate
   transforms. Issue #12 (detect 2D/3D G-code) belongs to this.
 - **GRBL machines (planned, after the plotter):** CNC mills (#21) and lasers (#22) as two separate device types
   sharing one GRBL module for connection, streaming (character counting) and real-time commands; #21 is the base,
   #22 only covers what differs for lasers (`$32` laser mode, power instead of spindle, framing, safety).
+- **XIAO ESP32S3 Sense:** a third board variant `xiao` (#24: 8 MB flash, octal PSRAM, SD on GPIO 7/8/9/21, camera
+  pins taken) and, on top of it, the onboard camera (#25: snapshots and timelapse first, a stream only later on its
+  own server; printer task pinned to core 1 so printing and plotting keep priority).
 - **Device hardware:** a custom PCB (`PCB/`, separate repo) with hardware buttons (#4), a display (#5) and
   addressable LEDs (#6). All pins and options are meant to be configurable in the web UI.
 - **Printer features & UX:** preheat presets (#1), G-code thumbnails (#2), flashing printer firmware (#3),
