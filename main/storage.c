@@ -195,8 +195,14 @@ esp_err_t storage_init(void)
     s_vol[STORAGE_FLASH].ready = s_vol[STORAGE_FLASH].present && mount_flash() == ESP_OK;
     s_vol[STORAGE_FLASH].mounted = s_vol[STORAGE_FLASH].ready;
 
-    // Ohne gültigen SPI-Bus (z. B. falsche Pins) gibt es auch später keine SD-Karte
-    if (sd_bus_init() == ESP_OK) {
+    // Ohne gültigen SPI-Bus (z. B. falsche Pins) gibt es auch später keine SD-Karte; abgeschaltet taucht sie gar
+    // nicht erst als Speicher auf
+    settings_t cfg;
+    settings_get(&cfg);
+    s_vol[STORAGE_SD].present = cfg.sd_enable;
+    if (!cfg.sd_enable) {
+        ESP_LOGI(TAG, "SD-Karte in den Einstellungen abgeschaltet");
+    } else if (sd_bus_init() == ESP_OK) {
         s_vol[STORAGE_SD].mounted = s_vol[STORAGE_SD].ready = sd_mount(false) == ESP_OK;
         xTaskCreate(sd_poll_task, "sd_poll", 4096, NULL, 2, NULL);
     }

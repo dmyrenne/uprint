@@ -32,12 +32,13 @@ static const settings_t DEFAULTS = {
     .pen_up = 60,        // Vorgaben der AxiDraw-Software
     .pen_down = 30,
     .pen_delay = 200,
+    .sd_enable = 1,
 #ifdef UPRINT_BOARD_XIAO
     // Steckplatz auf dem Kamerabrett des XIAO ESP32S3 Sense (GPIO 10–18 belegt dort die Kamera)
-    .sd_mosi = 9,
-    .sd_miso = 8,
-    .sd_sclk = 7,
-    .sd_cs = 21,
+    .sd_mosi = 9,   // D10
+    .sd_miso = 8,   // D9
+    .sd_sclk = 7,   // D8
+    .sd_cs = 21,    // nur über den Steckplatz erreichbar
 #else
     .sd_mosi = 11,
     .sd_miso = 13,
@@ -53,7 +54,7 @@ static settings_t s_boot;   // Stand beim Start, für "Neustart nötig"
 #define FIELD(name) {#name, offsetof(settings_t, name)}
 const settings_int_field_t SETTINGS_INT_FIELDS[] = {
     FIELD(device_type), FIELD(baud), FIELD(pause_lift), FIELD(cancel_lift), FIELD(park_x), FIELD(park_y),
-    FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs),
+    FIELD(sd_enable), FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs),
     FIELD(plot_draw), FIELD(plot_travel), FIELD(plot_accel), FIELD(pen_servo), FIELD(pen_up), FIELD(pen_down), FIELD(pen_delay),
 };
 const size_t SETTINGS_INT_FIELD_COUNT = sizeof(SETTINGS_INT_FIELDS) / sizeof(SETTINGS_INT_FIELDS[0]);
@@ -97,7 +98,7 @@ void settings_init(void)
         nvs_close(nvs);
     }
     // Z. B. nach dem Wechsel von basic auf xiao: Dort belegt die Kamera die alten Standard-Pins
-    if (sd_pins_error(&s_cur)) {
+    if (s_cur.sd_enable && sd_pins_error(&s_cur)) {
         ESP_LOGW(TAG, "Gespeicherte SD-Pins passen nicht zu dieser Variante, nehme die Standardwerte");
         s_cur.sd_mosi = DEFAULTS.sd_mosi;
         s_cur.sd_miso = DEFAULTS.sd_miso;
@@ -123,12 +124,14 @@ void settings_get(settings_t *out)
 }
 
 #ifdef UPRINT_BOARD_XIAO
-// XIAO ESP32S3: herausgeführt sind D0–D10 (GPIO 1–9, dazu 43/44 als Konsole), GPIO 21 ist CS des SD-Steckplatzes
-// auf dem Kamerabrett. Die übrigen GPIOs belegen Kamera, Mikrofon, PSRAM und USB.
-#define PIN_HINT "SD-Pins: GPIO 1–9 oder 21"
+// XIAO ESP32S3: herausgeführt sind D0–D5 (GPIO 1–6), D6/D7 (GPIO 43/44, Konsole) und D8–D10 (GPIO 7–9), GPIO 21
+// ist CS des SD-Steckplatzes auf dem Kamerabrett. Die übrigen GPIOs belegen Kamera, Mikrofon, PSRAM und USB.
+// D7 ist der Empfangspin der Konsole und darf belegt werden, die Log-Ausgabe auf D6 bleibt frei. Die Web-UI zeigt
+// die Pins mit ihrer Beschriftung auf dem Board, gespeichert wird die GPIO-Nummer.
+#define PIN_HINT "SD-Pins: D0–D5, D7–D10 oder der Steckplatz des Sense (CS)"
 static bool pin_usable(int pin)
 {
-    return (pin >= 1 && pin <= 9) || pin == 21;
+    return (pin >= 1 && pin <= 9) || pin == 21 || pin == 44;
 }
 #else
 // ESP32-S3 mit Octal-PSRAM (N16R8): 19/20 USB, 22–25 gibt es nicht, 26–37 Flash/PSRAM, 43/44 Konsole
@@ -211,7 +214,10 @@ static const char *validate(const settings_t *s)
     if (s->pen_delay < 0 || s->pen_delay > 1000) {
         return "Wartezeit des Stifts: 0–1000 ms";
     }
-    return sd_pins_error(s);
+    if (s->sd_enable != 0 && s->sd_enable != 1) {
+        return "microSD: 0 (aus) oder 1 (an)";
+    }
+    return s->sd_enable ? sd_pins_error(s) : NULL;
 }
 
 esp_err_t settings_update(const settings_t *in, const char **error)
@@ -250,7 +256,7 @@ bool settings_reboot_required(void)
     settings_t cur;
     settings_get(&cur);
     return strcmp(cur.hostname, s_boot.hostname) != 0 || strcmp(cur.ap_password, s_boot.ap_password) != 0 ||
-           cur.sd_mosi != s_boot.sd_mosi || cur.sd_miso != s_boot.sd_miso ||
+           cur.sd_enable != s_boot.sd_enable || cur.sd_mosi != s_boot.sd_mosi || cur.sd_miso != s_boot.sd_miso ||
            cur.sd_sclk != s_boot.sd_sclk || cur.sd_cs != s_boot.sd_cs;
 }
 

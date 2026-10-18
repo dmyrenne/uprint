@@ -29,7 +29,11 @@ Das SD-Modul kommt standardmäßig an diese Pins, andere lassen sich später in 
 | SD-Modul | MOSI | MISO | SCLK | CS |
 | --- | --- | --- | --- | --- |
 | ESP32-S3 (Basic, N16R8) | GPIO11 | GPIO13 | GPIO12 | GPIO10 |
-| XIAO ESP32S3 Sense (Steckplatz) | GPIO9 | GPIO8 | GPIO7 | GPIO21 |
+| XIAO ESP32S3 Sense (Steckplatz) | D10 | D9 | D8 | Steckplatz |
+
+Beim XIAO wählst du die Pins in den Einstellungen so, wie sie auf dem Board beschriftet sind. Ein eigenes SD-Modul
+kommt am besten an D8 (SCLK), D9 (MISO) und D10 (MOSI), CS an einen beliebigen freien Pin, z. B. D7. D6 bleibt frei,
+dort gibt µprint sein Log aus.
 
 Die meisten Boards haben zwei USB-Buchsen. Die eine (meist `UART` oder `COM`) nutzt du zum Aufspielen der Firmware,
 an die andere (meist `USB` oder `OTG`) kommt später der Drucker. Damit der Drucker dort erkannt wird, muss die Buchse
