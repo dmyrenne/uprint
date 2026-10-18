@@ -486,10 +486,12 @@
       <p class="hint full" data-i18n="set.network.hint"></p>
 
       <p class="sub full" data-i18n="set.sd"></p>
+      <label class="check full"><input type="checkbox" name="sd_enable"> <span data-i18n="set.sd_enable"></span></label>
       <label><span>MOSI</span><input type="number" name="sd_mosi" min="0" max="48"></label>
       <label><span>MISO</span><input type="number" name="sd_miso" min="0" max="48"></label>
       <label><span>SCLK</span><input type="number" name="sd_sclk" min="0" max="48"></label>
       <label><span>CS</span><input type="number" name="sd_cs" min="0" max="48"></label>
+      <p class="hint full" id="sdPinHint" hidden data-i18n="set.sd.hint.xiao"></p>
     </form>
     <div class="row set-actions" id="setActions">
       <span class="unsaved" data-i18n="set.unsaved"></span>
@@ -1050,23 +1052,47 @@ async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1
 // ---------- Einstellungen ----------
 const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y',
   'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay',
-  'hostname', 'ap_password', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
+  'hostname', 'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm');
 let settings = null;
 
+const setValue = (e) => (e.type === 'checkbox' ? (e.checked ? '1' : '0') : e.value.trim());
 function readSettings() {
-  return Object.fromEntries(SET_KEYS.map((k) => [k, setForm.elements[k].value.trim()]));
+  return Object.fromEntries(SET_KEYS.map((k) => [k, setValue(setForm.elements[k])]));
+}
+// XIAO: Pins mit ihrer Beschriftung auf dem Board statt als GPIO-Nummer, D6 ist die Log-Ausgabe der Konsole
+const SD_PINS = ['sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
+const XIAO_PINS = [[1, 'D0'], [2, 'D1'], [3, 'D2'], [4, 'D3'], [5, 'D4'], [6, 'D5'], [44, 'D7'], [7, 'D8'], [8, 'D9'], [9, 'D10']];
+function xiaoPins(s) {
+  $('sdPinHint').hidden = s.variant !== 'xiao';
+  if (s.variant !== 'xiao') return;
+  for (const k of SD_PINS) {
+    let sel = setForm.elements[k];
+    if (sel.tagName !== 'SELECT') {
+      sel = document.createElement('select');
+      sel.name = k;
+      setForm.elements[k].replaceWith(sel);
+    }
+    const pins = k === 'sd_cs' ? [...XIAO_PINS, [21, t('set.sd.slot')]] : XIAO_PINS;
+    if (!pins.some(([g]) => g === s[k])) pins.push([s[k], 'GPIO ' + s[k]]);   // sollte die Firmware nie liefern
+    sel.replaceChildren(...pins.map(([g, label]) => new Option(label, g)));
+  }
 }
 function writeSettings(s) {
+  xiaoPins(s);
   const sel = setForm.elements.baud, bauds = BAUDS.includes(s.baud) ? BAUDS : [...BAUDS, s.baud].sort((a, b) => a - b);
   sel.replaceChildren(...bauds.map((b) => new Option(String(b), b)));
-  for (const k of SET_KEYS) setForm.elements[k].value = s[k];
+  for (const k of SET_KEYS) {
+    const e = setForm.elements[k];
+    if (e.type === 'checkbox') e.checked = s[k] === 1; else e.value = s[k];
+  }
 }
 const setModified = () => !!settings && SET_KEYS.some((k) => String(settings[k]) !== readSettings()[k]);
 function renderSettings() {
   const mod = setModified(), dev = setForm.elements.device_type.value;
   for (const e of setForm.querySelectorAll('[data-dev]')) e.hidden = e.dataset.dev !== dev;
+  for (const k of SD_PINS) setForm.elements[k].disabled = !setForm.elements.sd_enable.checked;
   $('setBadge').hidden = !mod;
   $('setSave').disabled = !mod;
   $('setRevert').disabled = !mod;
@@ -1088,7 +1114,10 @@ setForm.addEventListener('input', renderSettings);
 setForm.addEventListener('change', renderSettings);
 $('setSave').onclick = async () => {
   try {
-    settings = await api('POST', '/api/settings', new URLSearchParams(readSettings()));
+    const s = readSettings();
+    // Ohne microSD prüft die Firmware die Pins nicht; unfertige Eingaben bleiben dann einfach weg
+    if (s.sd_enable === '0') for (const k of SD_PINS) if (!/^-?\d+$/.test(s[k])) delete s[k];
+    settings = await api('POST', '/api/settings', new URLSearchParams(s));
     writeSettings(settings); renderSettings();
     say(t('set.saved'));
   } catch (e) { say(e.message, true); }

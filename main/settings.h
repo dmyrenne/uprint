@@ -38,7 +38,8 @@ typedef struct {
     int pen_up;           // Servoposition 0–100 %
     int pen_down;
     int pen_delay;        // ms Wartezeit nach jedem Heben/Senken
-    // microSD über SPI (wirksam nach Neustart)
+    // microSD über SPI (wirksam nach Neustart); ohne sd_enable werden die Pins weder geprüft noch belegt
+    int sd_enable;
     int sd_mosi;
     int sd_miso;
     int sd_sclk;
