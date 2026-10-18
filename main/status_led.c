@@ -26,8 +26,9 @@ static const char *TAG = "status_led";
 
 #define NVS_NAMESPACE   "leds"
 #define NVS_KEY         "config"
-#define CONFIG_VERSION  1
-#define MAX_LEDS        100
+#define CONFIG_VERSION  2       // 2: Kennung als Muster je LED
+#define MAX_LEDS        STATUS_LED_MAX
+#define V1_SIZE         (1 + LED_STATE_COUNT * 5 + 6 + 1)   // Version, Darstellungen, Segmentfarben, Abstand
 #define FRAME_MS        33
 #define POLL_FRAMES     3       // Zustand nur jedes dritte Bild abfragen
 #define FIND_MS         10000
@@ -55,6 +56,7 @@ static int64_t s_find_until;
 static int64_t s_preview_until;
 static led_state_t s_preview_state;
 static led_look_t s_preview_look;
+static uint8_t s_preview_pattern[MAX_LEDS][3];
 static int s_ota = -1;
 
 // Nur im LED-Task
@@ -113,15 +115,16 @@ void status_led_default_config(led_config_t *out)
     };
     memset(out, 0, sizeof(*out));
     memcpy(out->look, DEFAULT_LOOKS, sizeof(DEFAULT_LOOKS));
-    // Kennung: Farbe aus der MAC-Adresse, die Zusatzfarben um 120° und 240° versetzt
+    // Kennung: alle LEDs in der Farbe aus der MAC-Adresse
     uint8_t rgb[3];
     hue_rgb(s_id_hue, rgb);
     led_look_t *id = &out->look[LED_STATE_ID];
     id->r = rgb[0];
     id->g = rgb[1];
     id->b = rgb[2];
-    hue_rgb(s_id_hue + 120, out->seg[0]);
-    hue_rgb(s_id_hue + 240, out->seg[1]);
+    for (int i = 0; i < MAX_LEDS; i++) {
+        memcpy(out->id_pattern[i], rgb, 3);
+    }
 }
 
 static bool has_value(led_state_t state)
@@ -138,8 +141,9 @@ bool status_led_effect_allowed(led_state_t state, led_effect_t effect)
     if (effect == LED_FX_BAR || effect == LED_FX_BAR_PULSE) {
         return has_value(state);
     }
-    if (effect == LED_FX_SEGMENTS) {
-        return state == LED_STATE_ID;
+    if (state == LED_STATE_ID) {
+        // Das Muster selbst ist die Darstellung, animiert wird es nur als Ganzes
+        return effect == LED_FX_OFF || effect == LED_FX_SOLID || effect == LED_FX_BREATHE || effect == LED_FX_BLINK;
     }
     return true;
 }
@@ -172,14 +176,33 @@ static void load_config(void)
     if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) {
         return;
     }
-    uint8_t blob[1 + sizeof(led_config_t)];
+    static uint8_t blob[1 + sizeof(led_config_t)];
     size_t len = sizeof(blob);
-    if (nvs_get_blob(nvs, NVS_KEY, blob, &len) == ESP_OK && len == sizeof(blob) && blob[0] == CONFIG_VERSION) {
-        led_config_t c;
-        memcpy(&c, blob + 1, sizeof(c));
-        if (!config_error(&c)) {
+    if (nvs_get_blob(nvs, NVS_KEY, blob, &len) == ESP_OK) {
+        led_config_t c = s_cfg;
+        bool ok = false;
+        if (len == sizeof(blob) && blob[0] == CONFIG_VERSION) {
+            memcpy(&c, blob + 1, sizeof(c));
+            ok = true;
+        } else if (len == V1_SIZE && blob[0] == 1) {
+            // Version 1: Darstellungen, zwei Segmentfarben, Abstand. Das Muster beginnt in der bisherigen Farbe.
+            memcpy(c.look, blob + 1, sizeof(c.look));
+            c.id_interval = blob[V1_SIZE - 1];
+            led_look_t *id = &c.look[LED_STATE_ID];
+            if (id->effect >= LED_FX_COUNT) {
+                id->effect = LED_FX_SOLID;   // früher "Farbsegmente"
+            }
+            for (int i = 0; i < MAX_LEDS; i++) {
+                c.id_pattern[i][0] = id->r;
+                c.id_pattern[i][1] = id->g;
+                c.id_pattern[i][2] = id->b;
+            }
+            ok = true;
+            ESP_LOGI(TAG, "Darstellung aus Version 1 übernommen");
+        }
+        if (ok && !config_error(&c)) {
             s_cfg = c;
-        } else {
+        } else if (ok) {
             ESP_LOGW(TAG, "Gespeicherte Darstellung ungültig, nehme die Standardwerte");
         }
     }
@@ -321,8 +344,26 @@ static px_t look_color(const uint8_t rgb[3], uint8_t bright)
     return (px_t){rgb[0] * k, rgb[1] * k, rgb[2] * k};
 }
 
+// Kennung: das Muster je LED, als Ganzes ein, atmend oder blinkend
+static void render_id(const led_config_t *cfg, int64_t t)
+{
+    const led_look_t *lk = &cfg->look[LED_STATE_ID];
+    float level = lk->effect == LED_FX_SOLID     ? 1.0f
+                  : lk->effect == LED_FX_BREATHE ? gamma_level(0.1f + 0.9f * wave(t, BREATHE_MS))
+                  : lk->effect == LED_FX_BLINK   ? (t % BLINK_MS < BLINK_MS / 2 ? 1.0f : 0.0f)
+                                                 : 0.0f;
+    for (int i = 0; i < s_count; i++) {
+        px_t c = look_color(cfg->id_pattern[i], lk->bright);
+        s_px[i] = (px_t){c.r * level, c.g * level, c.b * level};
+    }
+}
+
 static void render(const led_config_t *cfg, led_state_t state, float value, int64_t t)
 {
+    if (state == LED_STATE_ID) {
+        render_id(cfg, t);
+        return;
+    }
     const led_look_t *lk = &cfg->look[state];
     const uint8_t rgb[3] = {lk->r, lk->g, lk->b};
     px_t c = look_color(rgb, lk->bright);
@@ -370,13 +411,6 @@ static void render(const led_config_t *cfg, led_state_t state, float value, int6
             }
             level *= pulse;
             s_px[i] = (px_t){c.r * level, c.g * level, c.b * level};
-        }
-        break;
-    }
-    case LED_FX_SEGMENTS: {
-        const uint8_t *colors[3] = {rgb, cfg->seg[0], cfg->seg[1]};
-        for (int i = 0; i < n; i++) {
-            s_px[i] = look_color(colors[i * 3 / n], lk->bright);
         }
         break;
     }
@@ -449,6 +483,9 @@ static void led_task(void *arg)
         led_state_t preview = s_preview_state;
         if (now_ms() < s_preview_until) {
             cfg.look[preview] = s_preview_look;
+            if (preview == LED_STATE_ID) {
+                memcpy(cfg.id_pattern, s_preview_pattern, sizeof(cfg.id_pattern));
+            }
         }
         int ota = s_ota;
         UNLOCK();
@@ -503,7 +540,7 @@ void status_led_init(void)
     }
     s_id_hue = (int)(hash % 360);
     load_config();
-    xTaskCreate(led_task, "status_led", 3072, NULL, 2, NULL);
+    xTaskCreate(led_task, "status_led", 4096, NULL, 2, NULL);
 }
 
 void status_led_apply(void)
@@ -560,7 +597,7 @@ void status_led_find(void)
     UNLOCK();
 }
 
-void status_led_preview(led_state_t state, const led_look_t *look)
+void status_led_preview(led_state_t state, const led_look_t *look, const uint8_t (*pattern)[3])
 {
     if (state >= LED_STATE_COUNT) {
         return;
@@ -568,6 +605,7 @@ void status_led_preview(led_state_t state, const led_look_t *look)
     LOCK();
     s_preview_state = state;
     s_preview_look = look ? *look : s_cfg.look[state];
+    memcpy(s_preview_pattern, pattern ? pattern : s_cfg.id_pattern, sizeof(s_preview_pattern));
     s_preview_until = now_ms() + PREVIEW_MS;
     UNLOCK();
 }

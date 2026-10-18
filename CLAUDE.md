@@ -63,7 +63,7 @@ contracts and are the best entry point.
   device's own AP. `max_uri_handlers` is fixed in `web_start` (48, 39 used); raise it when adding routes.
 - **status_led.c** — addressable status LEDs (`espressif/led_strip`, RMT). Own low-priority task that polls
   `printer_get_status`/`wifi_get_status`, picks the highest-priority state and renders its effect; per-state look
-  (effect, color, brightness) and the print-farm identification live in NVS namespace `leds`, pin/count/type/order
+  (effect, color, brightness) and the print-farm identification (one color per LED) live in NVS namespace `leds`, pin/count/type/order
   in `settings_t`. Web handlers only set requests (`status_led_find/preview/ota/apply`). The web UI subpage is
   `#leds` in `index.html`; `tools/mock_server.py` mirrors the effects in a virtual strip, keep both in sync.
 - **variant.c** — writes a `uprint_desc_t` (magic `UPRINT1` + variant name) right after `esp_app_desc_t` in the

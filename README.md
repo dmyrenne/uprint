@@ -109,8 +109,9 @@ Standardmäßig sieht das so aus. Gelten mehrere Zustände gleichzeitig, gewinnt
 
 Unter **Zustände anpassen** wählst du für jeden Zustand Effekt, Farbe und Helligkeit, mit einer Vorschau direkt auf dem
 Strip. **Alle auf Standard** stellt die Tabelle oben wieder her. Für eine Printfarm gibt es dort außerdem eine
-Kennung: Jedes Gerät bekommt aus seiner MAC-Adresse eine eigene Farbe, die der Strip auf Wunsch alle 10, 30 oder 60
-Sekunden kurz zeigt. Derselbe Farbpunkt steht in der Weboberfläche neben dem Gerätenamen.
+Kennung: ein Muster, in dem du jede LED einzeln anmalst (Pinsel wählen, LEDs anklicken oder darüberziehen). Ab Werk
+leuchten alle in einer Farbe, die aus der MAC-Adresse des Geräts kommt. Auf Wunsch zeigt der Strip das Muster alle
+10, 30 oder 60 Sekunden kurz. Die Farbe der ersten LED steht in der Weboberfläche als Punkt neben dem Gerätenamen.
 
 ## Aktualisieren
 

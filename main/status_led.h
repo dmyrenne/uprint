@@ -39,7 +39,6 @@ typedef enum {
     LED_FX_FIRST,       // nur die erste LED
     LED_FX_BAR,         // Fortschrittsbalken, Vorderkante atmet
     LED_FX_BAR_PULSE,   // Fortschrittsbalken, ganzer Balken pulsiert
-    LED_FX_SEGMENTS,    // nur Kennung: drei Farben nebeneinander
     LED_FX_COUNT,
 } led_effect_t;
 
@@ -49,9 +48,11 @@ typedef struct {
     uint8_t bright;   // %
 } led_look_t;
 
+#define STATUS_LED_MAX 100
+
 typedef struct {
-    led_look_t look[LED_STATE_COUNT];
-    uint8_t seg[2][3];      // weitere Farben der Kennung für LED_FX_SEGMENTS
+    led_look_t look[LED_STATE_COUNT];   // bei LED_STATE_ID gilt die Farbe aus id_pattern, nicht r/g/b
+    uint8_t id_pattern[STATUS_LED_MAX][3];   // Kennung: Farbe je LED
     uint8_t id_interval;    // s zwischen zwei Kennungen, 0 = aus
 } led_config_t;
 
@@ -71,8 +72,9 @@ const char *status_led_state_name(led_state_t state);
 bool status_led_effect_allowed(led_state_t state, led_effect_t effect);
 
 void status_led_find(void);                    // 10 s
-// 5 s, Balken bei 60 %; look != NULL zeigt eine noch nicht gespeicherte Darstellung
-void status_led_preview(led_state_t state, const led_look_t *look);
+// 5 s, Balken bei 60 %; look bzw. pattern != NULL zeigen eine noch nicht gespeicherte Darstellung
+// (pattern nur für die Kennung, STATUS_LED_MAX Farben)
+void status_led_preview(led_state_t state, const led_look_t *look, const uint8_t (*pattern)[3]);
 void status_led_ota(int percent);              // -1 = Update beendet oder abgebrochen
 
 // Geschätzter Strom des Strips in mA (nach der Strombegrenzung), 0 ohne Strip

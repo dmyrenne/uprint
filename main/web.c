@@ -89,8 +89,8 @@ static esp_err_t status_get(httpd_req_t *req)
     // Kennungsfarbe für den Punkt neben dem Gerätenamen, leer ohne Status-LEDs
     char led_id[8] = "";
     if (cfg.led_pin >= 0 && cfg.led_count > 0) {
-        const led_look_t *id = &leds.look[LED_STATE_ID];
-        snprintf(led_id, sizeof(led_id), "#%02x%02x%02x", id->r, id->g, id->b);
+        const uint8_t *id = leds.id_pattern[0];
+        snprintf(led_id, sizeof(led_id), "#%02x%02x%02x", id[0], id[1], id[2]);
     }
     http_json_escape(file, sizeof(file), st.file);
     http_json_escape(msg, sizeof(msg), st.message);
@@ -635,6 +635,19 @@ static bool parse_color(const char *s, uint8_t rgb[3])
     return true;
 }
 
+// "rrggbb,rrggbb,…" ab LED 0 (zerlegt s); nicht genannte LEDs bleiben
+static bool parse_pattern(char *s, uint8_t (*out)[3])
+{
+    char *save = NULL;
+    int i = 0;
+    for (char *tok = strtok_r(s, ",", &save); tok; tok = strtok_r(NULL, ",", &save), i++) {
+        if (i >= STATUS_LED_MAX || !parse_color(tok, out[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static void look_json(char *out, size_t len, const led_look_t *lk)
 {
     char color[8];
@@ -665,22 +678,32 @@ static esp_err_t leds_get(httpd_req_t *req)
                  status_led_state_name(i), look, effects, look_def);
         httpd_resp_sendstr_chunk(req, item);
     }
-    char seg[2][8], seg_def[2][8];
-    for (int i = 0; i < 2; i++) {
-        color_hex(seg[i], cur.seg[i]);
-        color_hex(seg_def[i], def.seg[i]);
+    // Muster der Kennung, immer für die größtmögliche Anzahl LEDs
+    const led_config_t *src[2] = {&cur, &def};
+    const char *open[2] = {"],\"pattern\":[", "],\"pattern_default\":["};
+    for (int k = 0; k < 2; k++) {
+        httpd_resp_sendstr_chunk(req, open[k]);
+        for (int i = 0; i < STATUS_LED_MAX; i += 10) {
+            size_t n = 0;
+            for (int j = i; j < i + 10 && j < STATUS_LED_MAX; j++) {
+                char color[8];
+                color_hex(color, src[k]->id_pattern[j]);
+                n += snprintf(item + n, sizeof(item) - n, "%s\"%s\"", j ? "," : "", color);
+            }
+            httpd_resp_sendstr_chunk(req, item);
+        }
     }
-    snprintf(item, sizeof(item),
-             "],\"seg\":[\"%s\",\"%s\"],\"seg_default\":[\"%s\",\"%s\"],\"id_interval\":%d,\"id_interval_default\":%d}",
-             seg[0], seg[1], seg_def[0], seg_def[1], cur.id_interval, def.id_interval);
+    snprintf(item, sizeof(item), "],\"id_interval\":%d,\"id_interval_default\":%d}", cur.id_interval, def.id_interval);
     httpd_resp_sendstr_chunk(req, item);
     return httpd_resp_sendstr_chunk(req, NULL);
 }
 
-// Body: <zustand>_effect, <zustand>_color, <zustand>_bright, seg1, seg2, id_interval; fehlende Felder bleiben
+// Body: <zustand>_effect, <zustand>_color, <zustand>_bright, pattern (rrggbb,rrggbb,… ab LED 0), id_interval;
+// fehlende Felder bleiben. Statisch, weil der Webserver Anfragen nacheinander abarbeitet.
 static esp_err_t leds_post(httpd_req_t *req)
 {
-    char body[2048];
+    static char body[3072];
+    static char pattern[STATUS_LED_MAX * 12 + 1];   // URL-kodiert: "%23rrggbb%2C" je LED
     if (!http_recv_body(req, body, sizeof(body))) {
         return http_send_error(req, "400 Bad Request", "Ungültige Anfrage");
     }
@@ -713,11 +736,8 @@ static esp_err_t leds_post(httpd_req_t *req)
             }
         }
     }
-    for (int i = 0; i < 2 && !bad; i++) {
-        snprintf(key, sizeof(key), "seg%d", i + 1);
-        if (form_value(body, key, val, sizeof(val)) && !parse_color(val, c.seg[i])) {
-            bad = true;
-        }
+    if (!bad && form_value(body, "pattern", pattern, sizeof(pattern))) {
+        bad = !parse_pattern(pattern, c.id_pattern);
     }
     int interval;
     if (!bad && form_int(body, "id_interval", &interval, &bad)) {
@@ -741,9 +761,13 @@ static esp_err_t leds_reset_post(httpd_req_t *req)
     return leds_get(req);
 }
 
-// ?state=<zustand>, optional effect, color (rrggbb), bright: noch nicht gespeicherte Darstellung zeigen
+// ?state=<zustand>, optional effect, color (rrggbb), bright: noch nicht gespeicherte Darstellung zeigen.
+// Bei der Kennung optional pattern=rrggbb,… im Body (passt nicht in die URL).
 static esp_err_t leds_preview_post(httpd_req_t *req)
 {
+    static char body[STATUS_LED_MAX * 12 + 16];
+    static char pattern[STATUS_LED_MAX * 12 + 1];
+    static uint8_t colors[STATUS_LED_MAX][3];
     char query[128], name[16], val[16];
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
         httpd_query_key_value(query, "state", name, sizeof(name)) != ESP_OK) {
@@ -773,7 +797,16 @@ static esp_err_t leds_preview_post(httpd_req_t *req)
             int b = atoi(val);
             look.bright = (uint8_t)(b < 0 ? 0 : b > 100 ? 100 : b);
         }
-        status_led_preview(i, &look);
+        bool with_pattern = false;
+        if (req->content_len > 0) {
+            memcpy(colors, c.id_pattern, sizeof(colors));
+            if (!http_recv_body(req, body, sizeof(body)) ||
+                (form_value(body, "pattern", pattern, sizeof(pattern)) && !parse_pattern(pattern, colors))) {
+                return http_send_error(req, "400 Bad Request", "Ungültiges Muster");
+            }
+            with_pattern = true;
+        }
+        status_led_preview(i, &look, with_pattern ? (const uint8_t (*)[3])colors : NULL);
         return http_send_ok(req);
     }
     return http_send_error(req, "400 Bad Request", "Unbekannter Zustand");

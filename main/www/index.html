@@ -233,6 +233,17 @@
   .led-row .bright span { width: 38px; text-align: right; }
   input[type=color] { width: 44px; height: 30px; padding: 2px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--field); cursor: pointer; }
   input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .led-row .noop { visibility: hidden; }
+  .led-paint { margin-top: 10px; align-items: flex-end; }
+  .led-paint .brush { flex-direction: row; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .led-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 6px; margin-top: 12px;
+              padding: 10px; background: #050506; border-radius: 10px; touch-action: none; user-select: none; }
+  .led-grid.unsaved { box-shadow: 0 0 0 2px var(--accent); }
+  .led-grid i { aspect-ratio: 1; border-radius: 50%; cursor: crosshair; position: relative;
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
+  .led-grid i span { position: absolute; inset: auto 0 -1px; text-align: center; font: 500 8px var(--mono);
+                     color: rgba(255, 255, 255, .55); mix-blend-mode: difference; pointer-events: none; }
+  .led-interval { margin-top: 14px; max-width: 320px; }
   .leds-actions { margin-top: 16px; }
   .leds-actions .spacer { flex: 1; }
   @media (max-width: 700px) {
@@ -303,12 +314,15 @@
     <p class="hint" data-i18n="leds.intro"></p>
     <div class="led-rows" id="ledRows"></div>
     <p class="sub" style="margin-top:20px" data-i18n="leds.id"></p>
-    <div class="grid" style="margin-top:12px">
-      <label><span data-i18n="leds.seg1"></span><input type="color" id="ledSeg1"></label>
-      <label><span data-i18n="leds.seg2"></span><input type="color" id="ledSeg2"></label>
-      <label class="full"><span data-i18n="leds.interval"></span><select id="ledInterval"></select></label>
-    </div>
     <p class="hint" data-i18n="leds.id.hint"></p>
+    <div class="row led-paint">
+      <label class="brush"><span data-i18n="leds.brush"></span><input type="color" id="ledBrush"></label>
+      <button type="button" class="small" id="ledFill" data-i18n="leds.fill"></button>
+      <button type="button" class="small" id="ledPatternDefault" data-i18n="leds.pattern.default"></button>
+    </div>
+    <div class="led-grid" id="ledGrid"></div>
+    <p class="hint" id="ledGridHint"></p>
+    <label class="led-interval"><span data-i18n="leds.interval"></span><select id="ledInterval"></select></label>
     <div class="row leds-actions">
       <button type="button" class="primary" id="ledSave" data-i18n="save"></button>
       <button type="button" id="ledRevert" data-i18n="revert"></button>
@@ -1190,6 +1204,7 @@ async function loadSettings() {
   try { settings = await api('GET', '/api/settings'); } catch { return; }
   if (!setModified() || !($('setBox').open || $('hwBox').open)) writeSettings(settings);   // laufende Eingaben nicht überschreiben
   renderSettings();
+  if (ledEdit) buildLedGrid();   // Anzahl LEDs für das Muster der Kennung
 }
 for (const f of [setForm, hwForm]) { f.addEventListener('input', renderSettings); f.addEventListener('change', renderSettings); }
 $('setSave').onclick = async () => {
@@ -1279,10 +1294,11 @@ function renderLedDot() {
   $('ledDot').hidden = !c;
   if (c) { $('ledDot').style.background = c; $('ledDot').title = t('leds.dot'); }
 }
+const samePattern = (a, b) => a.every((c, i) => c.toLowerCase() === b[i].toLowerCase());
 function ledEditModified() {
   if (!leds || !ledEdit) return false;
   return ledEdit.states.some((s, i) => lookKey(s) !== lookKey(leds.states[i])) ||
-    ledEdit.seg.some((c, i) => c.toLowerCase() !== leds.seg[i].toLowerCase()) || ledEdit.id_interval !== leds.id_interval;
+    !samePattern(ledEdit.pattern, leds.pattern) || ledEdit.id_interval !== leds.id_interval;
 }
 function buildLedRows() {
   const rows = ledEdit.states.map((s, i) => {
@@ -1298,23 +1314,27 @@ function buildLedRows() {
     range.setAttribute('aria-label', t('leds.bright'));
     const pct = el('span', null, s.bright + ' %'); bright.append(range, pct);
     const prev = el('button', 'small', t('leds.preview')); prev.type = 'button';
+    // Kennung: Farben kommen aus dem Muster darunter
+    if (s.id === 'id') color.classList.add('noop');
     const update = () => {
       s.color = color.value; s.effect = +fx.value; s.bright = +range.value; pct.textContent = s.bright + ' %';
-      custom.hidden = lookKey(s) === lookKey(s.default);
+      custom.hidden = lookKey(s) === lookKey(s.default) && (s.id !== 'id' || samePattern(ledEdit.pattern, ledEdit.pattern_default));
       row.classList.toggle('unsaved', lookKey(s) !== lookKey(leds.states[i]));
       renderLedActions();
     };
     color.oninput = fx.onchange = range.oninput = update;
     prev.onclick = async () => {
       const q = new URLSearchParams({ state: s.id, effect: s.effect, color: s.color.slice(1), bright: s.bright });
-      try { await api('POST', '/api/leds/preview?' + q); } catch (e) { say(e.message, true); }
+      const body = s.id === 'id' ? new URLSearchParams({ pattern: patternParam() }) : undefined;
+      try { await api('POST', '/api/leds/preview?' + q, body); } catch (e) { say(e.message, true); }
     };
+    if (s.id === 'id') idRowUpdate = update;
     row.append(name, color, fx, bright, prev);
     update();
     return row;
   });
   $('ledRows').replaceChildren(...rows);
-  $('ledSeg1').value = ledEdit.seg[0]; $('ledSeg2').value = ledEdit.seg[1];
+  buildLedGrid();
   const iv = $('ledInterval');
   iv.replaceChildren(...LED_INTERVALS.map((v) => new Option(v ? t('leds.every', { s: v }) : t('leds.off'), v)));
   iv.value = ledEdit.id_interval;
@@ -1325,8 +1345,61 @@ function renderLedActions() {
   $('ledSave').disabled = !mod;
   $('ledRevert').disabled = !mod;
 }
-$('ledSeg1').oninput = () => { ledEdit.seg[0] = $('ledSeg1').value; renderLedActions(); };
-$('ledSeg2').oninput = () => { ledEdit.seg[1] = $('ledSeg2').value; renderLedActions(); };
+// Muster der Kennung: so viele Felder wie LEDs eingestellt, anmalen per Klick oder Ziehen (auch mit dem Finger),
+// Rechtsklick nimmt die Farbe eines Felds als Pinsel
+let idRowUpdate = null, painting = null;   // letzte Zeigerposition beim Malen
+const ledCount = () => (settings ? Math.min(settings.led_count, ledEdit.pattern.length) : 0);
+const patternParam = () => ledEdit.pattern.slice(0, Math.max(1, ledCount())).map((c) => c.slice(1)).join(',');
+function paintCell(cell) {
+  const i = +cell.dataset.i, c = $('ledBrush').value;
+  if (ledEdit.pattern[i] === c) return;
+  ledEdit.pattern[i] = c; cell.style.background = c;
+  renderLedGridState();
+}
+function renderLedGridState() {
+  $('ledGrid').classList.toggle('unsaved', !samePattern(ledEdit.pattern, leds.pattern));
+  if (idRowUpdate) idRowUpdate();
+}
+function buildLedGrid() {
+  const n = ledCount(), grid = $('ledGrid');
+  grid.replaceChildren(...Array.from({ length: n }, (_, i) => {
+    const cell = el('i'); cell.dataset.i = i; cell.style.background = ledEdit.pattern[i];
+    cell.title = 'LED ' + (i + 1); cell.append(el('span', null, i + 1));
+    return cell;
+  }));
+  grid.hidden = !n;
+  $('ledGridHint').textContent = n ? t('leds.pattern.hint') : t('leds.pattern.none');
+  if (!$('ledBrush').dataset.set) $('ledBrush').value = ledEdit.pattern[0];
+  renderLedGridState();
+}
+$('ledBrush').oninput = () => { $('ledBrush').dataset.set = '1'; };
+$('ledGrid').addEventListener('pointerdown', (e) => {
+  const cell = e.target.closest('i');
+  if (!cell || e.button === 2) return;
+  painting = { x: e.clientX, y: e.clientY }; paintCell(cell); e.preventDefault();
+});
+// Zwischen zwei Ereignissen die Strecke abtasten, sonst überspringt schnelles Ziehen einzelne LEDs
+$('ledGrid').addEventListener('pointermove', (e) => {
+  if (!painting) return;
+  const dx = e.clientX - painting.x, dy = e.clientY - painting.y, steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 6));
+  for (let k = 1; k <= steps; k++) {
+    const cell = document.elementFromPoint(painting.x + dx * k / steps, painting.y + dy * k / steps);
+    if (cell && cell.parentElement === $('ledGrid')) paintCell(cell);
+  }
+  painting = { x: e.clientX, y: e.clientY };
+});
+window.addEventListener('pointerup', () => { painting = null; });
+$('ledGrid').addEventListener('contextmenu', (e) => {
+  const cell = e.target.closest('i');
+  if (!cell) return;
+  e.preventDefault();
+  $('ledBrush').value = ledEdit.pattern[+cell.dataset.i]; $('ledBrush').dataset.set = '1';
+});
+$('ledFill').onclick = () => {
+  for (let i = 0; i < ledEdit.pattern.length; i++) ledEdit.pattern[i] = $('ledBrush').value;
+  buildLedGrid();
+};
+$('ledPatternDefault').onclick = () => { ledEdit.pattern = [...ledEdit.pattern_default]; buildLedGrid(); };
 $('ledInterval').onchange = () => { ledEdit.id_interval = +$('ledInterval').value; renderLedActions(); };
 function setLeds(j) { leds = j; ledEdit = structuredClone(j); buildLedRows(); }
 async function loadLeds() {
@@ -1337,7 +1410,7 @@ $('ledSave').onclick = async () => {
   for (const s of ledEdit.states) {
     p.set(s.id + '_effect', s.effect); p.set(s.id + '_color', s.color); p.set(s.id + '_bright', s.bright);
   }
-  p.set('seg1', ledEdit.seg[0]); p.set('seg2', ledEdit.seg[1]); p.set('id_interval', ledEdit.id_interval);
+  p.set('pattern', ledEdit.pattern.map((c) => c.slice(1)).join(',')); p.set('id_interval', ledEdit.id_interval);
   try { setLeds(await api('POST', '/api/leds', p)); say(t('leds.saved')); refreshStatus(); }
   catch (e) { say(e.message, true); }
 };
