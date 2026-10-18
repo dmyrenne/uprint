@@ -225,6 +225,7 @@
   /* Während eines Drucks gesperrt (#16): sichtbar, aber nicht bedienbar */
   [inert] { opacity: .5; }
   .lock-note { margin: 0 0 12px; }
+  .host-prompt { margin: 12px 0 0; font-size: 13px; }
 
   /* ---------- Status-LEDs ---------- */
   .led-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--line-strong); }
@@ -404,6 +405,11 @@
         <div class="job-title" id="jobTitle"></div>
         <div class="job-sub" id="jobSub"></div>
         <div class="job-note" id="jobNote" hidden></div>
+        <!-- Rückfrage des Druckers, z. B. beim Filamentwechsel (#33) -->
+        <div class="derived host-prompt" id="hostPrompt" hidden>
+          <div id="hostPromptText"></div>
+          <div class="row" id="hostPromptChoices" style="margin-top:8px"></div>
+        </div>
         <div id="jobProgress" hidden>
           <div class="bar big"><i id="jobBar"></i></div>
           <div class="job-meta"><span id="jobPct"></span><span id="jobEta"></span></div>
@@ -578,6 +584,7 @@
     <div class="ota">
       <p class="sub" data-i18n="set.firmware"></p>
       <p class="hint" id="otaVersion" style="margin:0 0 10px"></p>
+      <p class="derived bad" id="otaRollback" hidden></p>
       <div class="row">
         <button type="button" id="otaPick" data-i18n="ota.choose"></button>
         <button type="button" class="primary" id="otaBtn" data-i18n="ota.install"></button>
@@ -792,12 +799,14 @@ function renderStatus() {
     : state === 'disconnected' && axiMode() ? 'state.axiDisconnected' : 'state.' + state);
   tab.className = 'tab ' + ({ idle: 'on', printing: 'on busy', paused: 'on', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
 
-  const pct = a && s.size ? s.pos / s.size * 100 : done ? 100 : 0;
+  // Fortschritt und Restzeit aus M73 (Slicer), sonst nach gesendeten Bytes geschätzt
+  const pct = a ? (s.progress >= 0 ? s.progress : s.size ? s.pos / s.size * 100 : 0) : done ? 100 : 0;
+  const left = !a ? null : s.remaining >= 0 ? s.remaining : pct > 2 ? s.elapsed * (100 - pct) / pct : null;
   const temp = (v, target) => offline || s.state === 'disconnected' ? '–' : Math.round(v) + '°' + (target > 0 ? ' / ' + Math.round(target) + '°' : '');
   const items = [
     ['stat.progress', show ? num(pct, 1) + ' %' : '–'],
     ['stat.elapsed', a ? fmtTime(s.elapsed) : done ? fmtTime(s.duration) : '–'],
-    ['stat.remaining', a && pct > 2 ? fmtTime(s.elapsed * (100 - pct) / pct) : '–'],
+    ['stat.remaining', left != null ? fmtTime(left) : '–'],
     // Ein Plotter hat keine Temperaturen
     ...(axiMode() ? [] : [['stat.hotend', temp(s.hotend, s.hotend_target)], ['stat.bed', temp(s.bed, s.bed_target)]]),
   ];
@@ -825,7 +834,10 @@ function renderStatus() {
   else { title = t('stage.idle'); sub = t('stage.idleHint'); }
   // Meldungen der Firmware wie „Druck fertig …“ zusätzlich zeigen, solange nichts läuft
   const note = !offline && !done && s.state === 'idle' && !s.finished && s.message && !['Drucker bereit', 'Fehler quittiert'].includes(s.message) ? s.message : '';
-  $('jobNote').textContent = note; $('jobNote').hidden = !note;
+  // Meldungen des Druckers selbst ("action:notification") haben Vorrang
+  const shownNote = !offline && s.notice ? s.notice : note;
+  $('jobNote').textContent = shownNote; $('jobNote').hidden = !shownNote;
+  renderPrompt(offline ? null : s.prompt);
   $('jobTitle').textContent = title;
   // Während des Drucks den übersetzten Zustand zeigen, sonst die Meldung der Firmware
   $('jobSub').textContent = a ? volName(s.storage) + ' · ' + t('state.' + s.state) : done ? volName(s.storage) + ' · ' + t('stage.done') : sub;
@@ -833,7 +845,7 @@ function renderStatus() {
   $('jobProgress').hidden = !show;
   $('jobBar').style.width = pct + '%';
   $('jobPct').textContent = show ? num(pct, 1) + ' %' : '';
-  $('jobEta').textContent = a && pct > 2 ? t('job.remaining', { t: fmtTime(s.elapsed * (100 - pct) / pct) })
+  $('jobEta').textContent = left != null ? t('job.remaining', { t: fmtTime(left) })
                           : done ? t('job.duration', { t: fmtTime(s.duration) }) : '';
   // Animation während des Drucks und fertig gedruckt danach
   $('anim').hidden = !show;
@@ -857,6 +869,21 @@ function renderLock() {
 }
 $('bStart').onclick = () => { const f = selected() || finishedFile(); if (f) act('POST', '/api/print' + fileQuery(f)); };
 $('bRetry').onclick = () => act('POST', '/api/printer/retry');
+
+// Rückfrage des Druckers mit Auswahl; die Antwort geht als M876 S<n> an den Drucker
+let promptKey = '';
+function renderPrompt(p) {
+  $('hostPrompt').hidden = !p;
+  const key = p ? JSON.stringify(p) : '';
+  if (!p || key === promptKey) { promptKey = key; return; }   // Knöpfe nicht bei jeder Abfrage neu bauen
+  promptKey = key;
+  $('hostPromptText').textContent = p.text || t('prompt.title');
+  $('hostPromptChoices').replaceChildren(...p.choices.map((c, i) => {
+    const b = el('button', 'small' + (i === 0 ? ' primary' : ''), c); b.type = 'button';
+    b.onclick = () => act('POST', '/api/printer/prompt?choice=' + i);
+    return b;
+  }));
+}
 
 // ---------- Dateien ----------
 async function loadFiles() {
@@ -1298,8 +1325,10 @@ $('setRevert').onclick = () => { writeSettings(settings); renderSettings(); say(
 // ---------- Zurücksetzen (#13) ----------
 for (const [id, scope] of [['resetSettings', 'settings'], ['resetAll', 'all']]) {
   $(id).onclick = async () => {
-    if (!confirm(t('confirm.reset.' + scope, { ssid: wifi ? wifi.ap_ssid : 'uprint' }))) return;
-    try { await api('POST', '/api/reset?scope=' + scope); say(t('reset.done.' + scope, { ssid: wifi ? wifi.ap_ssid : 'uprint' })); }
+    // Nach dem Zurücksetzen heißt der Access Point wie der Hostname ab Werk
+    const ssid = settings ? settings.default_hostname : 'uprint';
+    if (!confirm(t('confirm.reset.' + scope, { ssid }))) return;
+    try { await api('POST', '/api/reset?scope=' + scope); say(t('reset.done.' + scope, { ssid })); }
     catch (e) { say(e.message, true); }
   };
 }
@@ -1547,6 +1576,9 @@ $('apiNew').onclick = async () => {
 let otaFile = null, otaBusy = false;
 function renderOta() {
   $('otaVersion').textContent = settings ? t('ota.version', { v: settings.version, variant: settings.variant }) : '';
+  const failed = settings && settings.failed_update;
+  $('otaRollback').hidden = !failed;
+  if (failed) $('otaRollback').textContent = t('ota.rolledBack', { failed, v: settings.version });
   if (!otaBusy) $('otaHint').textContent = t('ota.hint', { variant: settings ? settings.variant : '…' });
   $('otaName').textContent = otaFile ? otaFile.name + ' · ' + fmtSize(otaFile.size) : '';
   $('otaPick').disabled = otaBusy;

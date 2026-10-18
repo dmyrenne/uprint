@@ -89,6 +89,9 @@ bool settings_reboot_required(void);
 // Erzeugt einen neuen API-Schlüssel und speichert ihn
 esp_err_t settings_new_api_key(void);
 
+// Hostname ab Werk, z. B. "uprint-3a5c" (aus der MAC-Adresse)
+const char *settings_default_hostname(void);
+
 // Löscht alle gespeicherten Einstellungen (wirksam nach dem Neustart); new_api_key = false behält den Schlüssel
 esp_err_t settings_reset(bool new_api_key);
 

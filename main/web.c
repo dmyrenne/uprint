@@ -99,13 +99,33 @@ static esp_err_t status_get(httpd_req_t *req)
              "{\"state\":\"%s\",\"file\":\"%s\",\"size\":%" PRIu32 ",\"pos\":%" PRIu32
              ",\"elapsed\":%" PRIu32 ",\"hotend\":%.1f,\"hotend_target\":%.1f"
              ",\"bed\":%.1f,\"bed_target\":%.1f,\"message\":\"%s\",\"storage\":\"%s\""
-             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 ",\"led_id\":\"%s\",\"led_ma\":%d,\"unresponsive\":%s}",
+             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 ",\"led_id\":\"%s\",\"led_ma\":%d,\"unresponsive\":%s,\"progress\":%.1f,\"remaining\":%" PRId32,
              printer_state_name(st.state), file, st.file_size, st.file_pos, st.elapsed_s,
              st.hotend, st.hotend_target, st.bed, st.bed_target, msg, storage_id(st.vol),
              st.finished ? "true" : "false", st.duration_s, storage_revision(), led_id, status_led_current_ma(),
-             st.unresponsive ? "true" : "false");
+             st.unresponsive ? "true" : "false", st.progress, st.remaining_s);
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_sendstr(req, body);
+    httpd_resp_sendstr_chunk(req, body);
+
+    // Meldung und Rückfrage des Druckers (#33), als eigene Stücke, damit der Puffer oben klein bleibt
+    static char esc[sizeof(st.prompt_text) * 6];
+    http_json_escape(esc, sizeof(esc), st.notice);
+    snprintf(body, sizeof(body), ",\"notice\":\"%s\",\"prompt\":", esc);
+    httpd_resp_sendstr_chunk(req, body);
+    if (!st.prompt) {
+        httpd_resp_sendstr_chunk(req, "null}");
+        return httpd_resp_sendstr_chunk(req, NULL);
+    }
+    http_json_escape(esc, sizeof(esc), st.prompt_text);
+    snprintf(body, sizeof(body), "{\"text\":\"%s\",\"choices\":[", esc);
+    httpd_resp_sendstr_chunk(req, body);
+    for (int i = 0; i < st.prompt_choices; i++) {
+        http_json_escape(esc, sizeof(esc), st.prompt_choice[i]);
+        snprintf(body, sizeof(body), "%s\"%s\"", i ? "," : "", esc);
+        httpd_resp_sendstr_chunk(req, body);
+    }
+    httpd_resp_sendstr_chunk(req, "]}}");
+    return httpd_resp_sendstr_chunk(req, NULL);
 }
 
 static esp_err_t files_get(httpd_req_t *req)
@@ -315,6 +335,17 @@ static esp_err_t resume_post(httpd_req_t *req)
     return send_result(req, printer_resume(), "Druck ist nicht pausiert");
 }
 
+// ?choice=<n>: Antwort auf eine Rückfrage des Druckers (#33)
+static esp_err_t prompt_post(httpd_req_t *req)
+{
+    char query[32], val[8];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "choice", val, sizeof(val)) != ESP_OK) {
+        return http_send_error(req, "400 Bad Request", "choice fehlt");
+    }
+    return send_result(req, printer_prompt_answer(atoi(val)), "Keine offene Rückfrage des Druckers");
+}
+
 static esp_err_t retry_post(httpd_req_t *req)
 {
     return send_result(req, printer_retry(), "Drucker wartet gerade nicht auf eine Verbindung");
@@ -420,6 +451,17 @@ static esp_err_t wifi_delete(httpd_req_t *req)
     return send_result(req, wifi_forget(), "");
 }
 
+// Version eines Updates, das beim Start fehlgeschlagen ist (der Bootloader ist zurückgekehrt), sonst ""
+static void failed_update(char *out, size_t len)
+{
+    out[0] = '\0';
+    const esp_partition_t *bad = esp_ota_get_last_invalid_partition();
+    esp_app_desc_t desc;
+    if (bad && esp_ota_get_partition_description(bad, &desc) == ESP_OK) {
+        http_json_escape(out, len, desc.version);
+    }
+}
+
 static esp_err_t settings_get_handler(httpd_req_t *req)
 {
     settings_t c;
@@ -433,11 +475,14 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     http_json_escape(version, sizeof(version), esp_app_get_description()->version);
     http_json_escape(host, sizeof(host), c.hostname);
     http_json_escape(pass, sizeof(pass), c.ap_password);
+    char failed[32 * 6];
+    failed_update(failed, sizeof(failed));
     size_t n = snprintf(body, sizeof(body),
                         "{\"device_name\":\"%s\",\"hostname\":\"%s\",\"ap_password\":\"%s\",\"api_key\":\"%s\""
-                        ",\"reboot_required\":%s,\"version\":\"%s\",\"variant\":\"%s\"",
+                        ",\"reboot_required\":%s,\"version\":\"%s\",\"variant\":\"%s\",\"failed_update\":\"%s\""
+                        ",\"default_hostname\":\"%s\"",
                         name, host, pass, c.api_key, settings_reboot_required() ? "true" : "false", version,
-                        uprint_variant());
+                        uprint_variant(), failed, settings_default_hostname());
     for (size_t i = 0; i < SETTINGS_INT_FIELD_COUNT && n < sizeof(body); i++) {
         const settings_int_field_t *f = &SETTINGS_INT_FIELDS[i];
         n += snprintf(body + n, sizeof(body) - n, ",\"%s\":%d", f->key, SETTINGS_INT(&c, f));
@@ -1023,6 +1068,7 @@ esp_err_t web_start(void)
         {.uri = "/api/resume",  .method = HTTP_POST,   .handler = resume_post},
         {.uri = "/api/cancel",  .method = HTTP_POST,   .handler = cancel_post},
         {.uri = "/api/printer/retry", .method = HTTP_POST, .handler = retry_post},
+        {.uri = "/api/printer/prompt", .method = HTTP_POST, .handler = prompt_post},
         {.uri = "/api/wifi",      .method = HTTP_GET,    .handler = wifi_get},
         {.uri = "/api/wifi",      .method = HTTP_POST,   .handler = wifi_post},
         {.uri = "/api/wifi",      .method = HTTP_DELETE, .handler = wifi_delete},

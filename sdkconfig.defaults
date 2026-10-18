@@ -20,5 +20,9 @@ CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
 # usb_host_vcp nutzt intern C++-Exceptions
 CONFIG_COMPILER_CXX_EXCEPTIONS=y
 
+# Nach einem OTA-Update läuft die neue Firmware zur Probe; meldet sie sich nicht als gut (main.c), kehrt der
+# Bootloader zur vorherigen zurück. Greift erst mit einem neuen Bootloader, also nach einmaligem Flashen per USB.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
 # Auf Größe optimieren (-Os): weniger Code im internen RAM und im Flash
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y

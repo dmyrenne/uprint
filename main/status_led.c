@@ -436,7 +436,7 @@ static led_state_t pick_state(float *value)
     wifi_status_t ws;
     printer_get_status(&ps);
     wifi_get_status(&ws);
-    *value = ps.file_size ? (float)ps.file_pos / ps.file_size : 0.0f;
+    *value = ps.progress >= 0 ? ps.progress / 100.0f : ps.file_size ? (float)ps.file_pos / ps.file_size : 0.0f;
 
     if (ps.state == PRINTER_ERROR) {
         return LED_STATE_ERROR;

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "bootloader_random.h"
 #include "esp_random.h"
 #include "freertos/FreeRTOS.h"
@@ -62,6 +63,7 @@ static const settings_t DEFAULTS = {
 static SemaphoreHandle_t s_lock;
 static settings_t s_cur;
 static settings_t s_boot;   // Stand beim Start, für "Neustart nötig"
+static char s_default_host[33];   // "uprint-3a5c": eindeutig je Gerät, damit sich mehrere nicht im Netz in die Quere kommen
 
 #define FIELD(name) {#name, offsetof(settings_t, name)}
 const settings_int_field_t SETTINGS_INT_FIELDS[] = {
@@ -94,6 +96,13 @@ void settings_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     s_cur = DEFAULTS;
+    uint8_t mac[6];
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+        snprintf(s_default_host, sizeof(s_default_host), "uprint-%02x%02x", mac[4], mac[5]);
+    } else {
+        strlcpy(s_default_host, DEFAULTS.hostname, sizeof(s_default_host));
+    }
+    strlcpy(s_cur.hostname, s_default_host, sizeof(s_cur.hostname));
 
     nvs_handle_t nvs;
     if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs) == ESP_OK) {
@@ -101,7 +110,9 @@ void settings_init(void)
             const str_field_t *f = &STR_FIELDS[i];
             size_t len = f->size;
             if (nvs_get_str(nvs, f->key, STR_AT(&s_cur, f), &len) != ESP_OK) {
-                strlcpy(STR_AT(&s_cur, f), STR_AT(&DEFAULTS, f), f->size);
+                // Ohne gespeicherten Hostnamen gilt der eindeutige Standard (#35), bestehende Geräte behalten ihren
+                const char *def = f->offset == offsetof(settings_t, hostname) ? s_default_host : STR_AT(&DEFAULTS, f);
+                strlcpy(STR_AT(&s_cur, f), def, f->size);
             }
         }
         for (size_t i = 0; i < SETTINGS_INT_FIELD_COUNT; i++) {
@@ -361,4 +372,9 @@ esp_err_t settings_reset(bool new_api_key)
     }
     nvs_close(nvs);
     return err;
+}
+
+const char *settings_default_hostname(void)
+{
+    return s_default_host;
 }

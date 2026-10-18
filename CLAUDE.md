@@ -47,7 +47,9 @@ contracts and are the best entry point.
 - **printer.c** — single FreeRTOS task that owns the serial link. Web handlers never talk to the printer
   directly: they set request flags (`s_req_start`, `s_req_pause`, …) and read a `printer_status_t` snapshot, all
   under `s_lock`. Protocol: one line in flight, `N<n> cmd*<xor>` with checksum, wait for `ok`, replay from an
-  8-line history on `Resend:`. Cancel runs heaters-off plus the shutdown sequence found after the
+  8-line history on `Resend:`. Marlin/Prusa host actions (`// action:pause|paused|resume|cancel|notification|prompt_*`) map to
+  pause/resume/cancel and a web-UI prompt answered with `M876`; `M73 P/R` from the slicer overrides the byte-based
+  progress and remaining time. Cancel runs heaters-off plus the shutdown sequence found after the
   `; -- shutdown` marker near the end of the file (written by µplot). When `device_type` is AxiDraw, the same
   task calls into `axidraw.c` instead (`axidraw_link` / `axidraw_poll`).
 - **usb_serial.cpp** — USB host with CDC-ACM, CH34x, CP210x and FTDI drivers (C++ because `usb_host_vcp`
@@ -63,7 +65,7 @@ contracts and are the best entry point.
   (`main/www/index.html`, `i18n.js`, fonts) is embedded via `EMBED_FILES` in `main/CMakeLists.txt` — new
   assets must be added there. `slicer.c` registers PrusaLink/OctoPrint-compatible endpoints on the same server
   (API key auth, routes listed in `slicer.h`). `captive.c` provides DNS + redirects when accessed via the
-  device's own AP. `max_uri_handlers` is fixed in `web_start` (48, 42 used); raise it when adding routes.
+  device's own AP. `max_uri_handlers` is fixed in `web_start` (48, 44 used); raise it when adding routes.
 - **status_led.c** — addressable status LEDs (`espressif/led_strip`, RMT). Own low-priority task that polls
   `printer_get_status`/`wifi_get_status`, picks the highest-priority state and renders its effect; per-state look
   (effect, color, brightness) and the print-farm identification (one color per LED) live in NVS namespace `leds`, pin/count/type/order

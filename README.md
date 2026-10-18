@@ -71,11 +71,12 @@ and after flashing release `BOOT` and press `RESET`, otherwise it stays in the b
 
 ## Setup
 
-After starting, µprint opens its own Wi-Fi called **uprint** (password `uprint123`). Connect to it; your phone or
-laptop should open the setup page by itself, otherwise go to http://192.168.4.1. Under **Wi-Fi** pick your home
-network and enter its password. The page then shows the new address, and from then on you reach µprint at
-http://uprint.local. If you'd rather not join a network, choose **Continue without Wi-Fi**: the access point then
-stays on permanently.
+After starting, µprint opens its own Wi-Fi called **uprint-xxxx**, where the last four characters come from the
+device's MAC address so several devices don't clash (password `uprint123`). Connect to it; your phone or laptop
+should open the setup page by itself, otherwise go to http://192.168.4.1. Under **Wi-Fi** pick your home network and
+enter its password. The page then shows the new address, and from then on you reach µprint at
+http://uprint-xxxx.local (same name as the access point; you can change it under **Settings**). If you'd rather not
+join a network, choose **Continue without Wi-Fi**: the access point then stays on permanently.
 
 Now plug the printer into the board via USB. As soon as it is connected, the status at the top right turns blue.
 Upload a file, click it in the list, press **Print**, done. If the printer is plugged in but doesn't answer
@@ -94,7 +95,7 @@ While a print is running, Wi-Fi, settings and hardware can be viewed but not cha
 ## Printing from your slicer
 
 µprint speaks the PrusaLink and OctoPrint APIs, so your slicer can send G-code straight to the printer. In
-**PrusaSlicer**, add a physical printer: host type **PrusaLink**, hostname `uprint.local` and as API key the value
+**PrusaSlicer**, add a physical printer: host type **PrusaLink**, hostname `uprint-xxxx.local` and as API key the value
 from µprint under **Settings → Slicer**. PrusaSlicer also finds µprint on the network via "Browse". **OrcaSlicer**
 and other slicers use the host type **OctoPrint** with the same details. When uploading you can choose whether the
 print starts right away.
