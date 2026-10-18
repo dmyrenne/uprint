@@ -8,8 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 via a browser UI, stored on microSD or internal flash, and streamed over USB host to a Marlin/Prusa printer. An
 AxiDraw/NextDraw (EiBotBoard) mode exists in alpha (see `docs/axidraw.md`).
 
-**Language convention:** code comments, log messages, README, commit messages and PR titles are written in
-German. Keep it that way. Commit subjects follow the pattern `Bereich: kurze Beschreibung`
+**Language convention:** the README is in English for an international audience. Code comments, log messages,
+commit messages and PR titles are written in German. Keep it that way. Commit subjects follow the pattern `Bereich: kurze Beschreibung`
 (e.g. `Einstellungen: …`, `CI: …`, `Web-UI: …`). Do not add `Co-Authored-By: Claude` trailers to commits or
 Claude attribution lines to PR descriptions; the Claude credit lives in the README only.
 

@@ -1,149 +1,196 @@
 # μprint
 
-μprint macht aus einem ESP32-S3 einen kleinen Druckserver für deinen 3D-Drucker. Du lädst G-Code im Browser hoch,
-μprint speichert ihn auf einer microSD-Karte oder im internen Speicher und schickt ihn über USB an den Drucker.
-Starten, Pausieren und Abbrechen erledigst du ebenfalls im Browser, am Rechner oder am Handy. Ein PC muss dafür nicht
-laufen. μprint funktioniert mit Druckern mit Marlin- oder Prusa-Firmware und USB-Anschluss, zum Beispiel dem Prusa MK3S.
+μprint turns an ESP32-S3 into a small print server for your 3D printer or pen plotter. You upload G-code in the
+browser, μprint stores it on a microSD card or in its internal flash and streams it to the machine over USB. Start,
+pause and cancel from the browser on your computer or phone. No PC needs to keep running. μprint works with 3D
+printers running Marlin or Prusa firmware over USB (for example the Prusa MK3S) and with AxiDraw / NextDraw pen
+plotters (EiBotBoard).
 
-![μprint während eines Drucks](docs/screenshot.png)
+![μprint during a print](docs/screenshot.png)
 
-## Was du brauchst
+## Features
 
-- Ein **ESP32-S3-Board** mit mindestens 4 MB Flash.
-- Einen **USB-OTG-Adapter** von der USB-Buchse des Boards auf USB-A, damit du das Druckerkabel anstecken kannst.
-- Ein **5-V-Netzteil** für das Board.
-- Ein **microSD-Modul** mit FAT32-formatierter Karte für deine Dateien.
+- **Web interface** in English and German, for desktop and phone, no app needed
+- **Storage** on microSD and, depending on the board, internal flash (up to about 12 MB)
+- **Print control:** start, pause (nozzle lifted), resume, cancel (heaters off, lift, park), progress and time left
+- **Slicer upload** via PrusaLink and OctoPrint compatible APIs, found automatically on the network (mDNS)
+- **Pen plotter mode** for AxiDraw / NextDraw with G-code from [µplot](https://github.com/dmyrenne/uplot)
+- **Status LEDs** (SK6812, WS2812, WS2811, RGB or RGBW) with a progress bar and an identification pattern for print farms
+- **Wi-Fi setup** through the device's own access point with a captive portal, or run it access point only
+- **Updates over the air** from the web interface, plus a [web flasher](https://dmyrenne.github.io/uprint/) for the first install
+- **Safe while printing:** Wi-Fi and settings are locked during a print; if the printer is plugged in but doesn't
+  answer, μprint says so and keeps retrying
 
-Für die meisten Boards gibt es die Firmware **Basic**, Dateien liegen dann auf der microSD-Karte. Hast du ein Board
-mit der Bezeichnung **N16R8** (16 MB Flash, 8 MB PSRAM), nimm die gleichnamige Variante: Sie bietet zusätzlich
-knapp 12 MB internen Speicher, dort ist die SD-Karte optional.
+## What you need
 
-Für das **Seeed Studio XIAO ESP32S3** gibt es die Variante **XIAO** mit knapp 4 MB internem Speicher. Bei der
-Ausführung *Sense* nutzt sie den microSD-Steckplatz auf dem Kamerabrett, ein eigenes SD-Modul brauchst du dann nicht.
-Die Variante ist noch experimentell: Ob jeder Drucker an der einzigen USB-C-Buchse des XIAO erkannt wird, ist noch
-nicht an echter Hardware geprüft. Das XIAO wird dabei über den 5-V-Pin versorgt, und die Antenne (U.FL) muss
-angesteckt sein, sonst ist das WLAN sehr schwach.
+- An **ESP32-S3 board** with at least 4 MB flash.
+- A **USB OTG adapter** from the board's USB port to USB-A, so you can plug in the printer cable.
+- A **5 V power supply** for the board.
+- A **microSD module** with a FAT32 formatted card for your files (optional on boards with internal storage).
 
-Das SD-Modul kommt standardmäßig an diese Pins, andere lassen sich später in den Einstellungen wählen:
+There are three firmware variants:
 
-| SD-Modul | MOSI | MISO | SCLK | CS |
+| Variant | Board | Storage |
+| --- | --- | --- |
+| **Basic** | any ESP32-S3 with at least 4 MB flash | microSD |
+| **N16R8** | ESP32-S3 with 16 MB flash and 8 MB PSRAM | microSD and about 12 MB internal |
+| **XIAO** | Seeed Studio XIAO ESP32S3 (Sense) | microSD slot on the Sense camera board and about 4 MB internal |
+
+The XIAO variant is still experimental: whether every printer is detected on the XIAO's single USB-C port hasn't
+been verified on real hardware yet. Power the XIAO through its 5 V pin and keep the antenna (U.FL) connected,
+otherwise Wi-Fi is very weak.
+
+By default the SD module goes to these pins; you can choose others later under **Hardware**:
+
+| SD module | MOSI | MISO | SCLK | CS |
 | --- | --- | --- | --- | --- |
 | ESP32-S3 (Basic, N16R8) | GPIO11 | GPIO13 | GPIO12 | GPIO10 |
-| XIAO ESP32S3 Sense (Steckplatz) | D10 | D9 | D8 | Steckplatz |
+| XIAO ESP32S3 Sense (slot) | D10 | D9 | D8 | slot |
 
-Beim XIAO wählst du die Pins in den Einstellungen so, wie sie auf dem Board beschriftet sind. Ein eigenes SD-Modul
-kommt am besten an D8 (SCLK), D9 (MISO) und D10 (MOSI), CS an einen beliebigen freien Pin, z. B. D7. D6 bleibt frei,
-dort gibt µprint sein Log aus.
+On the XIAO you pick the pins as they are labelled on the board. An external SD module works best on D8 (SCLK),
+D9 (MISO) and D10 (MOSI), with CS on any free pin such as D7. Leave D6 free, μprint writes its log there. If you
+don't use a microSD card, switch it off under **Hardware**, which frees its pins.
 
-Die meisten Boards haben zwei USB-Buchsen. Die eine (meist `UART` oder `COM`) nutzt du zum Aufspielen der Firmware,
-an die andere (meist `USB` oder `OTG`) kommt später der Drucker. Damit der Drucker dort erkannt wird, muss die Buchse
-5 V liefern. Bei vielen Boards ist dafür eine kleine Lötbrücke zu schließen, oft mit `USB-OTG` beschriftet.
+Most boards have two USB ports. Use the one labelled `UART` or `COM` to flash the firmware; the printer later goes
+on the other one (usually `USB` or `OTG`). That port has to supply 5 V for the printer to be detected. On many boards
+you have to close a small solder jumper for this, often labelled `USB-OTG`.
 
-## Firmware aufspielen
+## Flashing the firmware
 
-Am einfachsten geht das mit dem Web-Flasher direkt im Browser, ganz ohne Software-Installation:
+The easiest way is the web flasher, right in the browser, without installing anything:
 
-1. Öffne [dmyrenne.github.io/uprint](https://dmyrenne.github.io/uprint/) in **Chrome oder Edge** am Computer.
-   Firefox und Safari unterstützen das nötige WebSerial leider nicht.
-2. Schließe das Board mit einem USB-Datenkabel an die `UART`- bzw. `COM`-Buchse an.
-3. Wähle dein Board (**Basic**, **N16R8** oder **XIAO ESP32S3**), klicke auf **Installieren**, wähle im Dialog den seriellen Port des
-   Boards und bestätige beim ersten Mal das Löschen des Geräts. Nach etwa einer Minute ist die Firmware drauf.
+1. Open [dmyrenne.github.io/uprint](https://dmyrenne.github.io/uprint/) in **Chrome or Edge** on a computer.
+   Firefox and Safari don't support the WebSerial API it needs.
+2. Connect the board with a USB data cable to its `UART` or `COM` port.
+3. Choose your board (**Basic**, **N16R8** or **XIAO ESP32S3**), click **Install**, pick the board's serial port in
+   the dialog and confirm erasing the device the first time. After about a minute the firmware is on the board.
 
-Findet der Browser das Board nicht, halte die Taste `BOOT` gedrückt, drücke kurz `RESET` und lass `BOOT` wieder los.
-Danach klappt die Verbindung. Nach dem Aufspielen einmal `RESET` drücken. Das XIAO hat nur eine USB-C-Buchse: Halte
-dort `BOOT` gedrückt, während du das Kabel ansteckst. Nach dem Aufspielen `BOOT` loslassen und `RESET` drücken, sonst
-bleibt es im Bootloader.
+If the browser doesn't find the board, hold `BOOT`, press `RESET` briefly and release `BOOT`; then the connection
+works. Press `RESET` once after flashing. The XIAO has only one USB-C port: hold `BOOT` while plugging in the cable,
+and after flashing release `BOOT` and press `RESET`, otherwise it stays in the bootloader.
 
-## Einrichten
+## Setup
 
-Nach dem Start öffnet μprint ein eigenes WLAN namens **uprint** (Passwort `uprint123`). Verbinde dich damit und öffne
-http://192.168.4.1. Unter **WLAN** wählst du dein Heimnetz aus und gibst das Passwort ein. Die Seite zeigt dir danach
-die neue Adresse an, und ab dann erreichst du μprint in deinem Netz unter http://uprint.local.
+After starting, μprint opens its own Wi-Fi called **uprint** (password `uprint123`). Connect to it; your phone or
+laptop should open the setup page by itself, otherwise go to http://192.168.4.1. Under **Wi-Fi** pick your home
+network and enter its password. The page then shows the new address, and from then on you reach μprint at
+http://uprint.local. If you'd rather not join a network, choose **Continue without Wi-Fi**: the access point then
+stays on permanently.
 
-Jetzt noch den Drucker per USB an das Board anstecken. Sobald er verbunden ist, wird der Status oben rechts blau.
-Datei hochladen, in der Liste anklicken, auf **Drucken** – fertig.
+Now plug the printer into the board via USB. As soon as it is connected, the status at the top right turns blue.
+Upload a file, click it in the list, press **Print**, done. If the printer is plugged in but doesn't answer
+(switched off, wrong baud rate), μprint shows *Printer not responding* after 30 seconds, keeps retrying in the
+background, and offers a **Reconnect** button.
 
-Unter **Einstellungen** findest du alles Weitere: einen eigenen Namen für das Gerät (praktisch, wenn du mehrere
-hast), wie weit die Düse beim Pausieren und Abbrechen angehoben wird,
-wohin der Kopf danach fährt, Hostname, WLAN-Passwort des Access Points und die Pins der SD-Karte.
+The settings are split into two cards:
 
-## Aus dem Slicer drucken
+- **Settings:** device name (handy if you have several), device type (3D printer or AxiDraw), baud rate, how far the
+  nozzle is lifted when pausing and cancelling and where the head parks, the slicer API key, hostname and access
+  point password, firmware update, and reset.
+- **Hardware:** what is wired to the ESP32-S3: microSD (on/off, pins) and status LEDs.
 
-μprint versteht die Schnittstellen von PrusaLink und OctoPrint. Damit schickt dein Slicer den G-Code direkt an den
-Drucker. In **PrusaSlicer** legst du dazu einen physischen Drucker an: Host-Typ **PrusaLink**, Hostname
-`uprint.local` und als API-Schlüssel den Wert aus μprint unter **Einstellungen → Slicer**. Über „Durchsuchen“ findet
-PrusaSlicer μprint auch selbst im Netz. **OrcaSlicer** und andere Slicer nutzen den Host-Typ **OctoPrint** mit
-denselben Angaben. Beim Hochladen kannst du wählen, ob der Druck gleich startet.
+While a print is running, Wi-Fi, settings and hardware can be viewed but not changed.
 
-Binären G-Code (`.bgcode`) kann μprint nicht drucken. Falls dein Druckerprofil ihn nutzt, schalte ihn in den
-Druckereinstellungen des Slicers ab.
+## Printing from your slicer
 
-## Status-LEDs
+μprint speaks the PrusaLink and OctoPrint APIs, so your slicer can send G-code straight to the printer. In
+**PrusaSlicer**, add a physical printer: host type **PrusaLink**, hostname `uprint.local` and as API key the value
+from μprint under **Settings → Slicer**. PrusaSlicer also finds μprint on the network via "Browse". **OrcaSlicer**
+and other slicers use the host type **OctoPrint** with the same details. When uploading you can choose whether the
+print starts right away.
 
-Optional zeigt ein Strip mit adressierbaren LEDs (SK6812, WS2812 oder WS2811, auch RGBW) den Zustand von μprint.
-Die Datenleitung kommt an einen freien GPIO, dazu 5 V und GND. Pin, Anzahl, LED-Typ, Farbreihenfolge,
-Helligkeit und eine Stromgrenze stellst du unter **Hardware → Status-LEDs** ein, das gilt sofort.
+μprint can't print binary G-code (`.bgcode`). If your printer profile uses it, turn it off in the slicer's printer
+settings.
 
-Versorge den Strip direkt vom 5-V-Netzteil und nicht über den 5-V-Pin (VUSB) des Boards, und führe die Masse am
-Netzteil zusammen. Beim XIAO ESP32S3 bricht sonst das WLAN zusammen, sobald der Strip an VUSB hängt, auch wenn er
-gar nicht leuchtet. Ab Werk stehen die Gesamthelligkeit auf 20 % und die Stromgrenze auf 500 mA. Wie in WLED schätzt
-μprint den Strom (etwa 55 mA je LED bei vollem Weiß) und dimmt den ganzen Strip, bevor er die Grenze überschreitet.
-Die Grenze sollte unter dem liegen, was die 5-V-Versorgung liefern kann. Nach dem Speichern läuft einmal ein
-Regenbogen über alle LEDs. Erscheint Rot grün, stimmt die Farbreihenfolge nicht (SK6812 und WS2812 sind meist GRB).
+## Pen plotter (AxiDraw / NextDraw)
 
-Standardmäßig sieht das so aus. Gelten mehrere Zustände gleichzeitig, gewinnt der obere:
+Set **Settings → Device type** to **AxiDraw / NextDraw**. μprint then translates G-code into EiBotBoard commands
+itself, with motion planning (acceleration, cornering) on the ESP32-S3. The files come from
+[µplot](https://github.com/dmyrenne/uplot) in AxiDraw mode (SVG → µplot → µprint → AxiDraw): their first line is
+`; uplot-axidraw 1`, other files are rejected in plotter mode. Speeds, acceleration, pen servo type and pen heights
+are set under **Settings**.
 
-| Zustand | Anzeige |
+The **PRG** button on the plotter pauses and resumes, for example to change pens. Cancelling lifts the pen and
+returns to the origin. A built-in **AxiDraw test** checks the connection, firmware, pen and button and produces a
+log you can download. EiBotBoard firmware 2.x is tested; firmware 3.x (as on the NextDraw) is supported as beta.
+Details are in [docs/axidraw.md](docs/axidraw.md) (German).
+
+## Status LEDs
+
+Optionally, a strip of addressable LEDs (SK6812, WS2812 or WS2811, also RGBW) shows what μprint is doing. The data
+line goes to a free GPIO **through a 330–470 Ω resistor close to the pin**, plus 5 V and GND. Without that
+resistor, the ringing data line can disturb Wi-Fi: on the XIAO ESP32S3 it dropped out completely until a 330 Ω
+resistor was added. Pin, number of LEDs, LED type, colour order, brightness and a current limit are set under
+**Hardware → Status LEDs** and apply immediately.
+
+Out of the box, overall brightness is 20 % and the current limit 500 mA. Like WLED, μprint estimates the current
+(about 55 mA per LED at full white) and dims the whole strip before it would exceed the limit; keep the limit below
+what your 5 V supply can deliver, and feed longer strips directly from the supply. After saving, a rainbow runs
+across all LEDs once. If red shows up as green, the colour order is wrong (SK6812 and WS2812 are usually GRB).
+
+By default it looks like this. If several states apply at once, the upper one wins:
+
+| State | Display |
 | --- | --- |
-| Gerät finden (Knopf unter Hardware) | blinkt weiß, 10 s |
-| Firmware-Update | violetter Balken mit dem Fortschritt |
-| Fehler | rot, atmend |
-| Aufheizen | oranger Balken: aktuelle / Zieltemperatur |
-| Druck oder Plot läuft | blauer Balken mit dem Fortschritt, die Vorderkante atmet |
-| Pausiert | bernsteinfarbener Balken, pulsierend |
-| Fertig | grün, bis der nächste Druck startet |
-| Access Point offen | violett, atmend |
-| WLAN oder Drucker verbindet | cyanfarbenes Lauflicht |
-| Kein Drucker | erste LED schwach bernsteinfarben |
-| Bereit | erste LED schwach grün |
+| Find device (button under Hardware) | flashes white for 10 s |
+| Firmware update | purple bar with the progress |
+| Error | red, breathing |
+| Heating | orange bar: current / target temperature |
+| Printing or plotting | blue bar with the progress, the leading edge breathes |
+| Paused | amber bar, pulsing |
+| Finished | green until the next print starts |
+| Access point open | purple, breathing |
+| Wi-Fi or printer connecting | cyan chase |
+| No printer | first LED dim amber |
+| Ready | first LED dim green |
 
-Unter **Zustände anpassen** wählst du für jeden Zustand Effekt, Farbe und Helligkeit, mit einer Vorschau direkt auf dem
-Strip. **Alle auf Standard** stellt die Tabelle oben wieder her. Für eine Printfarm gibt es dort außerdem eine
-Kennung: ein Muster, in dem du jede LED einzeln anmalst (Pinsel wählen, LEDs anklicken oder darüberziehen). Ab Werk
-leuchten alle in einer Farbe, die aus der MAC-Adresse des Geräts kommt. Auf Wunsch zeigt der Strip das Muster alle
-10, 30 oder 60 Sekunden kurz. Die Farbe der ersten LED steht in der Weboberfläche als Punkt neben dem Gerätenamen.
+Under **Customize states** you choose effect, colour and brightness for every state, with a live preview on the
+strip, and **Reset all to default** brings back the table above. For print farms there is also an identification
+pattern: paint every LED individually (pick a brush, click or drag across the LEDs). Out of the box all LEDs show a
+colour derived from the device's MAC address. If you like, the strip shows the pattern briefly every 10, 30 or 60
+seconds. The colour of the first LED appears as a dot next to the device name in the web interface.
 
-## Aktualisieren
+## Reset and storage
 
-Neue Versionen erscheinen unter [Releases](https://github.com/dmyrenne/uprint/releases). Zum Aktualisieren brauchst du
-kein Kabel: Lade die Datei `uprint-…-ota.bin` für deine Variante herunter (`basic`, `n16r8` oder `xiao` im Namen) und
-installiere sie in μprint unter **Einstellungen → Firmware**. Welche Variante installiert ist, steht dort ebenfalls. μprint startet danach neu, deine Einstellungen, das WLAN und alle Dateien bleiben
-erhalten. Alternativ kannst du auch einfach den Web-Flasher noch einmal benutzen, dann aber ohne das Gerät zu löschen.
+- **Reset settings** (under **Settings**) puts all settings back to factory state, including the LED appearance;
+  Wi-Fi and API key are kept, so μprint stays reachable.
+- **Reset everything** also forgets the Wi-Fi and creates a new API key; μprint then starts its access point for setup
+  again. Without the web interface, hold the `BOOT` button for 10 seconds while μprint is running (this works as long
+  as GPIO 0 isn't used as an SD or LED pin).
+- Files are kept in both cases. To remove them, use **Clear …** next to a storage in the file list: it deletes all
+  G-code files on that storage, or formats it completely if you tick the option (also helps with a broken file
+  system). It's locked while that storage is being printed from or uploaded to.
 
-Im Web-Flasher lässt sich auch eine ältere Version wählen, falls du zurückgehen möchtest. Vorabversionen zum Testen
-neuer Funktionen erscheinen als *Pre-release* und stehen dort unter **Alpha**. Für den normalen Betrieb ist
-**Release** gedacht.
+## Updating
 
-## Selbst bauen
+New versions appear under [Releases](https://github.com/dmyrenne/uprint/releases). Updating needs no cable: download
+the `uprint-…-ota.bin` file for your variant (`basic`, `n16r8` or `xiao` in the name) and install it in μprint under
+**Settings → Firmware**, which also shows the installed variant. μprint restarts afterwards; your settings, Wi-Fi and
+all files are kept. You can also simply use the web flasher again, but without erasing the device.
 
-Wer die Firmware selbst kompilieren möchte, braucht [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/)
-v6.1. Die übrigen Abhängigkeiten lädt der Build automatisch:
+The web flasher also lets you pick an older version if you want to go back. Pre-releases for testing new features
+appear as *pre-release* and are listed there under **Alpha**. For normal use, choose **Release**.
+
+## Building it yourself
+
+To compile the firmware yourself you need [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/)
+v6.1. The build fetches the other dependencies automatically:
 
     git clone https://github.com/dmyrenne/uprint.git
     cd uprint
-    idf.py -DUPRINT_VARIANT=basic -B build-basic build          # oder n16r8, xiao
+    idf.py -DUPRINT_VARIANT=basic -B build-basic build          # or n16r8, xiao
     idf.py -DUPRINT_VARIANT=basic -B build-basic -p <port> flash
 
-`build-basic/uprint.bin` lässt sich anschließend auch über **Einstellungen → Firmware** einspielen. Releases entstehen über
-GitHub Actions automatisch: Jeder Push auf einen Branch, der die Firmware ändert, wird zum Vorab-Release
-`v1.2.3-alpha.N` und ist im Web-Flasher unter **Alpha** wählbar. Wird der Pull Request in `main` gemergt, entsteht
-daraus das Release `v1.2.3`, und die Alphas des Branches verschwinden. Standardmäßig steigt die Patch-Nummer, mit dem
-Label `minor` bzw. `major` am Pull Request die entsprechende Stelle. Der Web-Flasher zeigt die letzten 5 Releases.
+`build-basic/uprint.bin` can then also be installed via **Settings → Firmware**. Releases are built automatically by
+GitHub Actions: every push to a branch that changes the firmware becomes a pre-release `v1.2.3-alpha.N`, selectable
+in the web flasher under **Alpha**. When the pull request is merged into `main`, it becomes the release `v1.2.3` and
+the branch's alphas are removed. By default the patch number goes up; with the label `minor` or `major` on the pull
+request, the corresponding part does. The web flasher shows the last 5 releases.
 
-## Entstehung
+## How it was made
 
-μprint wurde zusammen mit [Claude](https://claude.com/claude-code) (Anthropic) entwickelt.
+μprint was developed together with [Claude](https://claude.com/claude-code) (Anthropic).
 
-## Lizenz
+## License
 
-μprint steht unter der [MIT-Lizenz](LICENSE).
+μprint is released under the [MIT License](LICENSE).
