@@ -47,7 +47,8 @@ Am einfachsten geht das mit dem Web-Flasher direkt im Browser, ganz ohne Softwar
 
 Findet der Browser das Board nicht, halte die Taste `BOOT` gedrückt, drücke kurz `RESET` und lass `BOOT` wieder los.
 Danach klappt die Verbindung. Nach dem Aufspielen einmal `RESET` drücken. Das XIAO hat nur eine USB-C-Buchse: Halte
-dort `BOOT` gedrückt, während du das Kabel ansteckst.
+dort `BOOT` gedrückt, während du das Kabel ansteckst. Nach dem Aufspielen `BOOT` loslassen und `RESET` drücken, sonst
+bleibt es im Bootloader.
 
 ## Einrichten
 
