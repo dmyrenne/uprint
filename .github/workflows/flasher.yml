@@ -58,7 +58,7 @@ jobs:
             gh release download "$tag" -p '*-factory.bin' -D "dl/$version" || true
             variants='[]'
             # Je Variante ein Image und ein Manifest für ESP Web Tools
-            for v in n16r8 basic; do
+            for v in n16r8 basic xiao; do
               [ -f "dl/$version/uprint-$version-$v-factory.bin" ] || continue
               cp "dl/$version/uprint-$version-$v-factory.bin" "site/firmware/$version/uprint-$v-factory.bin"
               cat > "site/manifest-$version-$v.json" <<EOF

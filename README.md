@@ -18,11 +18,18 @@ Für die meisten Boards gibt es die Firmware **Basic**, Dateien liegen dann auf 
 mit der Bezeichnung **N16R8** (16 MB Flash, 8 MB PSRAM), nimm die gleichnamige Variante: Sie bietet zusätzlich
 knapp 12 MB internen Speicher, dort ist die SD-Karte optional.
 
+Für das **Seeed Studio XIAO ESP32S3** gibt es die Variante **XIAO** mit knapp 4 MB internem Speicher. Bei der
+Ausführung *Sense* nutzt sie den microSD-Steckplatz auf dem Kamerabrett, ein eigenes SD-Modul brauchst du dann nicht.
+Die Variante ist noch experimentell: Ob jeder Drucker an der einzigen USB-C-Buchse des XIAO erkannt wird, ist noch
+nicht an echter Hardware geprüft. Das XIAO wird dabei über den 5-V-Pin versorgt, und die Antenne (U.FL) muss
+angesteckt sein, sonst ist das WLAN sehr schwach.
+
 Das SD-Modul kommt standardmäßig an diese Pins, andere lassen sich später in den Einstellungen wählen:
 
 | SD-Modul | MOSI | MISO | SCLK | CS |
 | --- | --- | --- | --- | --- |
-| ESP32-S3 | GPIO11 | GPIO13 | GPIO12 | GPIO10 |
+| ESP32-S3 (Basic, N16R8) | GPIO11 | GPIO13 | GPIO12 | GPIO10 |
+| XIAO ESP32S3 Sense (Steckplatz) | GPIO9 | GPIO8 | GPIO7 | GPIO21 |
 
 Die meisten Boards haben zwei USB-Buchsen. Die eine (meist `UART` oder `COM`) nutzt du zum Aufspielen der Firmware,
 an die andere (meist `USB` oder `OTG`) kommt später der Drucker. Damit der Drucker dort erkannt wird, muss die Buchse
@@ -35,11 +42,13 @@ Am einfachsten geht das mit dem Web-Flasher direkt im Browser, ganz ohne Softwar
 1. Öffne [dmyrenne.github.io/uprint](https://dmyrenne.github.io/uprint/) in **Chrome oder Edge** am Computer.
    Firefox und Safari unterstützen das nötige WebSerial leider nicht.
 2. Schließe das Board mit einem USB-Datenkabel an die `UART`- bzw. `COM`-Buchse an.
-3. Wähle dein Board (**Basic** oder **N16R8**), klicke auf **Installieren**, wähle im Dialog den seriellen Port des
+3. Wähle dein Board (**Basic**, **N16R8** oder **XIAO ESP32S3**), klicke auf **Installieren**, wähle im Dialog den seriellen Port des
    Boards und bestätige beim ersten Mal das Löschen des Geräts. Nach etwa einer Minute ist die Firmware drauf.
 
 Findet der Browser das Board nicht, halte die Taste `BOOT` gedrückt, drücke kurz `RESET` und lass `BOOT` wieder los.
-Danach klappt die Verbindung. Nach dem Aufspielen einmal `RESET` drücken.
+Danach klappt die Verbindung. Nach dem Aufspielen einmal `RESET` drücken. Das XIAO hat nur eine USB-C-Buchse: Halte
+dort `BOOT` gedrückt, während du das Kabel ansteckst. Nach dem Aufspielen `BOOT` loslassen und `RESET` drücken, sonst
+bleibt es im Bootloader.
 
 ## Einrichten
 
@@ -68,7 +77,7 @@ Druckereinstellungen des Slicers ab.
 ## Aktualisieren
 
 Neue Versionen erscheinen unter [Releases](https://github.com/dmyrenne/uprint/releases). Zum Aktualisieren brauchst du
-kein Kabel: Lade die Datei `uprint-…-ota.bin` für deine Variante herunter (`basic` oder `n16r8` im Namen) und
+kein Kabel: Lade die Datei `uprint-…-ota.bin` für deine Variante herunter (`basic`, `n16r8` oder `xiao` im Namen) und
 installiere sie in μprint unter **Einstellungen → Firmware**. Welche Variante installiert ist, steht dort ebenfalls. μprint startet danach neu, deine Einstellungen, das WLAN und alle Dateien bleiben
 erhalten. Alternativ kannst du auch einfach den Web-Flasher noch einmal benutzen, dann aber ohne das Gerät zu löschen.
 
@@ -83,7 +92,7 @@ v6.1. Die übrigen Abhängigkeiten lädt der Build automatisch:
 
     git clone https://github.com/dmyrenne/uprint.git
     cd uprint
-    idf.py -DUPRINT_VARIANT=basic -B build-basic build          # oder n16r8
+    idf.py -DUPRINT_VARIANT=basic -B build-basic build          # oder n16r8, xiao
     idf.py -DUPRINT_VARIANT=basic -B build-basic -p <port> flash
 
 `build-basic/uprint.bin` lässt sich anschließend auch über **Einstellungen → Firmware** einspielen. Releases entstehen über

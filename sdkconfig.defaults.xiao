@@ -1,0 +1,8 @@
+# Variante xiao: Seeed Studio XIAO ESP32S3 (Sense) mit 8 MB Flash und 8 MB Octal-PSRAM, mit internem Dateispeicher.
+# Die microSD-Karte sitzt auf dem Kamerabrett der Sense-Ausführung.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-xiao.csv"
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y

@@ -64,7 +64,7 @@ typedef enum {
 } ebb_syntax_t;
 
 static SemaphoreHandle_t s_lock;
-static char *s_log;   // erst beim ersten Test angelegt (bei n16r8 im PSRAM), danach behalten
+static char *s_log;   // erst beim ersten Test angelegt (im PSRAM, falls vorhanden), danach behalten
 static size_t s_log_len;
 static bool s_log_full;
 static char s_prompt[sizeof(((axidraw_test_status_t *)0)->prompt)];

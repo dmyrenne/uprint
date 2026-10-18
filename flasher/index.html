@@ -45,7 +45,7 @@
   .muted { color: var(--muted); }
   .hint { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
 
-  .variants { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 12px; }
+  .variants { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 4px 0 12px; }
   .variant { display: block; border: 1px solid var(--line-strong); border-radius: 10px; padding: 12px 14px; cursor: pointer;
              transition: border-color .15s, box-shadow .15s; }
   .variant:hover { border-color: var(--ink); }
@@ -100,6 +100,7 @@
     <div class="variants">
       <label class="variant"><input type="radio" name="variant" value="n16r8"><b>N16R8</b><span data-i18n="v.n16r8"></span></label>
       <label class="variant"><input type="radio" name="variant" value="basic"><b>Basic</b><span data-i18n="v.basic"></span></label>
+      <label class="variant"><input type="radio" name="variant" value="xiao"><b>XIAO ESP32S3</b><span data-i18n="v.xiao"></span></label>
     </div>
     <p class="hint" data-i18n="v.hint"></p>
   </section>
@@ -152,16 +153,17 @@ const I18N = {
     'lang': 'Sprache',
     'tagline': 'Web-Flasher',
     'h.need': 'Das brauchst du',
-    'need.board.html': 'Ein <b>ESP32-S3</b>-Board mit mindestens 4 MB Flash. Ohne die Variante N16R8 brauchst du eine microSD-Karte.',
+    'need.board.html': 'Ein <b>ESP32-S3</b>-Board mit mindestens 4 MB Flash. Ohne die Varianten N16R8 oder XIAO brauchst du eine microSD-Karte.',
     'h.variant': 'Welches Board hast du?',
     'v.n16r8': '16 MB Flash, 8 MB PSRAM. Dateien auf microSD und zusätzlich rund 12 MB intern.',
     'v.basic': 'Jedes andere ESP32-S3 ab 4 MB Flash. Dateien nur auf microSD.',
+    'v.xiao': 'Seeed Studio XIAO ESP32S3 (Sense), 8 MB Flash. microSD auf dem Kamerabrett, zusätzlich knapp 4 MB intern. Noch experimentell.',
     'v.hint': 'Die Bezeichnung steht meist auf dem Blechdeckel des Moduls, z. B. „ESP32-S3-WROOM-1 N16R8“. Im Zweifel Basic nehmen, das läuft auf jedem ESP32-S3.',
     'chooseFirst': 'Wähle zuerst oben dein Board.',
     'need.browser.html': 'Einen Browser mit WebSerial: <b>Chrome, Edge oder Opera</b> am Computer. Firefox, Safari und Handys können das nicht.',
     'need.cable': 'Ein USB-Datenkabel (reine Ladekabel funktionieren nicht).',
     'h.install': 'Firmware installieren',
-    'step.port.html': 'Das Board per USB an den Computer anschließen. Hat es zwei USB-Buchsen, die zum Programmieren nehmen, meist mit <code>UART</code> oder <code>COM</code> beschriftet.',
+    'step.port.html': 'Das Board per USB an den Computer anschließen. Hat es zwei USB-Buchsen, die zum Programmieren nehmen, meist mit <code>UART</code> oder <code>COM</code> beschriftet. Beim XIAO mit nur einer Buchse: <code>BOOT</code> gedrückt halten, während du das Kabel ansteckst.',
     'step.click': 'Auf „Installieren“ klicken und im Dialog des Browsers den seriellen Port des Boards wählen.',
     'step.erase': 'Bei der ersten Installation „Gerät löschen“ bestätigen. Danach dauert das Schreiben etwa eine Minute.',
     'install': 'Installieren',
@@ -187,16 +189,17 @@ const I18N = {
     'lang': 'Language',
     'tagline': 'web flasher',
     'h.need': 'What you need',
-    'need.board.html': 'An <b>ESP32-S3</b> board with at least 4 MB flash. Unless it’s the N16R8 variant, you’ll need a microSD card.',
+    'need.board.html': 'An <b>ESP32-S3</b> board with at least 4 MB flash. Unless it’s the N16R8 or XIAO variant, you’ll need a microSD card.',
     'h.variant': 'Which board do you have?',
     'v.n16r8': '16 MB flash, 8 MB PSRAM. Files on microSD plus about 12 MB internal storage.',
     'v.basic': 'Any other ESP32-S3 with at least 4 MB flash. Files on microSD only.',
+    'v.xiao': 'Seeed Studio XIAO ESP32S3 (Sense), 8 MB flash. microSD on the camera board plus almost 4 MB internal storage. Still experimental.',
     'v.hint': 'The variant is usually printed on the module’s metal shield, e.g. “ESP32-S3-WROOM-1 N16R8”. If unsure, choose Basic, it runs on every ESP32-S3.',
     'chooseFirst': 'Choose your board above first.',
     'need.browser.html': 'A browser with WebSerial: <b>Chrome, Edge or Opera</b> on a computer. Firefox, Safari and phones don’t support it.',
     'need.cable': 'A USB data cable (charge-only cables won’t work).',
     'h.install': 'Install the firmware',
-    'step.port.html': 'Connect the board to your computer via USB. If it has two USB ports, use the one for programming, usually labelled <code>UART</code> or <code>COM</code>.',
+    'step.port.html': 'Connect the board to your computer via USB. If it has two USB ports, use the one for programming, usually labelled <code>UART</code> or <code>COM</code>. On the XIAO with its single port, hold <code>BOOT</code> while plugging in the cable.',
     'step.click': 'Click “Install” and pick the board’s serial port in the browser dialog.',
     'step.erase': 'On the first install, confirm “Erase device”. Writing then takes about a minute.',
     'install': 'Install',

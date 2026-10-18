@@ -10,7 +10,7 @@
 
 typedef struct {
     char magic[8];
-    char variant[24];   // "n16r8", "basic"
+    char variant[24];   // "n16r8", "basic", "xiao"
 } uprint_desc_t;
 
 // Variante der laufenden Firmware
