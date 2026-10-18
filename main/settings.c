@@ -72,6 +72,8 @@ static const str_field_t STR_FIELDS[] = {
 
 #define STR_AT(s, f) ((char *)(s) + (f)->offset)
 
+static const char *sd_pins_error(const settings_t *s);
+
 void settings_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
@@ -93,6 +95,14 @@ void settings_init(void)
             }
         }
         nvs_close(nvs);
+    }
+    // Z. B. nach dem Wechsel von basic auf xiao: Dort belegt die Kamera die alten Standard-Pins
+    if (sd_pins_error(&s_cur)) {
+        ESP_LOGW(TAG, "Gespeicherte SD-Pins passen nicht zu dieser Variante, nehme die Standardwerte");
+        s_cur.sd_mosi = DEFAULTS.sd_mosi;
+        s_cur.sd_miso = DEFAULTS.sd_miso;
+        s_cur.sd_sclk = DEFAULTS.sd_sclk;
+        s_cur.sd_cs = DEFAULTS.sd_cs;
     }
     s_boot = s_cur;
     if (strlen(s_cur.api_key) != 32) {
@@ -128,6 +138,22 @@ static bool pin_usable(int pin)
     return pin >= 0 && pin <= 48 && pin != 19 && pin != 20 && !(pin >= 22 && pin <= 37) && pin != 43 && pin != 44;
 }
 #endif
+
+static const char *sd_pins_error(const settings_t *s)
+{
+    const int pins[] = {s->sd_mosi, s->sd_miso, s->sd_sclk, s->sd_cs};
+    for (int i = 0; i < 4; i++) {
+        if (!pin_usable(pins[i])) {
+            return PIN_HINT;
+        }
+        for (int j = 0; j < i; j++) {
+            if (pins[i] == pins[j]) {
+                return "SD-Pins müssen verschieden sein";
+            }
+        }
+    }
+    return NULL;
+}
 
 static const char *validate(const settings_t *s)
 {
@@ -185,18 +211,7 @@ static const char *validate(const settings_t *s)
     if (s->pen_delay < 0 || s->pen_delay > 1000) {
         return "Wartezeit des Stifts: 0–1000 ms";
     }
-    const int pins[] = {s->sd_mosi, s->sd_miso, s->sd_sclk, s->sd_cs};
-    for (int i = 0; i < 4; i++) {
-        if (!pin_usable(pins[i])) {
-            return PIN_HINT;
-        }
-        for (int j = 0; j < i; j++) {
-            if (pins[i] == pins[j]) {
-                return "SD-Pins müssen verschieden sein";
-            }
-        }
-    }
-    return NULL;
+    return sd_pins_error(s);
 }
 
 esp_err_t settings_update(const settings_t *in, const char **error)
