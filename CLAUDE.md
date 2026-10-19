@@ -69,8 +69,10 @@ contracts and are the best entry point.
 - **auth.c** — optional web UI password (#31): PBKDF2 hash in NVS namespace `auth`, session cookie = nonce + HMAC
   with a device secret (survives reboots, invalidated by a new password), lockout after failed attempts. `web_start`
   wraps every route except the UI, `/api/auth` and reading status/files in `guarded()`; new routes are protected
-  unless `route_open()` lists them. The password is optional: without one everything is open; the UI asks once
-  after the Wi-Fi setup ("continue without password" is stored as `skip`).
+  unless `route_open()` lists them. The password is optional: without one everything is open. First setup via the
+  captive portal asks for device name, Wi-Fi and password on one page; otherwise the UI asks once ("continue without
+  password" is stored as `skip`). The hostname is derived from the device name (`settings_hostname_from_name`,
+  mirrored by `hostFromName` in `index.html`) and applies immediately.
 - **status_led.c** — addressable status LEDs (`espressif/led_strip`, RMT). Own low-priority task that polls
   `printer_get_status`/`wifi_get_status`, picks the highest-priority state and renders its effect; per-state look
   (effect, color, brightness) and the print-farm identification (one color per LED) live in NVS namespace `leds`, pin/count/type/order

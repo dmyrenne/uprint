@@ -371,7 +371,7 @@ static esp_err_t wifi_get(httpd_req_t *req)
              ",\"reason\":%d,\"ap\":%s,\"ap_ssid\":\"%s\",\"ap_ip\":\"192.168.4.1\",\"hostname\":\"%s\""
              ",\"ap_only\":%s,\"ap_off_in\":%d,\"via_ap\":%s,\"portal\":%s}",
              st.configured ? "true" : "false", st.connected ? "true" : "false", ssid, st.ip, st.rssi,
-             st.last_reason, st.ap_active ? "true" : "false", st.hostname, st.hostname,
+             st.last_reason, st.ap_active ? "true" : "false", st.ap_ssid, st.hostname,
              st.ap_only ? "true" : "false", st.ap_off_in, via_ap ? "true" : "false",
              via_ap && st.ap_active && !st.ap_only ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
@@ -536,14 +536,18 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     settings_t c;
     settings_get(&c);
     char buf[64 * 3 + 1];
+    if (form_value(body, "hostname", buf, sizeof(buf))) {
+        strlcpy(c.hostname, buf, sizeof(c.hostname));
+    }
+    // Ein geänderter Gerätename bestimmt auch den Hostnamen (ein mitgeschickter Hostname zählt dann nicht)
     if (form_value(body, "device_name", buf, sizeof(buf))) {
         if (strlen(buf) >= sizeof(c.device_name)) {
             return http_send_error(req, "400 Bad Request", "Gerätename: höchstens 32 Bytes");
         }
-        strlcpy(c.device_name, buf, sizeof(c.device_name));
-    }
-    if (form_value(body, "hostname", buf, sizeof(buf))) {
-        strlcpy(c.hostname, buf, sizeof(c.hostname));
+        if (strcmp(buf, c.device_name) != 0) {
+            strlcpy(c.device_name, buf, sizeof(c.device_name));
+            settings_hostname_from_name(c.device_name, c.hostname, sizeof(c.hostname));
+        }
     }
     if (form_value(body, "ap_password", buf, sizeof(buf))) {
         strlcpy(c.ap_password, buf, sizeof(c.ap_password));

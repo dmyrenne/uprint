@@ -73,14 +73,17 @@ and after flashing release `BOOT` and press `RESET`, otherwise it stays in the b
 
 After starting, µprint opens its own Wi-Fi called **uprint-xxxx**, where the last four characters come from the
 device's MAC address so several devices don't clash. The access point is open until you've set µprint up. Connect to
-it; your phone or laptop should open the setup page by itself, otherwise go to http://192.168.4.1. Under **Wi-Fi**
-pick your home network and enter its password. The page then shows the new address, and from then on you reach µprint at
-http://uprint-xxxx.local (same name as the access point; you can change it under **Settings**). If you'd rather not
-join a network, choose **Continue without Wi-Fi**: the access point then stays on permanently.
+it; your phone or laptop should open the setup page by itself, otherwise go to http://192.168.4.1. The setup page asks
+for three things at once:
 
-Afterwards µprint asks once whether you want to protect it with a password (8–63 characters; by default it also
-protects the access point from the next restart on). You can also **continue without password** and set one later
-under **Settings → Web UI password**.
+- a **device name**, e.g. *MK3S Workshop*; the network address is derived from it (`http://mk3s-workshop.local`),
+  without a name it stays `http://uprint-xxxx.local`
+- your **Wi-Fi** network and its password
+- optionally a **password** for µprint (8–63 characters; by default it also protects the access point from the next
+  restart on). Leave it empty to use µprint without one; you can set one later under **Settings → Web UI password**.
+
+The page then shows the new address. If you'd rather not join a network, choose **Continue without Wi-Fi**: the access
+point then stays on permanently.
 
 Now plug the printer into the board via USB. As soon as it is connected, the status at the top right turns blue.
 Upload a file, click it in the list, press **Print**, done. If the printer is plugged in but doesn't answer
@@ -89,9 +92,9 @@ background, and offers a **Reconnect** button.
 
 The settings are split into two cards:
 
-- **Settings:** device name (handy if you have several), device type (3D printer or AxiDraw), baud rate, how far the
-  nozzle is lifted when pausing and cancelling and where the head parks, the slicer API key, hostname and access
-  point password, firmware update, and reset.
+- **Settings:** device name (handy if you have several; it also sets the network address), device type (3D printer or AxiDraw), baud rate, how far the
+  nozzle is lifted when pausing and cancelling and where the head parks, the slicer API key, the access point
+  password, the web UI password, firmware update, and reset.
 - **Hardware:** what is wired to the ESP32-S3: microSD (on/off, pins) and status LEDs.
 
 While a print is running, Wi-Fi, settings and hardware can be viewed but not changed.

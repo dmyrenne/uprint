@@ -319,7 +319,7 @@ bool settings_reboot_required(void)
 {
     settings_t cur;
     settings_get(&cur);
-    return strcmp(cur.hostname, s_boot.hostname) != 0 || strcmp(cur.ap_password, s_boot.ap_password) != 0 ||
+    return strcmp(cur.ap_password, s_boot.ap_password) != 0 ||
            cur.sd_enable != s_boot.sd_enable || cur.sd_mosi != s_boot.sd_mosi || cur.sd_miso != s_boot.sd_miso ||
            cur.sd_sclk != s_boot.sd_sclk || cur.sd_cs != s_boot.sd_cs;
 }
@@ -381,4 +381,54 @@ esp_err_t settings_reset(bool all)
 const char *settings_default_hostname(void)
 {
     return s_default_host;
+}
+
+void settings_hostname_from_name(const char *name, char *out, size_t len)
+{
+    static const struct {
+        const char *from, *to;
+    } MAP[] = {
+        {"ä", "ae"}, {"ö", "oe"}, {"ü", "ue"}, {"Ä", "ae"}, {"Ö", "oe"}, {"Ü", "ue"}, {"ß", "ss"},
+        {"µ", "u"}, {"μ", "u"},   // Mikro-Zeichen und griechisches My
+    };
+    size_t n = 0;
+    bool dash = false;
+    for (const char *p = name; *p;) {
+        const char *to = NULL;
+        size_t skip = 1;
+        for (size_t i = 0; i < sizeof(MAP) / sizeof(MAP[0]); i++) {
+            size_t l = strlen(MAP[i].from);
+            if (strncmp(p, MAP[i].from, l) == 0) {
+                to = MAP[i].to;
+                skip = l;
+                break;
+            }
+        }
+        char one[2] = {(char)tolower((unsigned char)*p), '\0'};
+        if (!to && isascii((unsigned char)*p) && isalnum((unsigned char)*p)) {
+            to = one;
+        }
+        p += skip;
+        if (!to) {
+            dash = n > 0;   // Trennzeichen, mehrere hintereinander ergeben einen Bindestrich
+            continue;
+        }
+        if (dash) {
+            if (n + 2 >= len) {
+                break;
+            }
+            out[n++] = '-';
+            dash = false;
+        }
+        for (; *to && n + 1 < len; to++) {
+            out[n++] = *to;
+        }
+        if (*to) {
+            break;
+        }
+    }
+    out[n] = '\0';
+    if (n == 0) {
+        strlcpy(out, s_default_host, len);
+    }
 }

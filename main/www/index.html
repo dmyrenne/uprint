@@ -126,7 +126,7 @@
   .derived.bad b { color: inherit; }
   .derived div + div { margin-top: 4px; }
   /* Einrichtung über das Captive Portal: nur die WLAN-Karte */
-  body:not(.setup) .setup-only { display: none !important; }
+  body:not(.setup) .setup-only, body.setup .no-setup { display: none !important; }
   body.setup main > :not(#setupSlot):not(#messages), body.setup .foot, body.setup .stats { display: none; }
   #setupSlot { max-width: 560px; margin: 0 auto; width: 100%; }
   /* Anmeldung bzw. Passwort festlegen (#31): steht allein auf der Seite, bis es erledigt ist */
@@ -501,9 +501,15 @@
 
   <div class="col side">
   <details class="card" id="wifiBox">
-    <summary data-i18n="h.wifi"></summary>
+    <summary><span class="no-setup" data-i18n="h.wifi"></span><span class="setup-only" data-i18n="setup.title"></span></summary>
     <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <p class="hint setup-only" id="setupIntro" data-i18n="setup.intro" style="margin:0 0 12px"></p>
+    <!-- Ersteinrichtung über das Captive Portal: Name, WLAN und freiwilliges Passwort auf einer Seite -->
+    <div class="grid setup-only" id="setupNameBox" style="margin-bottom:16px">
+      <label class="full"><span data-i18n="set.device_name"></span><input type="text" id="setupName" maxlength="32" placeholder="µprint" autocomplete="off"></label>
+      <p class="hint full" id="setupAddr"></p>
+    </div>
+    <p class="sub setup-only" id="setupWifiSub" data-i18n="h.wifi" style="margin:0 0 8px"></p>
     <div class="derived" id="wifiStatus"></div>
     <div class="handoff" id="handoff" hidden>
       <p id="handoffText" style="margin:0"></p>
@@ -520,6 +526,13 @@
       <label class="full" id="ssidRow" hidden><span data-i18n="wifi.ssid"></span><input type="text" id="wifiSsid" maxlength="32" autocomplete="off"></label>
       <label class="full"><span data-i18n="wifi.password"></span><input type="password" id="wifiPass" maxlength="63" autocomplete="off"></label>
       <label class="check full"><input type="checkbox" id="wifiShow"> <span data-i18n="wifi.show"></span></label>
+    </div>
+    <div class="grid setup-only" style="margin-top:16px">
+      <p class="sub full" data-i18n="setup.pw"></p>
+      <label><span data-i18n="auth.password"></span><input type="password" id="setupPass" maxlength="63" autocomplete="new-password"></label>
+      <label><span data-i18n="auth.repeat"></span><input type="password" id="setupRep" maxlength="63" autocomplete="new-password"></label>
+      <label class="check full"><input type="checkbox" id="setupAp" checked> <span data-i18n="auth.ap"></span></label>
+      <p class="hint full" data-i18n="setup.pw.hint"></p>
     </div>
     <div class="row" style="margin-top:12px">
       <button type="button" class="primary" id="wifiConnect" data-i18n="wifi.connect"></button>
@@ -539,6 +552,7 @@
     <form id="setForm" class="grid" autocomplete="off" onsubmit="return false">
       <p class="sub full" data-i18n="set.device"></p>
       <label class="full"><span data-i18n="set.device_name"></span><input type="text" name="device_name" maxlength="32" placeholder="µprint"></label>
+      <p class="hint full" id="setAddr"></p>
       <p class="hint full" data-i18n="set.device.hint"></p>
 
       <p class="sub full" data-i18n="set.printer"></p>
@@ -583,8 +597,7 @@
       <p class="hint full" id="slicerHint"></p>
 
       <p class="sub full" data-i18n="set.network"></p>
-      <label><span data-i18n="set.hostname"></span><input type="text" name="hostname" maxlength="32" spellcheck="false"></label>
-      <label><span data-i18n="set.ap_password"></span><input type="password" name="ap_password" maxlength="63"></label>
+      <label class="full"><span data-i18n="set.ap_password"></span><input type="password" name="ap_password" maxlength="63"></label>
       <p class="hint full" data-i18n="set.network.hint"></p>
     </form>
     <div class="row set-actions" id="setActions">
@@ -1167,6 +1180,7 @@ function renderSetup() {
     if (setupMode) { $('setupSlot').append(box); box.open = true; }   // gesucht wird beim ersten Laden ohne Verbindung
     else { $('setBox').before(box); handoffAt = 0; }
   }
+  $('wifiConnect').textContent = t(setupMode ? 'setup.go' : 'wifi.connect');
   const handoff = setupMode && w.connected && w.ap && w.ap_off_in >= 0;
   if (handoff) {
     handoffAt = Date.now() + w.ap_off_in * 1000;
@@ -1176,7 +1190,7 @@ function renderSetup() {
   }
   if (handoff || !handoffAt) {   // nach Ablauf stehen lassen, solange die Seite noch im Einrichtungsmodus ist
     $('handoff').hidden = !handoff;
-    for (const id of ['wifiForm', 'wifiStatus', 'setupIntro']) $(id).hidden = handoff;
+    for (const id of ['wifiForm', 'wifiStatus', 'setupIntro', 'setupNameBox', 'setupWifiSub']) $(id).hidden = handoff;
   }
   tickHandoff();
 }
@@ -1199,6 +1213,7 @@ for (const b of document.querySelectorAll('[data-copy]')) {
 $('wifiBox').querySelector('summary').onclick = (e) => { if (setupMode) e.preventDefault(); };
 $('wifiApOnly').onclick = async () => {
   try {
+    if (!await saveSetup()) return;
     await api('POST', '/api/wifi/ap-only');
     say(t('setup.apOnly.done', { ssid: wifi ? wifi.ap_ssid : 'uprint', ip: wifi ? wifi.ap_ip : '192.168.4.1' }));
     await loadWifi();
@@ -1259,10 +1274,34 @@ $('wifiScan').onclick = scan;
 $('wifiBox').ontoggle = () => { if ($('wifiBox').open && !scanned) scan(); };
 $('wifiShow').onchange = () => { $('wifiPass').type = $('wifiShow').checked ? 'text' : 'password'; };
 
+// Ersteinrichtung: Name und Passwort vor dem WLAN speichern (das WLAN verbindet neu). false bei Eingabefehlern.
+async function saveSetup() {
+  if (!setupMode) return true;
+  const pass = $('setupPass').value, ap = $('setupAp').checked;
+  if (pass && pass.length < 8) { say(t('auth.short'), true); return false; }
+  if (pass !== $('setupRep').value) { say(t('auth.mismatch'), true); return false; }
+  const name = $('setupName').value.trim();
+  if (settings && name !== settings.device_name) {
+    settings = await api('POST', '/api/settings', new URLSearchParams({ device_name: name }));
+    writeSettings(settings); renderSettings();
+  }
+  if (pass) {
+    await api('POST', '/api/auth/password', new URLSearchParams({ password: pass, ap: ap ? '1' : '0' }));
+    auth = { password: true, session: true, setup: false };
+  } else if (auth && auth.setup) {
+    await api('POST', '/api/auth/skip');
+    auth.setup = false;
+  }
+  $('setupPass').value = $('setupRep').value = '';
+  renderPw();
+  return true;
+}
+
 $('wifiConnect').onclick = async () => {
   const v = $('wifiNet').value, ssid = v === OTHER ? $('wifiSsid').value.trim() : v;
   if (!ssid) { say(t('wifi.needSsid'), true); return; }
   try {
+    if (!await saveSetup()) return;
     await api('POST', '/api/wifi', new URLSearchParams({ ssid, password: $('wifiPass').value }));
     $('wifiPass').value = '';
     say(t('wifi.saved', { ssid }));
@@ -1279,7 +1318,7 @@ async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1
 // ---------- Einstellungen ----------
 const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y',
   'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay',
-  'hostname', 'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs',
+  'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs',
   'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness', 'led_max_ma', 'led_ma'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm'), hwForm = $('hwForm');
@@ -1336,7 +1375,7 @@ function renderSettings() {
     bar.classList.toggle('floating', mod);
   }
   $('rebootBox').hidden = $('hwRebootBox').hidden = !settings || !settings.reboot_required;
-  renderOta(); renderSlicer(); renderName(); renderAxi();
+  renderOta(); renderSlicer(); renderName(); renderAxi(); renderAddr();
 }
 async function loadSettings() {
   try { settings = await api('GET', '/api/settings'); } catch { return; }
@@ -1618,6 +1657,25 @@ window.addEventListener('hashchange', ledView);
 
 // ---------- Gerätename ----------
 // Gespeicherter Name oben und im Browser-Tab; ohne Namen wie gewohnt „µprint“
+// Wie settings_hostname_from_name() in settings.c
+const HOST_MAP = { 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss', 'µ': 'u', 'μ': 'u' };
+function hostFromName(name, def) {
+  const h = name.toLowerCase().replace(/[äöüßµμ]/g, (c) => HOST_MAP[c]).replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+/, '').slice(0, 32).replace(/-+$/, '');
+  return h || def;
+}
+// Adresse zum Namen: unverändert die tatsächliche, sonst die künftige
+function addrFor(name) {
+  if (!settings) return '';
+  const host = name === settings.device_name ? settings.hostname : hostFromName(name, settings.default_hostname);
+  return t('set.addr', { host });
+}
+function renderAddr() {
+  $('setAddr').textContent = addrFor(setForm.elements.device_name.value.trim());
+  $('setupAddr').textContent = addrFor($('setupName').value.trim());
+}
+$('setupName').oninput = renderAddr;
+
 function renderName() {
   const name = settings && settings.device_name;
   $('devName').textContent = name || 'µprint';
