@@ -13,11 +13,17 @@ USB (for example the Prusa MK3S) and with AxiDraw / NextDraw pen plotters (EiBot
 - **Web interface** in English and German, for desktop and phone, no app needed
 - **Storage** on microSD and, depending on the board, internal flash (up to about 12 MB)
 - **Print control:** start, pause (nozzle lifted), resume, cancel (heaters off, lift, park), progress and time left
+  (taken from the slicer's `M73` when the file has it)
+- **Printer-side actions:** filament runout, pause and stop on the printer's own display, and questions the printer
+  asks (answered in the browser)
 - **Slicer upload** via PrusaLink and OctoPrint compatible APIs, found automatically on the network (mDNS)
 - **Pen plotter mode** for AxiDraw / NextDraw with G-code from [µplot](https://github.com/dmyrenne/uplot)
 - **Status LEDs** (SK6812, WS2812, WS2811, RGB or RGBW) with a progress bar and an identification pattern for print farms
-- **Wi-Fi setup** through the device's own access point with a captive portal, or run it access point only
-- **Updates over the air** from the web interface, plus a [web flasher](https://dmyrenne.github.io/uprint/) for the first install
+- **Setup on one page** through the device's own access point with a captive portal: device name, Wi-Fi and an
+  optional password; or run it access point only
+- **Optional password** for the web interface; print status and file list stay readable without signing in
+- **Updates over the air** from the web interface, with automatic rollback if a new version fails to start, plus a
+  [web flasher](https://dmyrenne.github.io/uprint/) for the first install
 - **Safe while printing:** Wi-Fi and settings are locked during a print; if the printer is plugged in but doesn't
   answer, µprint says so and keeps retrying
 
@@ -36,9 +42,12 @@ There are three firmware variants:
 | **N16R8** | ESP32-S3 with 16 MB flash and 8 MB PSRAM | microSD and about 12 MB internal |
 | **XIAO** | Seeed Studio XIAO ESP32S3 (Sense) | microSD slot on the Sense camera board and about 4 MB internal |
 
-The XIAO variant is still experimental: whether every printer is detected on the XIAO's single USB-C port hasn't
-been verified on real hardware yet. Power the XIAO through its 5 V pin and keep the antenna (U.FL) connected,
-otherwise Wi-Fi is very weak.
+The XIAO variant is still experimental. Keep its antenna (U.FL) connected, otherwise Wi-Fi is very weak. The XIAO
+has no USB-serial chip: its USB-C socket and the D+/D− pads on the back are wired straight to the ESP32-S3's USB pins,
+which µprint uses as the USB host for the printer. Connect the printer to the USB-C socket (with an OTG adapter) or
+to a USB-A socket soldered to the pads, and **power the XIAO through its 5 V pin**. Don't power it through USB-C with a
+charger or a computer while µprint is running: both put signals on the same data lines, and the XIAO's Wi-Fi access
+point may then not show up at all or keep disappearing.
 
 By default the SD module goes to these pins; you can choose others later under **Hardware**:
 
@@ -90,24 +99,42 @@ Upload a file, click it in the list, press **Print**, done. If the printer is pl
 (switched off, wrong baud rate), µprint shows *Printer not responding* after 30 seconds, keeps retrying in the
 background, and offers a **Reconnect** button.
 
+µprint also follows what happens on the printer itself (Marlin and Prusa *host actions*): pausing or stopping on the
+printer's display pauses or cancels the print in µprint too, and on a filament runout the printer parks and µprint
+waits. Notes from the printer appear in the print card, and when the printer asks something (for example whether the
+new filament came out clean), the question shows up there with its buttons. If the slicer wrote progress and time
+left into the file (`M73`), µprint shows those values instead of its own estimate.
+
 The settings are split into two cards:
 
-- **Settings:** device name (handy if you have several; it also sets the network address), device type (3D printer or AxiDraw), baud rate, how far the
-  nozzle is lifted when pausing and cancelling and where the head parks, the slicer API key, the access point
-  password, the web UI password, firmware update, and reset.
+- **Settings:** device name (handy if you have several; it also sets the network address), device type (3D printer
+  or AxiDraw), baud rate, how far the nozzle is lifted when pausing and cancelling and where the head parks, the
+  slicer API key, the access point password, the web UI password, firmware update, and reset.
 - **Hardware:** what is wired to the ESP32-S3: microSD (on/off, pins) and status LEDs.
 
 While a print is running, Wi-Fi, settings and hardware can be viewed but not changed.
 
-With a password, everything except the print status and the file list needs signing in; a sign-in lasts until you
-sign out or the password is changed (**Settings → Web UI password**, which signs out all other devices; the password
-can be removed there too). After several wrong
-attempts, signing in is blocked for a while. The slicer API keeps using its API key.
+## Password
+
+The password for the web interface is optional. Without one, anyone on your network can print, change the Wi-Fi or
+install other firmware. You can set it during setup or later under **Settings → Web UI password**, where you can
+also change or remove it and sign out.
+
+- With a password, only the print status and the file list (including downloads) are readable without signing in.
+  Everything else asks you to sign in first.
+- A sign-in lasts on that browser until you sign out, and survives restarts. Changing the password signs out all
+  other devices.
+- After five wrong attempts, signing in is blocked for 30 seconds, doubling with every further wrong attempt up to
+  15 minutes.
+- The slicer API isn't affected: slicers keep using the API key.
+- The access point has its own password (**Settings → Network**). Out of the box it is open; tick **Also use it for
+  the access point** when setting the web password to protect it from the next restart on.
+- Forgot the password? **Reset everything**, or hold `BOOT` for 10 seconds (see below).
 
 ## Printing from your slicer
 
 µprint speaks the PrusaLink and OctoPrint APIs, so your slicer can send G-code straight to the printer. In
-**PrusaSlicer**, add a physical printer: host type **PrusaLink**, hostname `uprint-xxxx.local` and as API key the value
+**PrusaSlicer**, add a physical printer: host type **PrusaLink**, the address of µprint (e.g. `mk3s-workshop.local`) and as API key the value
 from µprint under **Settings → Slicer**. PrusaSlicer also finds µprint on the network via "Browse". **OrcaSlicer**
 and other slicers use the host type **OctoPrint** with the same details. When uploading you can choose whether the
 print starts right away.
@@ -168,8 +195,8 @@ seconds. The colour of the first LED appears as a dot next to the device name in
 - **Reset settings** (under **Settings**) puts all settings back to factory state, including the LED appearance;
   Wi-Fi, API key and passwords are kept, so µprint stays reachable.
 - **Reset everything** also forgets the Wi-Fi and the passwords and creates a new API key; µprint then starts its open
-  access point for setup again. Forgot the password, or no web interface: hold the `BOOT` button for 10 seconds while µprint is running (this works as long
-  as GPIO 0 isn't used as an SD or LED pin).
+  access point for setup again. Forgot the password, or no web interface: hold the `BOOT` button for 10 seconds
+  while µprint is running (this works as long as GPIO 0 isn't used as an SD or LED pin).
 - Files are kept in both cases. To remove them, use **Clear …** next to a storage in the file list: it deletes all
   G-code files on that storage, or formats it completely if you tick the option (also helps with a broken file
   system). It's locked while that storage is being printed from or uploaded to.
@@ -179,7 +206,10 @@ seconds. The colour of the first LED appears as a dot next to the device name in
 New versions appear under [Releases](https://github.com/dmyrenne/uprint/releases). Updating needs no cable: download
 the `uprint-…-ota.bin` file for your variant (`basic`, `n16r8` or `xiao` in the name) and install it in µprint under
 **Settings → Firmware**, which also shows the installed variant. µprint restarts afterwards; your settings, Wi-Fi and
-all files are kept. You can also simply use the web flasher again, but without erasing the device.
+all files are kept. A new version only counts as good once it has started up completely; if it crashes before that,
+µprint goes back to the previous version by itself and says so under **Settings → Firmware**. This needs the
+bootloader from v0.8.0 or later, so devices flashed with an older version have to be flashed once with the web flasher
+or a cable. You can also simply use the web flasher again, but without erasing the device.
 
 The web flasher also lets you pick an older version if you want to go back. Pre-releases for testing new features
 appear as *pre-release* and are listed there under **Alpha**. For normal use, choose **Release**.
