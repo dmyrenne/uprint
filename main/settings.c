@@ -19,7 +19,7 @@ static const char *TAG = "settings";
 
 static const settings_t DEFAULTS = {
     .hostname = "uprint",
-    .ap_password = "uprint123",
+    .ap_password = "",   // offen bis zur Ersteinrichtung, die ein Passwort festlegt (#31)
     .device_type = DEVICE_PRINTER,
     .baud = 115200,
     .pause_lift = 5,
@@ -353,7 +353,7 @@ esp_err_t settings_new_api_key(void)
     return ESP_OK;
 }
 
-esp_err_t settings_reset(bool new_api_key)
+esp_err_t settings_reset(bool all)
 {
     settings_t cur;
     settings_get(&cur);
@@ -363,9 +363,13 @@ esp_err_t settings_reset(bool new_api_key)
         return err;
     }
     err = nvs_erase_all(nvs);
-    // Ohne gespeicherten Schlüssel erzeugt settings_init() beim nächsten Start einen neuen
-    if (err == ESP_OK && !new_api_key) {
+    // Ohne gespeicherten Schlüssel erzeugt settings_init() beim nächsten Start einen neuen. Das Passwort des
+    // Access Points bleibt wie das der Weboberfläche, sonst wäre er nach dem Neustart offen.
+    if (err == ESP_OK && !all) {
         err = nvs_set_str(nvs, "api_key", cur.api_key);
+    }
+    if (err == ESP_OK && !all) {
+        err = nvs_set_str(nvs, "ap_password", cur.ap_password);
     }
     if (err == ESP_OK) {
         err = nvs_commit(nvs);

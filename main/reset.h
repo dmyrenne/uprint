@@ -6,9 +6,10 @@
 
 /*
  * Zurücksetzen auf den Werkszustand (#13). Dateien auf SD-Karte und im internen Speicher bleiben erhalten.
- *   settings: Einstellungen und LED-Darstellung; WLAN und API-Schlüssel bleiben, das Gerät bleibt erreichbar
- *   all:      zusätzlich WLAN (auch "nur Access Point") und ein neuer API-Schlüssel; danach Access Point mit
- *             Captive Portal zur Ersteinrichtung
+ *   settings: Einstellungen und LED-Darstellung; WLAN, API-Schlüssel und die Passwörter von Weboberfläche und
+ *             Access Point bleiben, das Gerät bleibt erreichbar
+ *   all:      zusätzlich WLAN (auch "nur Access Point"), das Passwort der Weboberfläche und ein neuer
+ *             API-Schlüssel; danach offener Access Point mit Captive Portal zur Ersteinrichtung
  * Danach startet µprint kurz verzögert neu (die HTTP-Antwort soll noch ankommen).
  * ESP_ERR_INVALID_STATE während eines Drucks.
  */

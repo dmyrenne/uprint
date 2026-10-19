@@ -17,6 +17,7 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "auth.h"
 #include "axidraw.h"
 #include "captive.h"
 #include "http_util.h"
@@ -993,6 +994,169 @@ static esp_err_t reboot_post(httpd_req_t *req)
     return http_send_ok(req);
 }
 
+// ---------- Anmeldung (#31) ----------
+
+#define SESSION_COOKIE "uprint_session"
+
+// Ohne gesetztes Passwort ist alles offen, sonst braucht es ein gültiges Sitzungs-Cookie
+static bool session_ok(httpd_req_t *req)
+{
+    if (!auth_password_set()) {
+        return true;
+    }
+    char token[AUTH_TOKEN_LEN + 1];
+    size_t len = sizeof(token);
+    return httpd_req_get_cookie_val(req, SESSION_COOKIE, token, &len) == ESP_OK && auth_token_valid(token);
+}
+
+// Vor jeden geschützten Handler gesetzt; user_ctx ist der eigentliche Handler
+static esp_err_t guarded(httpd_req_t *req)
+{
+    if (!session_ok(req)) {
+        return http_send_error(req, "401 Unauthorized", "Bitte anmelden");
+    }
+    esp_err_t (*handler)(httpd_req_t *) = req->user_ctx;
+    return handler(req);
+}
+
+// Ohne Anmeldung erreichbar: die Oberfläche selbst, Status und Dateien lesen und die Anmeldung
+static bool route_open(const httpd_uri_t *r)
+{
+    if (r->handler == asset_get || strcmp(r->uri, "/api/auth") == 0) {
+        return true;
+    }
+    return r->method == HTTP_GET && (strcmp(r->uri, "/api/status") == 0 || strcmp(r->uri, "/api/files") == 0 ||
+                                     strcmp(r->uri, "/api/download") == 0);
+}
+
+// Neues Sitzungs-Cookie setzen und {"ok":true} senden
+static esp_err_t send_session(httpd_req_t *req)
+{
+    char token[AUTH_TOKEN_LEN + 1];
+    char cookie[AUTH_TOKEN_LEN + 96];
+    auth_new_token(token);
+    snprintf(cookie, sizeof(cookie), SESSION_COOKIE "=%s; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict", token);
+    httpd_resp_set_hdr(req, "Set-Cookie", cookie);
+    return http_send_ok(req);
+}
+
+static esp_err_t auth_get(httpd_req_t *req)
+{
+    char body[80];
+    snprintf(body, sizeof(body), "{\"password\":%s,\"session\":%s,\"setup\":%s}", auth_password_set() ? "true" : "false",
+             auth_password_set() && session_ok(req) ? "true" : "false", auth_setup_pending() ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, body);
+}
+
+// Prüft das Passwort; bei Fehler ist die Antwort schon gesendet
+static bool password_ok(httpd_req_t *req, const char *password, esp_err_t *ret)
+{
+    int wait_s;
+    switch (auth_check_password(password, &wait_s)) {
+    case AUTH_OK:
+        return true;
+    case AUTH_LOCKED: {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "Zu viele Fehlversuche, bitte in %d s erneut versuchen", wait_s);
+        *ret = http_send_error(req, "429 Too Many Requests", msg);
+        return false;
+    }
+    default:
+        *ret = http_send_error(req, "403 Forbidden", "Falsches Passwort");
+        return false;
+    }
+}
+
+// Anmelden, Body: password=<…>
+static esp_err_t auth_post(httpd_req_t *req)
+{
+    char body[256];
+    char pass[AUTH_PASSWORD_MAX * 3 + 1];
+    if (!http_recv_body(req, body, sizeof(body)) || httpd_query_key_value(body, "password", pass, sizeof(pass)) != ESP_OK) {
+        return http_send_error(req, "400 Bad Request", "Passwort fehlt");
+    }
+    http_url_decode(pass);
+    if (!auth_password_set()) {
+        return http_send_ok(req);
+    }
+    esp_err_t ret;
+    if (!password_ok(req, pass, &ret)) {
+        return ret;
+    }
+    ESP_LOGI(TAG, "Angemeldet");
+    return send_session(req);
+}
+
+// Abmelden: nur dieses Gerät, das Cookie wird gelöscht
+static esp_err_t auth_delete(httpd_req_t *req)
+{
+    httpd_resp_set_hdr(req, "Set-Cookie", SESSION_COOKIE "=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict");
+    return http_send_ok(req);
+}
+
+// "Ohne Passwort fortfahren": nicht mehr nach einem Passwort fragen
+static esp_err_t auth_skip_post(httpd_req_t *req)
+{
+    if (auth_password_set()) {
+        return http_send_error(req, "409 Conflict", "Es ist schon ein Passwort gesetzt");
+    }
+    return send_result(req, auth_skip(), "");
+}
+
+// Passwort festlegen oder ändern, Body: password=<neu>&current=<bisher>&ap=1 (auch für den Access Point).
+// Meldet alle anderen Sitzungen ab, diese bekommt ein neues Cookie. remove=1&current=<bisher> entfernt es.
+static esp_err_t password_post(httpd_req_t *req)
+{
+    char body[640];
+    char pass[AUTH_PASSWORD_MAX * 3 + 1] = "";
+    char current[AUTH_PASSWORD_MAX * 3 + 1] = "";
+    char ap[4] = "0", remove[4] = "0";
+    if (!http_recv_body(req, body, sizeof(body))) {
+        return http_send_error(req, "400 Bad Request", "Ungültige Anfrage");
+    }
+    httpd_query_key_value(body, "remove", remove, sizeof(remove));
+    bool removing = strcmp(remove, "1") == 0;
+    if (!removing && httpd_query_key_value(body, "password", pass, sizeof(pass)) != ESP_OK) {
+        return http_send_error(req, "400 Bad Request", "Passwort fehlt");
+    }
+    http_url_decode(pass);
+    httpd_query_key_value(body, "ap", ap, sizeof(ap));
+    size_t len = strlen(pass);
+    if (!removing && (len < AUTH_PASSWORD_MIN || len > AUTH_PASSWORD_MAX)) {
+        return http_send_error(req, "400 Bad Request", "Passwort: 8–63 Zeichen");
+    }
+    if (auth_password_set()) {
+        httpd_query_key_value(body, "current", current, sizeof(current));
+        http_url_decode(current);
+        esp_err_t ret;
+        if (!password_ok(req, current, &ret)) {
+            return ret;
+        }
+    }
+    if (removing) {
+        // Das Passwort des Access Points bleibt, es lässt sich unter "Netzwerk" ändern
+        if (auth_remove() != ESP_OK) {
+            return http_send_error(req, "500 Internal Server Error", "Passwort konnte nicht entfernt werden");
+        }
+        return auth_delete(req);
+    }
+    if (strcmp(ap, "1") == 0) {
+        // Gleiches Passwort für den Access Point, der dann nicht mehr offen ist (wirksam nach Neustart)
+        settings_t c;
+        settings_get(&c);
+        strlcpy(c.ap_password, pass, sizeof(c.ap_password));
+        const char *error;
+        if (settings_update(&c, &error) != ESP_OK) {
+            return http_send_error(req, "500 Internal Server Error", error);
+        }
+    }
+    if (auth_set_password(pass) != ESP_OK) {
+        return http_send_error(req, "500 Internal Server Error", "Passwort konnte nicht gespeichert werden");
+    }
+    return send_session(req);
+}
+
 // Prüfadressen der Betriebssysteme und die Antwort, die "Internet erreichbar" bedeutet
 typedef struct {
     const char *path;
@@ -1044,7 +1208,7 @@ static esp_err_t not_found(httpd_req_t *req, httpd_err_code_t err)
 esp_err_t web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 48;
+    cfg.max_uri_handlers = 56;
     cfg.uri_match_fn = httpd_uri_match_wildcard;   // für PUT /api/v1/files/*
     cfg.stack_size = 8192;
     cfg.recv_wait_timeout = 10;
@@ -1091,9 +1255,19 @@ esp_err_t web_start(void)
         {.uri = "/api/leds/reset",    .method = HTTP_POST, .handler = leds_reset_post},
         {.uri = "/api/leds/preview",  .method = HTTP_POST, .handler = leds_preview_post},
         {.uri = "/api/led/find",      .method = HTTP_POST, .handler = led_find_post},
+        {.uri = "/api/auth",          .method = HTTP_GET,    .handler = auth_get},
+        {.uri = "/api/auth",          .method = HTTP_POST,   .handler = auth_post},
+        {.uri = "/api/auth",          .method = HTTP_DELETE, .handler = auth_delete},
+        {.uri = "/api/auth/password", .method = HTTP_POST,   .handler = password_post},
+        {.uri = "/api/auth/skip",     .method = HTTP_POST,   .handler = auth_skip_post},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
-        ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &routes[i]), TAG, "route %s", routes[i].uri);
+        httpd_uri_t r = routes[i];
+        if (!route_open(&r)) {
+            r.user_ctx = (void *)r.handler;
+            r.handler = guarded;
+        }
+        ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &r), TAG, "route %s", r.uri);
     }
     ESP_RETURN_ON_ERROR(slicer_api_register(server), TAG, "Slicer-API");
     httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, not_found);

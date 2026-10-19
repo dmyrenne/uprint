@@ -72,11 +72,15 @@ and after flashing release `BOOT` and press `RESET`, otherwise it stays in the b
 ## Setup
 
 After starting, µprint opens its own Wi-Fi called **uprint-xxxx**, where the last four characters come from the
-device's MAC address so several devices don't clash (password `uprint123`). Connect to it; your phone or laptop
-should open the setup page by itself, otherwise go to http://192.168.4.1. Under **Wi-Fi** pick your home network and
-enter its password. The page then shows the new address, and from then on you reach µprint at
+device's MAC address so several devices don't clash. The access point is open until you've set µprint up. Connect to
+it; your phone or laptop should open the setup page by itself, otherwise go to http://192.168.4.1. Under **Wi-Fi**
+pick your home network and enter its password. The page then shows the new address, and from then on you reach µprint at
 http://uprint-xxxx.local (same name as the access point; you can change it under **Settings**). If you'd rather not
 join a network, choose **Continue without Wi-Fi**: the access point then stays on permanently.
+
+Afterwards µprint asks once whether you want to protect it with a password (8–63 characters; by default it also
+protects the access point from the next restart on). You can also **continue without password** and set one later
+under **Settings → Web UI password**.
 
 Now plug the printer into the board via USB. As soon as it is connected, the status at the top right turns blue.
 Upload a file, click it in the list, press **Print**, done. If the printer is plugged in but doesn't answer
@@ -91,6 +95,11 @@ The settings are split into two cards:
 - **Hardware:** what is wired to the ESP32-S3: microSD (on/off, pins) and status LEDs.
 
 While a print is running, Wi-Fi, settings and hardware can be viewed but not changed.
+
+With a password, everything except the print status and the file list needs signing in; a sign-in lasts until you
+sign out or the password is changed (**Settings → Web UI password**, which signs out all other devices; the password
+can be removed there too). After several wrong
+attempts, signing in is blocked for a while. The slicer API keeps using its API key.
 
 ## Printing from your slicer
 
@@ -154,9 +163,9 @@ seconds. The colour of the first LED appears as a dot next to the device name in
 ## Reset and storage
 
 - **Reset settings** (under **Settings**) puts all settings back to factory state, including the LED appearance;
-  Wi-Fi and API key are kept, so µprint stays reachable.
-- **Reset everything** also forgets the Wi-Fi and creates a new API key; µprint then starts its access point for setup
-  again. Without the web interface, hold the `BOOT` button for 10 seconds while µprint is running (this works as long
+  Wi-Fi, API key and passwords are kept, so µprint stays reachable.
+- **Reset everything** also forgets the Wi-Fi and the passwords and creates a new API key; µprint then starts its open
+  access point for setup again. Forgot the password, or no web interface: hold the `BOOT` button for 10 seconds while µprint is running (this works as long
   as GPIO 0 isn't used as an SD or LED pin).
 - Files are kept in both cases. To remove them, use **Clear …** next to a storage in the file list: it deletes all
   G-code files on that storage, or formats it completely if you tick the option (also helps with a broken file

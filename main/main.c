@@ -2,6 +2,7 @@
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"
 
+#include "auth.h"
 #include "printer.h"
 #include "reset.h"
 #include "settings.h"
@@ -22,6 +23,7 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(err);
     settings_init();
+    auth_init();
 
     // Ohne Speicher läuft die Weboberfläche weiter und zeigt den Fehler an
     if (storage_init() != ESP_OK) {

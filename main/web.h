@@ -20,5 +20,14 @@
  *   POST   /api/settings            geänderte Felder urlencodiert, Antwort wie GET
  *   POST   /api/reboot              Neustart (nicht während eines Drucks)
  *   POST   /api/ota                 Firmware-Image im Body, danach Neustart
+ *   GET    /api/auth                {"password": gesetzt?, "session": angemeldet?, "setup": nach einem fragen?}
+ *   POST   /api/auth                password=<…> anmelden, setzt das Sitzungs-Cookie
+ *   DELETE /api/auth                abmelden (Cookie löschen)
+ *   POST   /api/auth/password       password=<neu>&current=<bisher>&ap=1 festlegen bzw. ändern, meldet alle ab;
+ *                                   remove=1&current=<bisher> entfernt es
+ *   POST   /api/auth/skip           "Ohne Passwort fortfahren": nicht mehr nach einem Passwort fragen
+ *
+ * Ist ein Passwort gesetzt (auth.h), brauchen alle Aufrufe außer der Oberfläche, /api/auth, GET /api/status,
+ * GET /api/files und GET /api/download ein gültiges Sitzungs-Cookie, sonst 401.
  */
 esp_err_t web_start(void);
