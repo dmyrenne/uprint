@@ -3,6 +3,7 @@
 #include "nvs_flash.h"
 
 #include "auth.h"
+#include "diag.h"
 #include "printer.h"
 #include "reset.h"
 #include "settings.h"
@@ -22,7 +23,12 @@ void app_main(void)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
+    // Zuerst, damit der Log-Puffer alle folgenden Meldungen mitbekommt (#36)
+    diag_init();
     settings_init();
+    settings_t cfg;
+    settings_get(&cfg);
+    diag_console(cfg.console);
     auth_init();
 
     // Ohne Speicher läuft die Weboberfläche weiter und zeigt den Fehler an

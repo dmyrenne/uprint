@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <inttypes.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,12 +15,15 @@
 #include "sdkconfig.h"
 
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
+#include "esp_idf_version.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "auth.h"
 #include "axidraw.h"
 #include "captive.h"
+#include "diag.h"
 #include "http_util.h"
 #include "printer.h"
 #include "reset.h"
@@ -28,6 +32,7 @@
 #include "variant.h"
 #include "status_led.h"
 #include "storage.h"
+#include "usb_serial.h"
 #include "web.h"
 #include "wifi.h"
 
@@ -111,7 +116,8 @@ static esp_err_t status_get(httpd_req_t *req)
     // Meldung und Rückfrage des Druckers (#33), als eigene Stücke, damit der Puffer oben klein bleibt
     static char esc[sizeof(st.prompt_text) * 6];
     http_json_escape(esc, sizeof(esc), st.notice);
-    snprintf(body, sizeof(body), ",\"notice\":\"%s\",\"prompt\":", esc);
+    snprintf(body, sizeof(body), ",\"notice\":\"%s\",\"user_wait\":%s,\"prompt\":", esc,
+             st.user_wait ? "true" : "false");
     httpd_resp_sendstr_chunk(req, body);
     if (!st.prompt) {
         httpd_resp_sendstr_chunk(req, "null}");
@@ -998,6 +1004,179 @@ static esp_err_t reboot_post(httpd_req_t *req)
     return http_send_ok(req);
 }
 
+// ---------- Diagnose (#36) ----------
+
+static bool query_u64(httpd_req_t *req, const char *key, uint64_t *out)
+{
+    char query[96], val[24];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, key, val, sizeof(val)) != ESP_OK) {
+        return false;
+    }
+    char *end;
+    *out = strtoull(val, &end, 10);
+    return end != val && *end == '\0';
+}
+
+// Sendet das Log von pos bis end in Stücken; cut = die erste (angeschnittene) Zeile weglassen
+static esp_err_t send_log(httpd_req_t *req, uint64_t pos, uint64_t end, bool cut)
+{
+    static char buf[4096];
+    while (pos < end) {
+        uint64_t want = end - pos;
+        size_t n = diag_log_read(&pos, buf, want < sizeof(buf) ? (size_t)want : sizeof(buf));
+        if (n == 0) {
+            break;
+        }
+        char *p = buf;
+        if (cut) {
+            char *nl = memchr(buf, '\n', n);
+            if (!nl) {
+                continue;
+            }
+            cut = false;
+            n -= nl + 1 - buf;
+            p = nl + 1;
+        }
+        if (n > 0 && httpd_resp_send_chunk(req, p, n) != ESP_OK) {
+            return ESP_FAIL;
+        }
+    }
+    return ESP_OK;
+}
+
+// ?since=<pos>: neue Zeilen ab dieser Position, sonst die letzten ?tail=<bytes> (Standard 64 KB).
+// X-Log-Next ist die Position für die nächste Abfrage, X-Log-Serial der Mitschnitt der Druckerkommunikation.
+static esp_err_t log_get(httpd_req_t *req)
+{
+    static char next[24], serial[4];
+    uint64_t end = diag_log_end();
+    uint64_t start = diag_log_start();
+    uint64_t pos, tail = 64 * 1024;
+    bool cut = false;
+    if (!query_u64(req, "since", &pos)) {
+        query_u64(req, "tail", &tail);
+        pos = end - start > tail ? end - tail : start;
+        cut = pos > start;
+    } else if (pos > end) {
+        pos = start;   // nach dem Einschalten beginnt das Log neu
+    }
+    snprintf(next, sizeof(next), "%" PRIu64, end);
+    snprintf(serial, sizeof(serial), "%d", (int)diag_serial());
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "X-Log-Next", next);
+    httpd_resp_set_hdr(req, "X-Log-Serial", serial);
+    if (send_log(req, pos, end, cut) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+static esp_err_t log_delete(httpd_req_t *req)
+{
+    diag_log_clear();
+    return http_send_ok(req);
+}
+
+// ?level=0|1|2 (diag_serial_t)
+static esp_err_t log_serial_post(httpd_req_t *req)
+{
+    uint64_t level;
+    if (!query_u64(req, "level", &level) || level > DIAG_SERIAL_ALL) {
+        return http_send_error(req, "400 Bad Request", "level=0, 1 oder 2");
+    }
+    diag_set_serial((diag_serial_t)level);
+    return http_send_ok(req);
+}
+
+__attribute__((format(printf, 2, 3)))
+static esp_err_t diag_printf(httpd_req_t *req, const char *fmt, ...)
+{
+    char line[256];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    if (n < 0) {
+        return ESP_OK;
+    }
+    return httpd_resp_send_chunk(req, line, (size_t)n < sizeof(line) ? (size_t)n : sizeof(line) - 1);
+}
+
+// Diagnose als Textdatei für Fehlerberichte: Gerät, Zustand, Einstellungen ohne Passwörter und API-Schlüssel (den
+// WLAN-Namen nur, soweit er im Log steht), dann das ganze Log
+static esp_err_t diag_get(httpd_req_t *req)
+{
+    static char disposition[96];
+    settings_t c;
+    wifi_status_t w;
+    printer_status_t ps;
+    char usb[128];
+    settings_get(&c);
+    wifi_get_status(&w);
+    printer_get_status(&ps);
+    usb_serial_info(usb, sizeof(usb));
+    snprintf(disposition, sizeof(disposition), "attachment; filename=\"uprint-diagnose-%s.txt\"", c.hostname);
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Content-Disposition", disposition);
+
+    const esp_app_desc_t *app = esp_app_get_description();
+    int64_t up = esp_timer_get_time() / 1000000;
+    char failed[32 * 6];
+    failed_update(failed, sizeof(failed));
+    diag_printf(req, "µprint Diagnose\n\n");
+    diag_printf(req, "Firmware:      %s (%s), ESP-IDF %s, gebaut %s %s\n", app->version, uprint_variant(),
+                esp_get_idf_version(), app->date, app->time);
+    if (failed[0]) {
+        diag_printf(req, "Rollback:      Update auf %s ist fehlgeschlagen\n", failed);
+    }
+    diag_printf(req, "Laufzeit:      %" PRId64 " h %02" PRId64 " min %02" PRId64 " s\n", up / 3600, up / 60 % 60,
+                up % 60);
+    diag_printf(req, "Neustart:      %s (Start %" PRIu32 " seit dem Einschalten)\n", diag_reset_reason(),
+                diag_boot_count());
+    diag_printf(req, "RAM intern:    %u frei, mindestens %u frei seit dem Start\n",
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+    diag_printf(req, "PSRAM:         %u frei\n", (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    diag_printf(req, "WLAN:          %s, %s, IP %s, %d dBm, letzter Trennungsgrund %d\n",
+                w.connected ? "verbunden" : w.configured ? "nicht verbunden" : "nicht eingerichtet",
+                w.ap_active ? "Access Point offen" : "Access Point zu", w.ip[0] ? w.ip : "-", w.rssi, w.last_reason);
+    diag_printf(req, "USB:           %s, %s\n", usb_serial_connected() ? "verbunden" : "nicht verbunden", usb);
+    diag_printf(req, "Drucker:       %s, %s\n", printer_state_name(ps.state), ps.message);
+    if (ps.file[0]) {
+        diag_printf(req, "Datei:         %s (%s), %" PRIu32 " von %" PRIu32 " Bytes\n", ps.file, storage_id(ps.vol),
+                    ps.file_pos, ps.file_size);
+    }
+    if (ps.notice[0]) {
+        diag_printf(req, "Hinweis:       %s\n", ps.notice);
+    }
+    for (int v = 0; v < STORAGE_COUNT; v++) {
+        if (!storage_present(v)) {
+            continue;
+        }
+        uint64_t total = 0, free = 0;
+        bool ready = storage_ready(v) && storage_usage(v, &total, &free) == ESP_OK;
+        diag_printf(req, "Speicher %-5s %s, %" PRIu64 " von %" PRIu64 " KB frei\n", storage_id(v),
+                    ready ? "bereit" : "nicht bereit", free / 1024, total / 1024);
+    }
+    diag_printf(req, "Passwort:      %s\n", auth_password_set() ? "gesetzt" : "keins");
+    diag_printf(req, "Mitschnitt:    %d\n\nEinstellungen:\n  device_name=%s\n  hostname=%s\n", (int)diag_serial(),
+                c.device_name, c.hostname);
+    for (size_t i = 0; i < SETTINGS_INT_FIELD_COUNT; i++) {
+        const settings_int_field_t *f = &SETTINGS_INT_FIELDS[i];
+        diag_printf(req, "  %s=%d\n", f->key, SETTINGS_INT(&c, f));
+    }
+    uint64_t start = diag_log_start(), end = diag_log_end();
+    diag_printf(req, "\nLog (%" PRIu64 " Bytes, Puffer %u KB, %s):\n", end - start, (unsigned)(diag_log_size() / 1024),
+                diag_log_kept() ? "mit den Läufen vor dem letzten Neustart" : "seit dem Einschalten");
+    if (send_log(req, start, end, start > 0 && end - start >= diag_log_size()) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
 // ---------- Anmeldung (#31) ----------
 
 #define SESSION_COOKIE "uprint_session"
@@ -1264,6 +1443,10 @@ esp_err_t web_start(void)
         {.uri = "/api/auth",          .method = HTTP_DELETE, .handler = auth_delete},
         {.uri = "/api/auth/password", .method = HTTP_POST,   .handler = password_post},
         {.uri = "/api/auth/skip",     .method = HTTP_POST,   .handler = auth_skip_post},
+        {.uri = "/api/log",           .method = HTTP_GET,    .handler = log_get},
+        {.uri = "/api/log",           .method = HTTP_DELETE, .handler = log_delete},
+        {.uri = "/api/log/serial",    .method = HTTP_POST,   .handler = log_serial_post},
+        {.uri = "/api/diag",          .method = HTTP_GET,    .handler = diag_get},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_uri_t r = routes[i];

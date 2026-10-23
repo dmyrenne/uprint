@@ -34,6 +34,7 @@ static const settings_t DEFAULTS = {
     .pen_down = 30,
     .pen_delay = 200,
     .sd_enable = 1,
+    .console = 1,
 #ifdef UPRINT_BOARD_XIAO
     // Steckplatz auf dem Kamerabrett des XIAO ESP32S3 Sense (GPIO 10–18 belegt dort die Kamera)
     .sd_mosi = 9,   // D10
@@ -68,7 +69,7 @@ static char s_default_host[33];   // "uprint-3a5c": eindeutig je Gerät, damit s
 #define FIELD(name) {#name, offsetof(settings_t, name)}
 const settings_int_field_t SETTINGS_INT_FIELDS[] = {
     FIELD(device_type), FIELD(baud), FIELD(pause_lift), FIELD(cancel_lift), FIELD(park_x), FIELD(park_y),
-    FIELD(sd_enable), FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs),
+    FIELD(sd_enable), FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs), FIELD(console),
     FIELD(plot_draw), FIELD(plot_travel), FIELD(plot_accel), FIELD(pen_servo), FIELD(pen_up), FIELD(pen_down), FIELD(pen_delay),
     FIELD(led_pin), FIELD(led_count), FIELD(led_brightness), FIELD(led_type), FIELD(led_order), FIELD(led_white),
     FIELD(led_max_ma), FIELD(led_ma),
@@ -163,19 +164,20 @@ void settings_get(settings_t *out)
 #ifdef UPRINT_BOARD_XIAO
 // XIAO ESP32S3: herausgeführt sind D0–D5 (GPIO 1–6), D6/D7 (GPIO 43/44, Konsole) und D8–D10 (GPIO 7–9), GPIO 21
 // ist CS des SD-Steckplatzes auf dem Kamerabrett. Die übrigen GPIOs belegen Kamera, Mikrofon, PSRAM und USB.
-// D7 ist der Empfangspin der Konsole und darf belegt werden, die Log-Ausgabe auf D6 bleibt frei. Die Web-UI zeigt
-// die Pins mit ihrer Beschriftung auf dem Board, gespeichert wird die GPIO-Nummer.
-#define PIN_HINT "SD-Pins: D0–D5, D7–D10 oder der Steckplatz des Sense (CS)"
-static bool pin_usable(int pin)
+// D7 ist der Empfangspin der Konsole und darf immer belegt werden (diag_console trennt ihn ab), D6 nur ohne
+// Konsole. Die Web-UI zeigt die Pins mit ihrer Beschriftung auf dem Board, gespeichert wird die GPIO-Nummer.
+#define PIN_HINT "SD-Pins: D0–D5, D7–D10 oder der Steckplatz des Sense (CS), D6 nur ohne Konsole"
+static bool pin_usable(const settings_t *s, int pin)
 {
-    return (pin >= 1 && pin <= 9) || pin == 21 || pin == 44;
+    return (pin >= 1 && pin <= 9) || pin == 21 || pin == 44 || (pin == 43 && !s->console);
 }
 #else
 // ESP32-S3 mit Octal-PSRAM (N16R8): 19/20 USB, 22–25 gibt es nicht, 26–37 Flash/PSRAM, 43/44 Konsole
-#define PIN_HINT "SD-Pins: GPIO 0–18, 21 oder 38–48 (außer 43/44)"
-static bool pin_usable(int pin)
+#define PIN_HINT "SD-Pins: GPIO 0–18, 21 oder 38–48 (43/44 nur ohne Konsole)"
+static bool pin_usable(const settings_t *s, int pin)
 {
-    return pin >= 0 && pin <= 48 && pin != 19 && pin != 20 && !(pin >= 22 && pin <= 37) && pin != 43 && pin != 44;
+    return pin >= 0 && pin <= 48 && pin != 19 && pin != 20 && !(pin >= 22 && pin <= 37) &&
+           ((pin != 43 && pin != 44) || !s->console);
 }
 #endif
 
@@ -183,7 +185,7 @@ static const char *sd_pins_error(const settings_t *s)
 {
     const int pins[] = {s->sd_mosi, s->sd_miso, s->sd_sclk, s->sd_cs};
     for (int i = 0; i < 4; i++) {
-        if (!pin_usable(pins[i])) {
+        if (!pin_usable(s, pins[i])) {
             return PIN_HINT;
         }
         for (int j = 0; j < i; j++) {
@@ -215,7 +217,7 @@ static const char *led_error(const settings_t *s)
     }
     bool on_sd = s->sd_enable && (s->led_pin == s->sd_mosi || s->led_pin == s->sd_miso || s->led_pin == s->sd_sclk ||
                                   s->led_pin == s->sd_cs);
-    if (s->led_pin != -1 && (!pin_usable(s->led_pin) || on_sd)) {
+    if (s->led_pin != -1 && (!pin_usable(s, s->led_pin) || on_sd)) {
         return "LED-Pin: -1 (aus) oder ein freier Pin, der nicht von der SD-Karte belegt ist";
     }
     return NULL;
@@ -280,6 +282,9 @@ static const char *validate(const settings_t *s)
     if (s->sd_enable != 0 && s->sd_enable != 1) {
         return "microSD: 0 (aus) oder 1 (an)";
     }
+    if (s->console != 0 && s->console != 1) {
+        return "Konsole: 0 (aus) oder 1 (an)";
+    }
     const char *err = s->sd_enable ? sd_pins_error(s) : NULL;
     return err ? err : led_error(s);
 }
@@ -321,7 +326,7 @@ bool settings_reboot_required(void)
     settings_get(&cur);
     return strcmp(cur.ap_password, s_boot.ap_password) != 0 ||
            cur.sd_enable != s_boot.sd_enable || cur.sd_mosi != s_boot.sd_mosi || cur.sd_miso != s_boot.sd_miso ||
-           cur.sd_sclk != s_boot.sd_sclk || cur.sd_cs != s_boot.sd_cs;
+           cur.sd_sclk != s_boot.sd_sclk || cur.sd_cs != s_boot.sd_cs || cur.console != s_boot.console;
 }
 
 esp_err_t settings_new_api_key(void)

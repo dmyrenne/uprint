@@ -12,12 +12,14 @@
     --sans: 'Space Grotesk', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
     --bg: #f3f4f6; --panel: #ffffff; --field: #ffffff; --ink: #0c0d10; --muted: #71737c; --line: #e3e4e8; --line-strong: #c9cbd2;
     --accent: #2340ff; --accent-soft: #e8ebff; --accent-ink: #ffffff; --warn: #d4380d; --warn-bg: #fff1eb;
+    --hold: #9a5b00; --hold-bg: #fff4dc;
     --dot: #d9dbe1;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0b0c0f; --panel: #121318; --field: #0b0c0f; --ink: #eceef3; --muted: #8b8e99; --line: #23252d; --line-strong: #353843;
       --accent: #7187ff; --accent-soft: #1b2146; --accent-ink: #0b0c0f; --warn: #ff8a66; --warn-bg: #2d1710;
+      --hold: #ffb547; --hold-bg: #2b2010;
       --dot: #1e2027;
     }
   }
@@ -71,6 +73,7 @@
   .tab.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .tab.wait { border-color: var(--accent); color: var(--accent); }
   .tab.bad { background: var(--warn-bg); border-color: transparent; color: var(--warn); }
+  .tab.hold { background: var(--hold-bg); border-color: transparent; color: var(--hold); }
   .tab.busy::before { animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
 
@@ -235,7 +238,7 @@
   .led-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--line-strong); }
   body.leds main > :not(#ledsView):not(#messages) { display: none; }
   .leds-view { max-width: 920px; width: 100%; margin: 0 auto; }
-  .leds-view .back { font-size: 13px; display: inline-block; margin-bottom: 12px; }
+  .leds-view .back, .log-view .back { font-size: 13px; display: inline-block; margin-bottom: 12px; }
   .led-rows { margin: 8px -6px 0; }
   .led-row { display: grid; grid-template-columns: minmax(130px, 1.2fr) 44px minmax(140px, 1.2fr) minmax(150px, 1fr) auto; gap: 8px 12px;
              align-items: center; padding: 9px 6px; border-top: 1px solid var(--line); }
@@ -268,6 +271,18 @@
   .axi-prompt { font-size: 15px; font-weight: 600; margin-top: 14px; }
   .axi-log { font: 500 11px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
              margin: 14px 0 0; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* ---------- Unterseite #log (#36) ---------- */
+  body.log main > :not(#logView):not(#messages) { display: none; }
+  .log-view { max-width: 1200px; width: 100%; margin: 0 auto; }
+  .log-tools { align-items: flex-end; margin-top: 10px; }
+  .log-tools .spacer { flex: 1; }
+  .log-text { font: 500 11px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+              padding: 8px 10px; margin: 14px 0 0; height: 65vh; min-height: 240px; overflow: auto; white-space: pre-wrap;
+              overflow-wrap: anywhere; }
+  .log-text .e { color: var(--warn); }
+  .log-text .w { color: #b7791f; }
+  .log-text .s { color: var(--muted); }
+  .log-text .b { color: var(--accent); font-weight: 600; }
   .axi-obs { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
   .axi-obs textarea { font: 13px var(--sans, inherit); color: var(--ink); background: var(--field); border: 1px solid var(--line-strong);
                       border-radius: 6px; padding: 7px 9px; resize: vertical; }
@@ -356,6 +371,30 @@
       <span class="spacer"></span>
       <button type="button" class="warn" id="ledReset" data-i18n="leds.reset"></button>
     </div>
+  </section>
+
+  <!-- Unterseite #log: Live-Log und Diagnose (#36) -->
+  <section class="card log-view" id="logView" hidden>
+    <a class="back" href="#" data-i18n="leds.back"></a>
+    <h2 data-i18n="log.title"></h2>
+    <p class="hint" data-i18n="log.intro"></p>
+    <div class="row log-tools">
+      <label><span data-i18n="log.serial"></span><select id="logSerial">
+        <option value="0" data-i18n="log.serial.0"></option><option value="1" data-i18n="log.serial.1"></option>
+        <option value="2" data-i18n="log.serial.2"></option>
+      </select></label>
+      <label><span data-i18n="log.filter"></span><select id="logFilter">
+        <option value="all" data-i18n="log.filter.all"></option><option value="printer" data-i18n="log.filter.printer"></option>
+        <option value="warn" data-i18n="log.filter.warn"></option>
+      </select></label>
+      <label class="check"><input type="checkbox" id="logFollow" checked> <span data-i18n="log.follow"></span></label>
+      <span class="spacer"></span>
+      <button type="button" class="small" id="logPause" data-i18n="log.pause"></button>
+      <button type="button" class="small" id="logDiag" data-i18n="diag.download"></button>
+      <button type="button" class="small warn" id="logClear" data-i18n="log.clear"></button>
+    </div>
+    <p class="hint" data-i18n="log.serial.hint"></p>
+    <pre class="log-text" id="logText"></pre>
   </section>
 
   <section class="card">
@@ -638,6 +677,14 @@
       </form>
       <p class="hint" id="pwHint"></p>
     </div>
+    <div class="ota" id="diagBox">
+      <p class="sub" data-i18n="diag.title"></p>
+      <div class="row">
+        <button type="button" id="diagDownload" data-i18n="diag.download"></button>
+        <a href="#log" data-i18n="diag.open"></a>
+      </div>
+      <p class="hint" data-i18n="diag.hint"></p>
+    </div>
     <div class="ota" id="resetBox">
       <p class="sub" data-i18n="reset.title"></p>
       <div class="row">
@@ -659,6 +706,10 @@
       <label><span>SCLK</span><input type="number" name="sd_sclk" min="0" max="48"></label>
       <label><span>CS</span><input type="number" name="sd_cs" min="0" max="48"></label>
       <p class="hint full" id="sdPinHint" hidden data-i18n="set.sd.hint.xiao"></p>
+
+      <p class="sub full" data-i18n="set.console"></p>
+      <label class="check full"><input type="checkbox" name="console"> <span data-i18n="set.console_enable"></span></label>
+      <p class="hint full" id="consoleHint" data-i18n="set.console.hint"></p>
 
       <p class="sub full" data-i18n="set.leds"></p>
       <label><span data-i18n="set.led_pin"></span><input type="number" name="led_pin" min="-1" max="48"></label>
@@ -841,8 +892,11 @@ function renderStatus() {
   const state = offline ? 'offline' : s.state || 'connecting';
   const tab = $('tab');
   tab.textContent = t(s.unresponsive && !offline ? 'state.unresponsive'
-    : state === 'disconnected' && axiMode() ? 'state.axiDisconnected' : 'state.' + state);
-  tab.className = 'tab ' + ({ idle: 'on', printing: 'on busy', paused: 'on', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
+    : state === 'disconnected' && axiMode() ? 'state.axiDisconnected'
+    : state === 'printing' && s.user_wait ? 'state.userWait' : 'state.' + state);
+  // Pause und Warten am Display in eigener Farbe, damit sie nicht wie „bereit“ aussehen
+  const hold = !offline && (state === 'paused' || (state === 'printing' && s.user_wait));
+  tab.className = 'tab ' + (hold ? 'hold busy' : { idle: 'on', printing: 'on busy', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
 
   // Fortschritt und Restzeit aus M73 (Slicer), sonst nach gesendeten Bytes geschätzt
   const pct = a ? (s.progress >= 0 ? s.progress : s.size ? s.pos / s.size * 100 : 0) : done ? 100 : 0;
@@ -880,7 +934,7 @@ function renderStatus() {
   // Meldungen der Firmware wie „Druck fertig …“ zusätzlich zeigen, solange nichts läuft
   const note = !offline && !done && s.state === 'idle' && !s.finished && s.message && !['Drucker bereit', 'Fehler quittiert'].includes(s.message) ? s.message : '';
   // Meldungen des Druckers selbst ("action:notification") haben Vorrang
-  const shownNote = !offline && s.notice ? s.notice : note;
+  const shownNote = !offline && s.notice ? s.notice : !offline && a && s.user_wait ? t('job.userWait') : note;
   $('jobNote').textContent = shownNote; $('jobNote').hidden = !shownNote;
   renderPrompt(offline ? null : s.prompt);
   $('jobTitle').textContent = title;
@@ -1318,7 +1372,7 @@ async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1
 // ---------- Einstellungen ----------
 const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y',
   'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay',
-  'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs',
+  'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs', 'console',
   'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness', 'led_max_ma', 'led_ma'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm'), hwForm = $('hwForm');
@@ -1329,12 +1383,16 @@ const setValue = (e) => (e.type === 'checkbox' ? (e.checked ? '1' : '0') : e.val
 function readSettings() {
   return Object.fromEntries(SET_KEYS.map((k) => [k, setValue(field(k))]));
 }
-// XIAO: Pins mit ihrer Beschriftung auf dem Board statt als GPIO-Nummer, D6 ist die Log-Ausgabe der Konsole
+// XIAO: Pins mit ihrer Beschriftung auf dem Board statt als GPIO-Nummer, D6 ist die Log-Ausgabe der Konsole und
+// nur ohne Konsole wählbar
 const SD_PINS = ['sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
-const XIAO_PINS = [[1, 'D0'], [2, 'D1'], [3, 'D2'], [4, 'D3'], [5, 'D4'], [6, 'D5'], [44, 'D7'], [7, 'D8'], [8, 'D9'], [9, 'D10']];
+const XIAO_PINS = [[1, 'D0'], [2, 'D1'], [3, 'D2'], [4, 'D3'], [5, 'D4'], [6, 'D5'], [43, 'D6'], [44, 'D7'], [7, 'D8'], [8, 'D9'], [9, 'D10']];
 function xiaoPins(s) {
   $('sdPinHint').hidden = s.variant !== 'xiao';
+  $('consoleHint').dataset.i18n = s.variant === 'xiao' ? 'set.console.hint.xiao' : 'set.console.hint';
+  $('consoleHint').textContent = t($('consoleHint').dataset.i18n);
   if (s.variant !== 'xiao') return;
+  const board = XIAO_PINS.filter(([g]) => g !== 43 || String(s.console) !== '1');
   for (const k of [...SD_PINS, 'led_pin']) {
     let sel = field(k);
     if (sel.tagName !== 'SELECT') {
@@ -1342,9 +1400,9 @@ function xiaoPins(s) {
       sel.name = k;
       field(k).replaceWith(sel);
     }
-    const pins = k === 'sd_cs' ? [...XIAO_PINS, [21, t('set.sd.slot')]] : k === 'led_pin' ? [[-1, t('leds.off')], ...XIAO_PINS]
-      : [...XIAO_PINS];
-    if (!pins.some(([g]) => g === s[k])) pins.push([s[k], 'GPIO ' + s[k]]);   // sollte die Firmware nie liefern
+    const pins = k === 'sd_cs' ? [...board, [21, t('set.sd.slot')]] : k === 'led_pin' ? [[-1, t('leds.off')], ...board]
+      : [...board];
+    if (!pins.some(([g]) => g === Number(s[k]))) pins.push([s[k], 'GPIO ' + s[k]]);   // D6, wenn die Konsole wieder an ist
     sel.replaceChildren(...pins.map(([g, label]) => new Option(label, g)));
   }
 }
@@ -1384,6 +1442,13 @@ async function loadSettings() {
   if (ledEdit) buildLedGrid();   // Anzahl LEDs für das Muster der Kennung
 }
 for (const f of [setForm, hwForm]) { f.addEventListener('input', renderSettings); f.addEventListener('change', renderSettings); }
+// Konsole an/aus ändert auf dem XIAO, ob D6 wählbar ist; die gewählten Pins bleiben stehen
+hwForm.elements.console.addEventListener('change', () => {
+  if (!settings) return;
+  const cur = readSettings();
+  xiaoPins({ ...cur, variant: settings.variant });
+  for (const k of [...SD_PINS, 'led_pin']) field(k).value = cur[k];
+});
 $('setSave').onclick = async () => {
   try {
     const s = readSettings();
@@ -1655,6 +1720,87 @@ function ledView() {
 }
 window.addEventListener('hashchange', ledView);
 
+// ---------- Unterseite #log: Live-Log und Diagnose (#36) ----------
+// logPos = Position für die nächste Abfrage (X-Log-Next), null = die letzten 64 KB holen
+const LOG_KEEP = 4000;   // Zeilen in der Ansicht
+let logPos = null, logRest = '', logLines = [], logPaused = false, logTimer = null;
+function logClass(l) {
+  if (l.startsWith('=====')) return 'b';
+  return { E: 'e', W: 'w', S: 's' }[l[0]] || '';
+}
+function logShown(l) {
+  const f = $('logFilter').value;
+  if (l.startsWith('=====')) return true;
+  if (f === 'printer') return / printer: /.test(l);
+  if (f === 'warn') return /^[EW] \(/.test(l);
+  return true;
+}
+function logLine(l) {
+  const c = logClass(l);
+  return c ? el('span', c, l + '\n') : document.createTextNode(l + '\n');
+}
+function logRender() {
+  $('logText').replaceChildren(...logLines.filter(logShown).map(logLine));
+  logScroll();
+}
+function logScroll() { if ($('logFollow').checked) $('logText').scrollTop = $('logText').scrollHeight; }
+function logAppend(text) {
+  const parts = (logRest + text).split('\n');
+  logRest = parts.pop();
+  const fresh = parts.filter((l) => l !== '');
+  logLines.push(...fresh);
+  const pre = $('logText');
+  if (logLines.length > LOG_KEEP) { logLines = logLines.slice(-LOG_KEEP); logRender(); return; }
+  pre.append(...fresh.filter(logShown).map(logLine));
+  logScroll();
+}
+function logReset() { logPos = null; logRest = ''; logLines = []; $('logText').replaceChildren(); }
+async function pollLog() {
+  clearTimeout(logTimer);
+  if (location.hash !== '#log') return;
+  if (!logPaused && !document.hidden) {
+    try {
+      const r = await fetch('/api/log?' + (logPos === null ? 'tail=65536' : 'since=' + logPos), { cache: 'no-store' });
+      if (r.status === 401 && !authMode) showAuth('login');
+      if (r.ok) {
+        const next = Number(r.headers.get('X-Log-Next'));
+        const text = await r.text();
+        if (logPos !== null && next < logPos) logReset();   // nach dem Einschalten beginnt das Log neu
+        logAppend(text);
+        logPos = next;
+        if (document.activeElement !== $('logSerial')) $('logSerial').value = r.headers.get('X-Log-Serial') || '0';
+      }
+    } catch {}
+  }
+  logTimer = setTimeout(pollLog, 1000);
+}
+function logView() {
+  const on = location.hash === '#log';
+  document.body.classList.toggle('log', on);
+  $('logView').hidden = !on;
+  if (on) { logReset(); window.scrollTo(0, 0); pollLog(); }
+}
+window.addEventListener('hashchange', logView);
+$('logFilter').onchange = logRender;
+$('logFollow').onchange = logScroll;
+$('logPause').onclick = () => {
+  logPaused = !logPaused;
+  $('logPause').textContent = t(logPaused ? 'log.resume' : 'log.pause');
+  if (!logPaused) pollLog();
+};
+$('logSerial').onchange = async () => {
+  try { await api('POST', '/api/log/serial?level=' + $('logSerial').value); say(t('log.serial.saved')); }
+  catch (e) { say(e.message, true); }
+};
+$('logClear').onclick = async () => {
+  if (!confirm(t('confirm.log.clear'))) return;
+  try { await api('DELETE', '/api/log'); logRest = ''; logLines = []; $('logText').replaceChildren(); }
+  catch (e) { say(e.message, true); }
+};
+$('logDiag').onclick = $('diagDownload').onclick = () => {
+  const a = el('a'); a.href = '/api/diag'; a.download = ''; a.click();
+};
+
 // ---------- Gerätename ----------
 // Gespeicherter Name oben und im Browser-Tab; ohne Namen wie gewohnt „µprint“
 // Wie settings_hostname_from_name() in settings.c
@@ -1801,7 +1947,7 @@ async function checkAuth() {
 }
 function start() {
   started = true;
-  pollWifi(); loadSettings(); pollAxi(); ledView();
+  pollWifi(); loadSettings(); pollAxi(); ledView(); logView();
 }
 
 // ---------- Start ----------

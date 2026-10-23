@@ -10,3 +10,5 @@ tools/
 PCB/
 # Logs von Hardwaretests, nur lokal
 logs/
+# Rückmeldungen und Test-Logs von Testern, nur lokal
+docs/feedback/

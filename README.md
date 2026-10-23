@@ -24,6 +24,8 @@ USB (for example the Prusa MK3S) and with AxiDraw / NextDraw pen plotters (EiBot
 - **Optional password** for the web interface; print status and file list stay readable without signing in
 - **Updates over the air** from the web interface, with automatic rollback if a new version fails to start, plus a
   [web flasher](https://dmyrenne.github.io/uprint/) for the first install
+- **Diagnostics:** a live log in the browser that survives restarts and crashes, optionally with the printer
+  communication, and a diagnostics file to attach to bug reports
 - **Safe while printing:** Wi-Fi and settings are locked during a print; if the printer is plugged in but doesn't
   answer, µprint says so and keeps retrying
 
@@ -57,7 +59,8 @@ By default the SD module goes to these pins; you can choose others later under *
 | XIAO ESP32S3 Sense (slot) | D10 | D9 | D8 | slot |
 
 On the XIAO you pick the pins as they are labelled on the board. An external SD module works best on D8 (SCLK),
-D9 (MISO) and D10 (MOSI), with CS on any free pin such as D7. Leave D6 free, µprint writes its log there. If you
+D9 (MISO) and D10 (MOSI), with CS on any free pin such as D7. D6 is where µprint writes its log; if you don't need the serial console, switch
+it off under **Hardware → Console (UART)** to free D6 as well (the log stays available in the web UI). If you
 don't use a microSD card, switch it off under **Hardware**, which frees its pins.
 
 Most boards have two USB ports. Use the one labelled `UART` or `COM` to flash the firmware; the printer later goes
@@ -102,8 +105,10 @@ background, and offers a **Reconnect** button.
 µprint also follows what happens on the printer itself (Marlin and Prusa *host actions*): pausing or stopping on the
 printer's display pauses or cancels the print in µprint too, and on a filament runout the printer parks and µprint
 waits. Notes from the printer appear in the print card, and when the printer asks something (for example whether the
-new filament came out clean), the question shows up there with its buttons. If the slicer wrote progress and time
-left into the file (`M73`), µprint shows those values instead of its own estimate.
+new filament came out clean), the question shows up there with its buttons. While the printer waits for input on its
+own display (for example during a filament change), the print card says so. On a Prusa MK3/MK3S a print paused from
+the display is resumed in the web UI, because the printer leaves that to the host. If the slicer wrote progress and
+time left into the file (`M73`), µprint shows those values instead of its own estimate.
 
 The settings are split into two cards:
 
@@ -200,6 +205,20 @@ seconds. The colour of the first LED appears as a dot next to the device name in
 - Files are kept in both cases. To remove them, use **Clear …** next to a storage in the file list: it deletes all
   G-code files on that storage, or formats it completely if you tick the option (also helps with a broken file
   system). It's locked while that storage is being printed from or uploaded to.
+
+## Diagnostics and bug reports
+
+**Settings → Diagnostics → View log** shows the firmware's messages live, without a USB-serial adapter. The log
+survives restarts, crashes and watchdog resets; a separator line names the reason for each restart, and only a power
+cycle clears it. The buffer holds about 1 MB on boards with PSRAM (`n16r8`, `xiao`) and 16 KB on `basic`.
+
+To find out what the printer said, set **Record printer communication** on the log page: *Messages from the printer*
+records everything the printer sends except `ok` and temperature reports (host actions, errors, `busy`), *Everything*
+also records the lines µprint sends. The setting is kept and can be changed during a print.
+
+**Download diagnostics** gives you a text file with version, restart reason, memory, Wi-Fi and USB state, printer
+state, the settings (without passwords and API key) and the whole log. Please attach it when you report a bug; note
+that the log may contain your Wi-Fi name and file names.
 
 ## Updating
 

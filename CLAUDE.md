@@ -40,7 +40,7 @@ When changing the HTTP API, keep the mock in sync if it exists.
 
 ## Architecture
 
-`app_main` (`main/main.c`) initializes in order: NVS → `settings` → `storage` → `wifi` → `usb_serial` →
+`app_main` (`main/main.c`) initializes in order: NVS → `diag` → `settings` → `storage` → `wifi` → `usb_serial` →
 `printer` → `status_led` → `web`. Each module is a `.c`/`.h` pair with module-level static state; the headers document the
 contracts and are the best entry point.
 
@@ -65,7 +65,7 @@ contracts and are the best entry point.
   (`main/www/index.html`, `i18n.js`, fonts) is embedded via `EMBED_FILES` in `main/CMakeLists.txt` — new
   assets must be added there. `slicer.c` registers PrusaLink/OctoPrint-compatible endpoints on the same server
   (API key auth, routes listed in `slicer.h`). `captive.c` provides DNS + redirects when accessed via the
-  device's own AP. `max_uri_handlers` is fixed in `web_start` (56, 49 used); raise it when adding routes.
+  device's own AP. `max_uri_handlers` is fixed in `web_start` (56, 53 used); raise it when adding routes.
 - **auth.c** — optional web UI password (#31): PBKDF2 hash in NVS namespace `auth`, session cookie = nonce + HMAC
   with a device secret (survives reboots, invalidated by a new password), lockout after failed attempts. `web_start`
   wraps every route except the UI, `/api/auth` and reading status/files in `guarded()`; new routes are protected
@@ -78,6 +78,13 @@ contracts and are the best entry point.
   (effect, color, brightness) and the print-farm identification (one color per LED) live in NVS namespace `leds`, pin/count/type/order
   in `settings_t`. Web handlers only set requests (`status_led_find/preview/ota/apply`). The web UI subpage is
   `#leds` in `index.html`; `tools/mock_server.py` mirrors the effects in a virtual strip, keep both in sync.
+- **diag.c** — diagnostics (#36): `esp_log_set_vprintf` copies every log line into a ring buffer in a `.noinit`
+  section (`EXT_RAM_NOINIT_ATTR`, 1 MB in PSRAM with `CONFIG_SPIRAM_ALLOW_NOINIT_SEG_EXTERNAL_MEMORY`, otherwise
+  16 KB internal), so it survives software resets, panics and watchdogs; `esp_cache_msync` after each write because
+  the S3 data cache would otherwise lose the tail. Printer traffic goes in via `diag_line` only (not UART), level in
+  NVS namespace `diag`. Web UI subpage `#log`, `GET /api/log?since=` for polling, `GET /api/diag` for the report.
+  `diag_console` (after `settings_init`) always detaches UART0 RX (XIAO D7) and, with `settings_t.console` off,
+  stops UART output and frees TX (D6) too; `pin_usable()` in `settings.c` follows the same rule.
 - **reset.c** — factory reset (#13): settings only or everything incl. Wi-Fi, then restart; holding BOOT (GPIO 0)
   for 10 s while running does the full reset (only if GPIO 0 isn't an SD/LED pin). Wiping a volume is
   `storage_wipe()` in storage.c (#14).
