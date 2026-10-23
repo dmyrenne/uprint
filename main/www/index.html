@@ -196,6 +196,11 @@
   .anim .cur { stroke: var(--accent); stroke-width: 3.6; }
   .anim .todo { stroke: var(--line-strong); stroke-width: 1.4; stroke-dasharray: 2 4; }
   .anim .nozzle { fill: var(--accent); }
+  /* Aufheizen: Düse steht über dem Bett, das Bett füllt sich mit der Temperatur, darüber steigt Wärme auf */
+  .anim .heat .nozzle { fill: var(--warn); }
+  .anim .bed { stroke: var(--warn); stroke-width: 3.6; }
+  .anim .waft { fill: none; stroke: var(--warn); stroke-width: 1.4; stroke-linecap: round; opacity: 0; animation: waft 2.4s ease-out infinite; }
+  @keyframes waft { 0% { opacity: 0; transform: translateY(0); } 30% { opacity: .9; } 100% { opacity: 0; transform: translateY(-22px); } }
   /* Drucker – Kabel – µprint, wenn kein Drucker verbunden ist */
   .anim.illu { width: 300px; aspect-ratio: 2 / 1; }
   .illu .frame { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
@@ -842,6 +847,7 @@ function setFavicon() {
   $('favicon').href = 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
 
+let heatLevel = 0;        // Aufheizstand 0…1 für die Animation
 let titleProgress = '';   // Fortschritt vorn im Tabtitel, solange gedruckt oder geplottet wird
 let markAxi = false;
 function drawMark() {   // Logo: bei jedem Laden (und Klick) ein neues Gefäß, die oberste Schicht im Akzent
@@ -857,16 +863,23 @@ function drawMark() {   // Logo: bei jedem Laden (und Klick) ein neues Gefäß, 
 }
 
 let layersKey = '';
-function drawLayers(seed, frac, mode) {   // mode: idle | printing | paused | done
-  const N = 44, done = Math.min(N, Math.floor(frac * N)), key = [seed, done, mode].join();
+function drawLayers(seed, frac, mode) {   // mode: idle | heating | printing | paused | done (bei heating ist frac die Temperatur)
+  const N = 44, done = mode === 'heating' ? 0 : Math.min(N, Math.floor(frac * N));
+  const key = [seed, done, mode, mode === 'heating' ? Math.round(frac * 50) : ''].join();
   if (key === layersKey) return;      // nicht bei jeder Abfrage neu zeichnen, sonst springt die Animation
   layersKey = key;
   const r = profile(seed), out = [];
   const yAt = (i) => 206 - i * (192 / (N - 1));
   for (let i = 0; i < N; i++) {
     const half = r(i / (N - 1)) * 80, y = yAt(i).toFixed(1);
-    const cls = mode === 'idle' ? 'todo' : mode === 'done' || i < done ? 'done' : i === done ? 'cur' : 'todo';
+    const cls = mode === 'idle' || mode === 'heating' ? 'todo' : mode === 'done' || i < done ? 'done' : i === done ? 'cur' : 'todo';
     out.push(`<path class="${cls}" d="M${(100 - half).toFixed(1)} ${y}H${(100 + half).toFixed(1)}" stroke-linecap="round"/>`);
+  }
+  if (mode === 'heating') {   // unterste Schicht als Bett, von der Mitte aus nach Temperatur gefüllt
+    const half = r(0) * 80 * Math.min(1, frac), y = yAt(0) - 3;
+    if (half > .5) out.push(`<path class="bed" d="M${(100 - half).toFixed(1)} ${yAt(0)}H${(100 + half).toFixed(1)}" stroke-linecap="round"/>`);
+    const waves = [-7, 0, 7].map((dx, i) => `<path class="waft" style="animation-delay:${i * .8}s" d="M${100 + dx} ${y - 12}q-2 -3 0 -6t0 -6"/>`);
+    out.push(`<g class="heat"><path class="nozzle" d="M${100 - 4} ${y - 9}h8v4l-3 5h-2l-3-5z"/>${waves.join('')}</g>`);
   }
   if ((mode === 'printing' || mode === 'paused') && done < N) {   // Düse über der aktuellen Schicht, fährt beim Drucken hin und her
     const half = r(done / (N - 1)) * 80, y = yAt(done) - 3;
@@ -902,10 +915,14 @@ const finishedFile = () => finished() ? files.find((f) => f.storage === st.stora
 function renderStatus() {
   const s = st || {}, a = !offline && active(), done = finished(), show = a || done;
   const state = offline ? 'offline' : s.state || 'connecting';
+  // Aufheizen bis zur ersten Fahrt mit Extrusion, Stand wie bei den Status-LEDs (wird nie kleiner)
+  const heating = !offline && s.state === 'printing' && !s.extruding && !axiMode() && (s.hotend_target > 0 || s.bed_target > 0);
+  const lvl = (v, target) => target > 0 ? Math.min(1, v / target) : 1;
+  heatLevel = heating ? Math.max(heatLevel, Math.min(lvl(s.hotend, s.hotend_target), lvl(s.bed, s.bed_target))) : 0;
   const tab = $('tab');
   tab.textContent = t(s.unresponsive && !offline ? 'state.unresponsive'
     : state === 'disconnected' && axiMode() ? 'state.axiDisconnected'
-    : state === 'printing' && s.user_wait ? 'state.userWait' : 'state.' + state);
+    : state === 'printing' && s.user_wait ? 'state.userWait' : heating ? 'state.heating' : 'state.' + state);
   // Pause und Warten am Display in eigener Farbe, damit sie nicht wie „bereit“ aussehen
   const hold = !offline && (state === 'paused' || (state === 'printing' && s.user_wait));
   tab.className = 'tab ' + (hold ? 'hold busy' : { idle: 'on', printing: 'on busy', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
@@ -951,18 +968,18 @@ function renderStatus() {
   renderPrompt(offline ? null : s.prompt);
   $('jobTitle').textContent = title;
   // Während des Drucks den übersetzten Zustand zeigen, sonst die Meldung der Firmware
-  $('jobSub').textContent = a ? volName(s.storage) + ' · ' + t('state.' + s.state) : done ? volName(s.storage) + ' · ' + t('stage.done') : sub;
+  $('jobSub').textContent = a ? volName(s.storage) + ' · ' + t(heating ? 'state.heating' : 'state.' + s.state) : done ? volName(s.storage) + ' · ' + t('stage.done') : sub;
   $('jobSub').className = 'job-sub' + (bad ? ' bad' : done ? ' done' : '');
   $('jobProgress').hidden = !show;
   $('jobBar').style.width = pct + '%';
   $('jobPct').textContent = show ? num(pct, 1) + ' %' : '';
-  const tp = a ? (s.state === 'paused' ? '⏸ ' : '') + num(pct, 1) + ' %' : '';
+  const tp = !a ? '' : heating ? t('state.heating') : (s.state === 'paused' ? '⏸ ' : '') + num(pct, 1) + ' %';
   if (tp !== titleProgress) { titleProgress = tp; renderName(); }
   $('jobEta').textContent = left != null ? t('job.remaining', { t: fmtTime(left) })
                           : done ? t('job.duration', { t: fmtTime(s.duration) }) : '';
   // Animation während des Drucks und fertig gedruckt danach
   $('anim').hidden = !show;
-  if (show) drawLayers(hash(s.storage + '/' + s.file), pct / 100, done ? 'done' : s.state);
+  if (show) drawLayers(hash(s.storage + '/' + s.file), heating ? heatLevel : pct / 100, done ? 'done' : heating ? 'heating' : s.state);
   else layersKey = '';
   // Ohne Drucker: Grafik mit getrenntem Kabel, beim Verbinden läuft das Kabel
   const unplugged = !offline && (s.state === 'disconnected' || s.state === 'connecting');
