@@ -544,62 +544,16 @@
   </div>
 
   <div class="col side">
-  <details class="card" id="wifiBox">
-    <summary><span class="no-setup" data-i18n="h.wifi"></span><span class="setup-only" data-i18n="setup.title"></span></summary>
-    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
-    <p class="hint setup-only" id="setupIntro" data-i18n="setup.intro" style="margin:0 0 12px"></p>
-    <!-- Ersteinrichtung über das Captive Portal: Name, WLAN und freiwilliges Passwort auf einer Seite -->
-    <div class="grid setup-only" id="setupNameBox" style="margin-bottom:16px">
-      <label class="full"><span data-i18n="set.device_name"></span><input type="text" id="setupName" maxlength="32" placeholder="µprint" autocomplete="off"></label>
-      <p class="hint full" id="setupAddr"></p>
-    </div>
-    <p class="sub setup-only" id="setupWifiSub" data-i18n="h.wifi" style="margin:0 0 8px"></p>
-    <div class="derived" id="wifiStatus"></div>
-    <div class="handoff" id="handoff" hidden>
-      <p id="handoffText" style="margin:0"></p>
-      <p style="margin:12px 0 0"><span class="count" id="handoffCount"></span></p>
-      <p class="hint" id="handoffNext"></p>
-      <div class="addr"><code id="addrHost"></code><button type="button" data-copy="addrHost" data-i18n="copy"></button></div>
-      <div class="addr"><code id="addrIp"></code><button type="button" data-copy="addrIp" data-i18n="copy"></button></div>
-    </div>
-    <div id="wifiForm">
-    <div class="grid">
-      <label class="full"><span data-i18n="wifi.network"></span>
-        <span class="pick"><select id="wifiNet"></select><button type="button" id="wifiScan" data-i18n="wifi.scan"></button></span>
-      </label>
-      <label class="full" id="ssidRow" hidden><span data-i18n="wifi.ssid"></span><input type="text" id="wifiSsid" maxlength="32" autocomplete="off"></label>
-      <label class="full"><span data-i18n="wifi.password"></span><input type="password" id="wifiPass" maxlength="63" autocomplete="off"></label>
-      <label class="check full"><input type="checkbox" id="wifiShow"> <span data-i18n="wifi.show"></span></label>
-    </div>
-    <div class="grid setup-only" style="margin-top:16px">
-      <p class="sub full" data-i18n="setup.pw"></p>
-      <label><span data-i18n="auth.password"></span><input type="password" id="setupPass" maxlength="63" autocomplete="new-password"></label>
-      <label><span data-i18n="auth.repeat"></span><input type="password" id="setupRep" maxlength="63" autocomplete="new-password"></label>
-      <label class="check full"><input type="checkbox" id="setupAp" checked> <span data-i18n="auth.ap"></span></label>
-      <p class="hint full" data-i18n="setup.pw.hint"></p>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <button type="button" class="primary" id="wifiConnect" data-i18n="wifi.connect"></button>
-      <button type="button" class="warn" id="wifiForget" data-i18n="wifi.forget"></button>
-    </div>
-    <div class="setup-only" style="margin-top:20px; border-top:1px solid var(--line); padding-top:16px">
-      <button type="button" id="wifiApOnly" data-i18n="setup.apOnly"></button>
-      <p class="hint" id="apOnlyHint"></p>
-    </div>
-    <p class="hint" id="wifiHint"></p>
-    </div>
-  </details>
 
   <details class="card" id="setBox">
-    <summary><span data-i18n="h.settings"></span><span class="badge" id="setBadge" data-i18n="modified" hidden></span></summary>
+    <summary><span data-i18n="h.device"></span><span class="badge" id="setBadge" data-i18n="modified" hidden></span></summary>
     <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <form id="setForm" class="grid" autocomplete="off" onsubmit="return false">
-      <p class="sub full" data-i18n="set.device"></p>
       <label class="full"><span data-i18n="set.device_name"></span><input type="text" name="device_name" maxlength="32" placeholder="µprint"></label>
       <p class="hint full" id="setAddr"></p>
       <p class="hint full" data-i18n="set.device.hint"></p>
 
-      <p class="sub full" data-i18n="set.printer"></p>
+      <p class="sub full" data-i18n="set.attached"></p>
       <label class="full"><span data-i18n="set.device_type"></span><select name="device_type">
         <option value="0" data-i18n="set.device_type.printer"></option>
         <option value="1" data-i18n="set.device_type.axidraw"></option>
@@ -643,15 +597,13 @@
       </label>
       <p class="hint full" id="uplotStatus" data-i18n="set.uplot.hint"></p>
 
-      <p class="sub full" data-i18n="set.slicer"></p>
-      <label class="full"><span data-i18n="set.api_key"></span>
+      <!-- Slicer schicken nur an Drucker -->
+      <p class="sub full" data-dev="0" data-i18n="set.slicer"></p>
+      <label class="full" data-dev="0"><span data-i18n="set.api_key"></span>
         <span class="pick"><input type="text" id="apiKey" readonly spellcheck="false"><button type="button" id="apiCopy" data-i18n="copy"></button><button type="button" id="apiNew" data-i18n="set.api_new"></button></span>
       </label>
-      <p class="hint full" id="slicerHint"></p>
+      <p class="hint full" data-dev="0" id="slicerHint"></p>
 
-      <p class="sub full" data-i18n="set.network"></p>
-      <label class="full"><span data-i18n="set.ap_password"></span><input type="password" name="ap_password" maxlength="63"></label>
-      <p class="hint full" data-i18n="set.network.hint"></p>
     </form>
     <div class="row set-actions" id="setActions">
       <span class="unsaved" data-i18n="set.unsaved"></span>
@@ -662,7 +614,79 @@
       <div data-i18n="set.reboot"></div>
       <div class="row" style="margin-top:8px"><button type="button" class="small" id="rebootBtn" data-i18n="set.rebootNow"></button></div>
     </div>
-    <div class="ota">
+  </details>
+  <details class="card" id="wifiBox">
+    <summary><span class="no-setup" data-i18n="h.network"></span><span class="setup-only" data-i18n="setup.title"></span><span class="badge no-setup" id="netBadge" data-i18n="modified" hidden></span></summary>
+    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
+    <p class="hint setup-only" id="setupIntro" data-i18n="setup.intro" style="margin:0 0 12px"></p>
+    <!-- Ersteinrichtung über das Captive Portal: Name, WLAN und freiwilliges Passwort auf einer Seite -->
+    <div class="grid setup-only" id="setupNameBox" style="margin-bottom:16px">
+      <label class="full"><span data-i18n="set.device_name"></span><input type="text" id="setupName" maxlength="32" placeholder="µprint" autocomplete="off"></label>
+      <p class="hint full" id="setupAddr"></p>
+    </div>
+    <p class="sub" id="setupWifiSub" data-i18n="h.wifi" style="margin:0 0 8px"></p>
+    <div class="derived" id="wifiStatus"></div>
+    <div class="handoff" id="handoff" hidden>
+      <p id="handoffText" style="margin:0"></p>
+      <p style="margin:12px 0 0"><span class="count" id="handoffCount"></span></p>
+      <p class="hint" id="handoffNext"></p>
+      <div class="addr"><code id="addrHost"></code><button type="button" data-copy="addrHost" data-i18n="copy"></button></div>
+      <div class="addr"><code id="addrIp"></code><button type="button" data-copy="addrIp" data-i18n="copy"></button></div>
+    </div>
+    <div id="wifiForm">
+    <div class="grid">
+      <label class="full"><span data-i18n="wifi.network"></span>
+        <span class="pick"><select id="wifiNet"></select><button type="button" id="wifiScan" data-i18n="wifi.scan"></button></span>
+      </label>
+      <label class="full" id="ssidRow" hidden><span data-i18n="wifi.ssid"></span><input type="text" id="wifiSsid" maxlength="32" autocomplete="off"></label>
+      <label class="full"><span data-i18n="wifi.password"></span><input type="password" id="wifiPass" maxlength="63" autocomplete="off"></label>
+      <label class="check full"><input type="checkbox" id="wifiShow"> <span data-i18n="wifi.show"></span></label>
+    </div>
+    <div class="grid setup-only" style="margin-top:16px">
+      <p class="sub full" data-i18n="setup.pw"></p>
+      <label><span data-i18n="auth.password"></span><input type="password" id="setupPass" maxlength="63" autocomplete="new-password"></label>
+      <label><span data-i18n="auth.repeat"></span><input type="password" id="setupRep" maxlength="63" autocomplete="new-password"></label>
+      <label class="check full"><input type="checkbox" id="setupAp" checked> <span data-i18n="auth.ap"></span></label>
+      <p class="hint full" data-i18n="setup.pw.hint"></p>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="primary" id="wifiConnect" data-i18n="wifi.connect"></button>
+      <button type="button" class="warn" id="wifiForget" data-i18n="wifi.forget"></button>
+    </div>
+    <div class="setup-only" style="margin-top:20px; border-top:1px solid var(--line); padding-top:16px">
+      <button type="button" id="wifiApOnly" data-i18n="setup.apOnly"></button>
+      <p class="hint" id="apOnlyHint"></p>
+    </div>
+    <p class="hint" id="wifiHint"></p>
+    </div>
+    <!-- Access Point und Passwort der Weboberfläche: nicht bei der Ersteinrichtung (die fragt beides selbst) -->
+    <form id="netForm" class="grid ota no-setup" autocomplete="off" onsubmit="return false">
+      <p class="sub full" data-i18n="set.ap"></p>
+      <label class="full"><span data-i18n="set.ap_password"></span><input type="password" name="ap_password" maxlength="63"></label>
+      <p class="hint full" data-i18n="set.network.hint"></p>
+    </form>
+    <div class="ota no-setup" id="pwBox">
+      <p class="sub" data-i18n="auth.title"></p>
+      <p class="derived" id="pwNone" data-i18n="auth.none" hidden></p>
+      <form class="grid" id="pwForm">
+        <label class="full" id="pwCurRow"><span data-i18n="auth.current"></span><input type="password" id="pwCur" maxlength="63" autocomplete="current-password"></label>
+        <label><span data-i18n="auth.new"></span><input type="password" id="pwNew" maxlength="63" autocomplete="new-password"></label>
+        <label><span data-i18n="auth.repeat"></span><input type="password" id="pwRep" maxlength="63" autocomplete="new-password"></label>
+        <label class="check full"><input type="checkbox" id="pwAp"> <span data-i18n="auth.ap"></span></label>
+        <div class="row full">
+          <button type="submit" class="primary" id="pwBtn"></button>
+          <button type="button" class="warn" id="pwRemove" data-i18n="auth.remove"></button>
+          <button type="button" id="logoutBtn" data-i18n="auth.logout"></button>
+        </div>
+      </form>
+      <p class="hint" id="pwHint"></p>
+    </div>
+  </details>
+  <!-- Hardware: was am ESP angeschlossen ist (Speichern über dieselbe Leiste wie die Einstellungen) -->
+  <details class="card" id="hwBox">
+    <summary><span data-i18n="h.system"></span><span class="badge" id="hwBadge" data-i18n="modified" hidden></span></summary>
+    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
+    <div class="ota" style="margin-top:0; border-top:0; padding-top:0">
       <p class="sub" data-i18n="set.firmware"></p>
       <p class="hint" id="otaVersion" style="margin:0 0 10px"></p>
       <p class="derived bad" id="otaRollback" hidden></p>
@@ -684,44 +708,7 @@
       <p class="hint" id="otaHint"></p>
       <input type="file" id="otaFile" accept=".bin" hidden>
     </div>
-    <div class="ota" id="pwBox">
-      <p class="sub" data-i18n="auth.title"></p>
-      <p class="derived" id="pwNone" data-i18n="auth.none" hidden></p>
-      <form class="grid" id="pwForm">
-        <label class="full" id="pwCurRow"><span data-i18n="auth.current"></span><input type="password" id="pwCur" maxlength="63" autocomplete="current-password"></label>
-        <label><span data-i18n="auth.new"></span><input type="password" id="pwNew" maxlength="63" autocomplete="new-password"></label>
-        <label><span data-i18n="auth.repeat"></span><input type="password" id="pwRep" maxlength="63" autocomplete="new-password"></label>
-        <label class="check full"><input type="checkbox" id="pwAp"> <span data-i18n="auth.ap"></span></label>
-        <div class="row full">
-          <button type="submit" class="primary" id="pwBtn"></button>
-          <button type="button" class="warn" id="pwRemove" data-i18n="auth.remove"></button>
-          <button type="button" id="logoutBtn" data-i18n="auth.logout"></button>
-        </div>
-      </form>
-      <p class="hint" id="pwHint"></p>
-    </div>
-    <div class="ota" id="diagBox">
-      <p class="sub" data-i18n="diag.title"></p>
-      <div class="row">
-        <button type="button" id="diagDownload" data-i18n="diag.download"></button>
-        <a href="#log" data-i18n="diag.open"></a>
-      </div>
-      <p class="hint" data-i18n="diag.hint"></p>
-    </div>
-    <div class="ota" id="resetBox">
-      <p class="sub" data-i18n="reset.title"></p>
-      <div class="row">
-        <button type="button" class="warn" id="resetSettings" data-i18n="reset.settings"></button>
-        <button type="button" class="warn" id="resetAll" data-i18n="reset.all"></button>
-      </div>
-      <p class="hint" data-i18n="reset.hint"></p>
-    </div>
-  </details>
-  <!-- Hardware: was am ESP angeschlossen ist (Speichern über dieselbe Leiste wie die Einstellungen) -->
-  <details class="card" id="hwBox">
-    <summary><span data-i18n="h.hardware"></span><span class="badge" id="hwBadge" data-i18n="modified" hidden></span></summary>
-    <p class="derived lock-note" data-i18n="lock.print" hidden></p>
-    <form id="hwForm" class="grid" autocomplete="off" onsubmit="return false">
+    <form id="hwForm" class="grid ota" autocomplete="off" onsubmit="return false">
       <p class="sub full" data-i18n="set.sd"></p>
       <label class="check full"><input type="checkbox" name="sd_enable"> <span data-i18n="set.sd_enable"></span></label>
       <label><span>MOSI</span><input type="number" name="sd_mosi" min="0" max="48"></label>
@@ -759,10 +746,16 @@
       <div data-i18n="set.reboot"></div>
       <div class="row" style="margin-top:8px"><button type="button" class="small" id="hwRebootBtn" data-i18n="set.rebootNow"></button></div>
     </div>
-  </details>
-  <!-- Selbsttest für Rückmeldungen, vor allem von Geräten mit EBB-Firmware 3.x (docs/axidraw.md) -->
-  <details class="card" id="axiBox" hidden>
-    <summary data-i18n="h.axidraw"></summary>
+    <div class="ota" id="diagBox">
+      <p class="sub" data-i18n="diag.title"></p>
+      <div class="row">
+        <button type="button" id="diagDownload" data-i18n="diag.download"></button>
+        <a href="#log" data-i18n="diag.open"></a>
+      </div>
+      <p class="hint" data-i18n="diag.hint"></p>
+      <!-- Selbsttest für Rückmeldungen, vor allem von Geräten mit EBB-Firmware 3.x (docs/axidraw.md); nur im AxiDraw-Modus -->
+      <div id="axiBox" hidden style="margin-top:16px">
+        <p class="sub" data-i18n="h.axidraw"></p>
     <p class="hint" data-i18n="axi.intro" style="margin-top:0"></p>
     <label class="check" style="margin-top:12px"><input type="checkbox" id="axiMotion"> <span data-i18n="axi.motion"></span></label>
     <div class="row" style="margin-top:12px">
@@ -780,6 +773,16 @@
       <div class="row"><button type="button" class="primary" id="axiDownload" data-i18n="axi.download"></button></div>
     </div>
     <pre class="axi-log" id="axiLog" hidden></pre>
+      </div>
+    </div>
+    <div class="ota" id="resetBox">
+      <p class="sub" data-i18n="reset.title"></p>
+      <div class="row">
+        <button type="button" class="warn" id="resetSettings" data-i18n="reset.settings"></button>
+        <button type="button" class="warn" id="resetAll" data-i18n="reset.all"></button>
+      </div>
+      <p class="hint" data-i18n="reset.hint"></p>
+    </div>
   </details>
   </div>
   </div>
@@ -1033,7 +1036,7 @@ function renderStatus() {
   renderFiles(); renderOta(); renderLock(); renderVolumes();
 }
 // Während eines Drucks lassen sich WLAN, Einstellungen, Hardware und die LED-Darstellung ansehen, aber nicht ändern
-const LOCKED = ['wifiForm', 'setForm', 'setActions', 'apiNew', 'rebootBox', 'hwForm', 'hwRebootBox',
+const LOCKED = ['wifiForm', 'netForm', 'setForm', 'setActions', 'apiNew', 'rebootBox', 'hwForm', 'hwRebootBox',
   'ledRows', 'ledPaint', 'ledGrid', 'ledIntervalRow', 'ledSave', 'ledRevert', 'ledReset', 'resetBox'];
 function renderLock() {
   const lock = active();
@@ -1513,7 +1516,7 @@ function renderSetup() {
     document.body.classList.toggle('setup', setupMode);
     const box = $('wifiBox');
     if (setupMode) { $('setupSlot').append(box); box.open = true; }   // gesucht wird beim ersten Laden ohne Verbindung
-    else { $('setBox').before(box); handoffAt = 0; }
+    else { $('setBox').after(box); handoffAt = 0; }
   }
   $('wifiConnect').textContent = t(setupMode ? 'setup.go' : 'wifi.connect');
   const handoff = setupMode && w.connected && w.ap && w.ap_off_in >= 0;
@@ -1656,8 +1659,8 @@ const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_li
   'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs', 'console',
   'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness', 'led_max_ma', 'led_ma'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
-const setForm = $('setForm'), hwForm = $('hwForm');
-const field = (k) => setForm.elements[k] || hwForm.elements[k];
+const setForm = $('setForm'), hwForm = $('hwForm'), netForm = $('netForm');
+const field = (k) => setForm.elements[k] || hwForm.elements[k] || netForm.elements[k];
 let settings = null;
 
 const setValue = (e) => (e.type === 'checkbox' ? (e.checked ? '1' : '0') : e.value.trim());
@@ -1706,6 +1709,7 @@ function renderSettings() {
   for (const k of SD_PINS) field(k).disabled = !field('sd_enable').checked;
   $('setBadge').hidden = !setModified(setForm);
   $('hwBadge').hidden = !setModified(hwForm);
+  $('netBadge').hidden = !setModified(netForm);
   $('setSave').disabled = !mod;
   $('setRevert').disabled = !mod;
   // Schwebend vor den Footer, sonst unsichtbar, solange die Karte zugeklappt ist (geschlossenes details rendert nichts)
@@ -1720,11 +1724,13 @@ function renderSettings() {
 async function loadSettings() {
   try { settings = await api('GET', '/api/settings'); } catch { return; }
   importReady();
-  if (!setModified() || !($('setBox').open || $('hwBox').open)) writeSettings(settings);   // laufende Eingaben nicht überschreiben
+  // Bei der Ersteinrichtung ist die Netzwerk-Karte immer offen, zählt dort aber nicht als Bearbeiten
+  const editing = $('setBox').open || $('hwBox').open || ($('wifiBox').open && !document.body.classList.contains('setup'));
+  if (!setModified() || !editing) writeSettings(settings);   // laufende Eingaben nicht überschreiben
   renderSettings();
   if (ledEdit) buildLedGrid();   // Anzahl LEDs für das Muster der Kennung
 }
-for (const f of [setForm, hwForm]) { f.addEventListener('input', renderSettings); f.addEventListener('change', renderSettings); }
+for (const f of [setForm, hwForm, netForm]) { f.addEventListener('input', renderSettings); f.addEventListener('change', renderSettings); }
 setForm.elements.plot_w.addEventListener('input', syncPlotModel);
 setForm.elements.plot_h.addEventListener('input', syncPlotModel);
 // Konsole an/aus ändert auf dem XIAO, ob D6 wählbar ist; die gewählten Pins bleiben stehen

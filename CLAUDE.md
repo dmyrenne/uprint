@@ -96,7 +96,11 @@ contracts and are the best entry point.
   `storage_wipe()` in storage.c (#14).
 - **variant.c** — writes a `uprint_desc_t` (magic `UPRINT1` + variant name) right after `esp_app_desc_t` in the
   image; OTA upload checks it so an image for one variant can't be flashed onto another.
-- **Web UI** — a single hand-written `index.html` (vanilla JS/CSS, no build step). All visible strings go
+- **Web UI** — a single hand-written `index.html` (vanilla JS/CSS, no build step). Settings live in three cards (#46):
+  Device (`#setBox`/`setForm`), Network (`#wifiBox`: Wi-Fi, `netForm` with the AP password, web UI password) and System
+  (`#hwBox`: firmware, `hwForm`, diagnostics incl. the AxiDraw self-test, reset). All three forms share `SET_KEYS` and
+  one save bar; elements with `data-dev="0|1"` only show for that device type. During captive-portal setup `#wifiBox`
+  moves into `#setupSlot` and `.no-setup` parts are hidden. All visible strings go
   through `i18n.js` (`de` and `en`; add keys to both).
 
 ## Planning & roadmap
