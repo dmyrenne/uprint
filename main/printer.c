@@ -11,6 +11,7 @@
  */
 #include <ctype.h>
 #include <inttypes.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,6 +103,13 @@ static float s_feed;           // zuletzt gesetzter Vorschub (mm/min), 0 = unbek
 static bool s_lifted;          // beim Pausieren angehoben
 static char s_pause_msg[64];   // Grund der Pause ("Pausiert", "Pausiert am Drucker"), Zusatz beim Anheben dahinter
 static float s_pause_z;        // Z vor dem Anheben
+
+// M73 liefert nur ganze Prozent. Dazwischen nach gesendeten Bytes weiterzählen, mit der Bytezahl pro Prozent
+// aus dem letzten Schritt; nie über den nächsten erwarteten M73-Wert hinaus. Alles unter s_lock.
+static float s_m73_p;          // letzter Wert vom Slicer, -1 = keiner
+static uint32_t s_m73_pos;     // Dateiposition bei diesem M73
+static float s_m73_gap;        // Abstand der letzten beiden M73 in Prozent
+static float s_m73_bytes;      // Bytes pro Prozent im letzten Schritt, 0 = noch unbekannt
 
 #define LOCK()   xSemaphoreTake(s_lock, portMAX_DELAY)
 #define UNLOCK() xSemaphoreGive(s_lock)
@@ -346,6 +354,12 @@ static void track_motion(const char *cmd)
         if (gcode_param(cmd, 'F', &v) && v > 0) {
             s_feed = v;
         }
+        // Fahrt mit Extrusion: der eigentliche Druck (bzw. die Vorlauflinie) beginnt; reines Vorschieben zählt nicht
+        if (!s_st.extruding && gcode_param(cmd, 'E', &v) && v > 0 && (gcode_has(cmd, 'X') || gcode_has(cmd, 'Y'))) {
+            LOCK();
+            s_st.extruding = true;
+            UNLOCK();
+        }
         break;
     case 28:
         // Referenzieren ohne Achsangabe (oder mit Z) setzt Z auf einen unbekannten Wert
@@ -381,7 +395,15 @@ static void track_progress(const char *cmd)
         return;
     }
     LOCK();
-    if (has_p && p >= 0 && p <= 100) {
+    if (has_p && p >= 0 && p <= 100 && p != s_m73_p) {
+        if (s_m73_p >= 0 && p > s_m73_p && s_st.file_pos > s_m73_pos) {
+            s_m73_gap = p - s_m73_p;
+            s_m73_bytes = (s_st.file_pos - s_m73_pos) / s_m73_gap;
+        } else {
+            s_m73_bytes = 0;
+        }
+        s_m73_p = p;
+        s_m73_pos = s_st.file_pos;
         s_st.progress = p;
     }
     if (has_r && r >= 0) {
@@ -1119,6 +1141,18 @@ void printer_get_status(printer_status_t *out)
 {
     LOCK();
     *out = s_st;
+    if (out->state == PRINTER_PRINTING && out->progress >= 0 && out->file_pos > s_m73_pos) {
+        // Vor dem zweiten M73 (z. B. von P0 bis P1) gibt es noch keinen Schritt: Rest der Datei gleichmäßig verteilt
+        float bytes = s_m73_bytes, gap = s_m73_gap;
+        if (bytes <= 0 && s_m73_p < 100 && out->file_size > s_m73_pos) {
+            bytes = (out->file_size - s_m73_pos) / (100 - s_m73_p);
+            gap = 1;
+        }
+        if (bytes > 0) {
+            float step = fminf((out->file_pos - s_m73_pos) / bytes, gap - 0.1f);
+            out->progress = fminf(out->progress + fmaxf(step, 0), 100);
+        }
+    }
     UNLOCK();
     if (job_active(out->state)) {
         out->elapsed_s = (uint32_t)((now_us() - out->started_us) / 1000000LL);
@@ -1157,8 +1191,11 @@ esp_err_t printer_start(storage_vol_t vol, const char *name)
         s_st.duration_s = 0;
         s_st.progress = -1;
         s_st.remaining_s = -1;
+        s_m73_p = -1;
+        s_m73_bytes = 0;
         s_st.notice[0] = '\0';
         s_st.user_wait = false;
+        s_st.extruding = false;
         s_st.prompt = false;
         strlcpy(s_st.message, "Druck läuft", sizeof(s_st.message));
         s_req_start = true;
