@@ -24,6 +24,7 @@
 #include "axidraw.h"
 #include "captive.h"
 #include "diag.h"
+#include "gcode_kind.h"
 #include "http_util.h"
 #include "printer.h"
 #include "reset.h"
@@ -139,7 +140,7 @@ static esp_err_t files_get(httpd_req_t *req)
 {
     static char path[STORAGE_PATH_MAX + 256];
     static char esc[ESCAPED_NAME_MAX];
-    static char item[ESCAPED_NAME_MAX + 96];
+    static char item[ESCAPED_NAME_MAX + 192];
     bool first = true;
 
     httpd_resp_set_type(req, "application/json");
@@ -178,9 +179,19 @@ static esp_err_t files_get(httpd_req_t *req)
             if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
                 continue;
             }
+            // 2D/3D (#12) aus dem Anfang der Datei, zwischengespeichert
+            gcode_info_t info = {.kind = GCODE_UNKNOWN};
+            if (gcode_file_name(e->d_name)) {
+                gcode_info_cached(v, e->d_name, path, (uint32_t)st.st_size, (int64_t)st.st_mtime, &info);
+            }
+            char bounds[80] = "";
+            if (info.has_bounds) {
+                snprintf(bounds, sizeof(bounds), ",\"bounds\":[%.2f,%.2f,%.2f,%.2f]", info.bounds[0], info.bounds[1],
+                         info.bounds[2], info.bounds[3]);
+            }
             http_json_escape(esc, sizeof(esc), e->d_name);
-            snprintf(item, sizeof(item), "%s{\"storage\":\"%s\",\"name\":\"%s\",\"size\":%ld}",
-                     first ? "" : ",", storage_id(v), esc, (long)st.st_size);
+            snprintf(item, sizeof(item), "%s{\"storage\":\"%s\",\"name\":\"%s\",\"size\":%ld,\"kind\":\"%s\"%s}",
+                     first ? "" : ",", storage_id(v), esc, (long)st.st_size, gcode_kind_name(info.kind), bounds);
             httpd_resp_sendstr_chunk(req, item);
             first = false;
         }
@@ -474,11 +485,13 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     settings_t c;
     char host[33 * 6];
     char pass[64 * 6];
-    char body[1792];
+    char body[2048];
     char version[32 * 6];
     char name[33 * 6];
+    char uplot[96 * 6];
     settings_get(&c);
     http_json_escape(name, sizeof(name), c.device_name);
+    http_json_escape(uplot, sizeof(uplot), c.uplot_url);
     http_json_escape(version, sizeof(version), esp_app_get_description()->version);
     http_json_escape(host, sizeof(host), c.hostname);
     http_json_escape(pass, sizeof(pass), c.ap_password);
@@ -487,9 +500,9 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     size_t n = snprintf(body, sizeof(body),
                         "{\"device_name\":\"%s\",\"hostname\":\"%s\",\"ap_password\":\"%s\",\"api_key\":\"%s\""
                         ",\"reboot_required\":%s,\"version\":\"%s\",\"variant\":\"%s\",\"failed_update\":\"%s\""
-                        ",\"default_hostname\":\"%s\"",
+                        ",\"default_hostname\":\"%s\",\"uplot_url\":\"%s\"",
                         name, host, pass, c.api_key, settings_reboot_required() ? "true" : "false", version,
-                        uprint_variant(), failed, settings_default_hostname());
+                        uprint_variant(), failed, settings_default_hostname(), uplot);
     for (size_t i = 0; i < SETTINGS_INT_FIELD_COUNT && n < sizeof(body); i++) {
         const settings_int_field_t *f = &SETTINGS_INT_FIELDS[i];
         n += snprintf(body + n, sizeof(body) - n, ",\"%s\":%d", f->key, SETTINGS_INT(&c, f));
@@ -534,14 +547,14 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     if (locked_while_printing(req)) {
         return ESP_OK;
     }
-    char body[1280];
+    char body[1536];
     if (!http_recv_body(req, body, sizeof(body))) {
         return http_send_error(req, "400 Bad Request", "Ungültige Anfrage");
     }
 
     settings_t c;
     settings_get(&c);
-    char buf[64 * 3 + 1];
+    char buf[96 * 3 + 1];   // längstes Feld: uplot_url, urlencodiert
     if (form_value(body, "hostname", buf, sizeof(buf))) {
         strlcpy(c.hostname, buf, sizeof(c.hostname));
     }
@@ -557,6 +570,12 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     }
     if (form_value(body, "ap_password", buf, sizeof(buf))) {
         strlcpy(c.ap_password, buf, sizeof(c.ap_password));
+    }
+    if (form_value(body, "uplot_url", buf, sizeof(buf))) {
+        if (strlen(buf) >= sizeof(c.uplot_url)) {
+            return http_send_error(req, "400 Bad Request", "µplot-Adresse: höchstens 95 Zeichen");
+        }
+        strlcpy(c.uplot_url, buf, sizeof(c.uplot_url));
     }
     bool bad = false;
     int old_device = c.device_type;

@@ -33,6 +33,9 @@ static const settings_t DEFAULTS = {
     .pen_up = 60,        // Vorgaben der AxiDraw-Software
     .pen_down = 30,
     .pen_delay = 200,
+    .plot_w = 300,       // AxiDraw V3 / SE A4
+    .plot_h = 218,
+    .uplot_url = "https://uplot.dmy.work",
     .sd_enable = 1,
     .console = 1,
 #ifdef UPRINT_BOARD_XIAO
@@ -71,6 +74,7 @@ const settings_int_field_t SETTINGS_INT_FIELDS[] = {
     FIELD(device_type), FIELD(baud), FIELD(pause_lift), FIELD(cancel_lift), FIELD(park_x), FIELD(park_y),
     FIELD(sd_enable), FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs), FIELD(console),
     FIELD(plot_draw), FIELD(plot_travel), FIELD(plot_accel), FIELD(pen_servo), FIELD(pen_up), FIELD(pen_down), FIELD(pen_delay),
+    FIELD(plot_w), FIELD(plot_h),
     FIELD(led_pin), FIELD(led_count), FIELD(led_brightness), FIELD(led_type), FIELD(led_order), FIELD(led_white),
     FIELD(led_max_ma), FIELD(led_ma),
 };
@@ -85,7 +89,7 @@ typedef struct {
 
 #define STR_FIELD(name) {#name, offsetof(settings_t, name), sizeof(((settings_t *)0)->name)}
 static const str_field_t STR_FIELDS[] = {
-    STR_FIELD(hostname), STR_FIELD(device_name), STR_FIELD(api_key), STR_FIELD(ap_password),
+    STR_FIELD(hostname), STR_FIELD(device_name), STR_FIELD(api_key), STR_FIELD(ap_password), STR_FIELD(uplot_url),
 };
 
 #define STR_AT(s, f) ((char *)(s) + (f)->offset)
@@ -278,6 +282,17 @@ static const char *validate(const settings_t *s)
     }
     if (s->pen_delay < 0 || s->pen_delay > 1000) {
         return "Wartezeit des Stifts: 0–1000 ms";
+    }
+    if (s->plot_w < 10 || s->plot_w > 2000 || s->plot_h < 10 || s->plot_h > 2000) {
+        return "Zeichenfläche: 10–2000 mm";
+    }
+    if (s->uplot_url[0] && strncmp(s->uplot_url, "http://", 7) != 0 && strncmp(s->uplot_url, "https://", 8) != 0) {
+        return "µplot-Adresse: muss mit http:// oder https:// beginnen";
+    }
+    for (const unsigned char *p = (const unsigned char *)s->uplot_url; *p; p++) {
+        if (*p <= ' ' || *p >= 0x7f || strchr("\"'<>\\`", *p)) {
+            return "µplot-Adresse: ungültiges Zeichen";
+        }
     }
     if (s->sd_enable != 0 && s->sd_enable != 1) {
         return "microSD: 0 (aus) oder 1 (an)";

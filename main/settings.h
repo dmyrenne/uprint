@@ -49,6 +49,9 @@ typedef struct {
     int pen_up;           // Servoposition 0–100 %
     int pen_down;
     int pen_delay;        // ms Wartezeit nach jedem Heben/Senken
+    // Zeichenfläche des Plotters in mm (sofort wirksam): geht an µplot und begrenzt die Warnung bei zu großen Dateien
+    int plot_w;
+    int plot_h;
     // microSD über SPI (wirksam nach Neustart); ohne sd_enable werden die Pins weder geprüft noch belegt
     int sd_enable;
     int sd_mosi;
@@ -69,6 +72,8 @@ typedef struct {
     int led_ma;           // Strom einer LED bei vollem Weiß in mA, für die Schätzung
     // Schlüssel für Slicer (PrusaLink/OctoPrint-API), wird beim ersten Start erzeugt
     char api_key[33];
+    // Adresse von µplot (SVG → G-Code), leer = keins; der Browser ruft es direkt auf, nicht µprint (sofort wirksam)
+    char uplot_url[96];
 } settings_t;
 
 // Alle ganzzahligen Felder; der Name ist zugleich NVS-Schlüssel und Feldname in der Web-API
