@@ -666,6 +666,15 @@
       <p class="sub" data-i18n="set.firmware"></p>
       <p class="hint" id="otaVersion" style="margin:0 0 10px"></p>
       <p class="derived bad" id="otaRollback" hidden></p>
+      <!-- Update von GitHub (#47): neueste Version für diese Variante, geladen über GitHub Pages -->
+      <div class="derived" id="otaLatest" hidden>
+        <div id="otaLatestText"></div>
+        <div class="row" style="margin-top:8px">
+          <button type="button" class="small primary" id="otaGithub"></button>
+          <a id="otaNotes" target="_blank" rel="noopener" data-i18n="ota.notes"></a>
+        </div>
+      </div>
+      <label class="check" style="margin-bottom:10px"><input type="checkbox" id="otaAlpha"> <span data-i18n="ota.alpha"></span></label>
       <div class="row">
         <button type="button" id="otaPick" data-i18n="ota.choose"></button>
         <button type="button" class="primary" id="otaBtn" data-i18n="ota.install"></button>
@@ -2125,10 +2134,81 @@ $('apiNew').onclick = async () => {
 
 // ---------- Firmware-Update ----------
 let otaFile = null, otaBusy = false;
+
+// ---------- Update von GitHub (#47) ----------
+// releases.json und die OTA-Images liegen auf GitHub Pages (flasher.yml), Pages erlaubt den Abruf per CORS. Der
+// Browser lädt das Image und schickt es an /api/ota wie eine gewählte Datei; µprint selbst braucht kein Internet.
+const PAGES = 'https://dmyrenne.github.io/uprint/';
+let releases = null, releasesFailed = false;
+try { $('otaAlpha').checked = localStorage.getItem('uprint-ota-alpha') === '1'; } catch {}
+async function loadReleases() {
+  try {
+    const r = await fetch(PAGES + 'releases.json', { cache: 'no-cache' });
+    if (!r.ok) throw new Error(r.statusText);
+    releases = await r.json(); releasesFailed = false;
+  } catch { releases = null; releasesFailed = true; }
+  renderOta();
+}
+// 0.9.1 > 0.9.1-alpha.3 > 0.9.0; lokale Builds (v0.9.1-dirty, v0.9.0-3-gabc) zählen wie die Version davor
+function semver(v) {
+  const m = String(v || '').replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?/);
+  return m ? [+m[1], +m[2], +m[3], m[4] === undefined ? Infinity : +m[4]] : null;
+}
+const cmpVer = (a, b) => { for (let i = 0; i < 4; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1; return 0; };
+// Neueste Version mit OTA-Image für diese Variante, Alphas nur auf Wunsch
+function latestRelease() {
+  if (!releases || !settings) return null;
+  const ok = releases.filter((r) => r.ota && r.ota[settings.variant] && semver(r.version) && ($('otaAlpha').checked || !r.prerelease));
+  return ok.reduce((best, r) => !best || cmpVer(semver(r.version), semver(best.version)) > 0 ? r : best, null);
+}
+function updateAvailable() {
+  const cur = settings && semver(settings.version), rel = latestRelease();
+  return cur && rel && cmpVer(semver(rel.version), cur) > 0 ? rel : null;
+}
+$('otaAlpha').onchange = () => {
+  try { localStorage.setItem('uprint-ota-alpha', $('otaAlpha').checked ? '1' : '0'); } catch {}
+  renderOta();
+};
+// Gemeinsam für gewählte Datei und Download von GitHub
+async function installOta(blob) {
+  const bar = $('otaBar').firstElementChild;
+  bar.style.width = '0';
+  const r = await sendRaw('/api/ota', blob, (p) => { bar.style.width = p + '%'; $('otaHint').textContent = t('ota.running', { pct: Math.round(p) }); });
+  say(t('ota.done', { v: r.version }));
+}
+$('otaGithub').onclick = async () => {
+  const rel = updateAvailable(), info = rel && rel.ota[settings.variant];
+  if (!info || !confirm(t('confirm.otaGithub', { v: rel.version, variant: settings.variant }))) return;
+  otaBusy = true; renderOta();
+  try {
+    $('otaHint').textContent = t('ota.downloading', { v: rel.version });
+    let blob;
+    try {
+      const r = await fetch(PAGES + `firmware/${rel.version}/uprint-${settings.variant}-ota.bin`);
+      if (!r.ok) throw new Error(r.statusText);
+      blob = await r.blob();
+    } catch (e) { throw new Error(t('ota.downloadFailed', { msg: e.message })); }
+    // Die Prüfsumme prüft die Firmware beim Installieren; crypto.subtle gibt es auf einer HTTP-Seite nicht
+    if (blob.size !== info.size) throw new Error(t('ota.sizeMismatch'));
+    await installOta(blob);
+  } catch (e) { say(t('ota.failed', { msg: e.message }), true); }
+  otaBusy = false;
+  renderOta();
+};
 function renderOta() {
   $('otaVersion').textContent = settings ? t('ota.version', { v: settings.version, variant: settings.variant }) : '';
   // CI baut ohne führendes v (0.9.0), lokale Builds mit (v0.9.0-3-gabc)
-  $('footVersion').textContent = settings ? ' · v' + settings.version.replace(/^v/, '') + ' (' + settings.variant + ')' : '';
+  const upd = updateAvailable(), rel = latestRelease();
+  $('footVersion').textContent = settings ? ' · v' + settings.version.replace(/^v/, '') + ' (' + settings.variant + ')'
+    + (upd ? ' · ' + t('ota.footer', { v: upd.version }) : '') : '';
+  $('otaLatest').hidden = !settings || (!rel && !releasesFailed);
+  $('otaLatestText').textContent = releasesFailed ? t('ota.offline') : !rel ? ''
+    : upd ? t('ota.newer', { v: rel.version, date: rel.date }) : t('ota.current', { v: rel.version });
+  $('otaGithub').hidden = !upd;
+  if (upd) $('otaGithub').textContent = t('ota.update', { v: upd.version });
+  $('otaGithub').disabled = otaBusy || offline || active();
+  $('otaNotes').hidden = !rel;
+  if (rel) $('otaNotes').href = 'https://github.com/dmyrenne/uprint/releases/tag/v' + rel.version;
   const failed = settings && settings.failed_update;
   $('otaRollback').hidden = !failed;
   if (failed) $('otaRollback').textContent = t('ota.rolledBack', { failed, v: settings.version });
@@ -2148,11 +2228,8 @@ $('otaFile').onchange = (e) => {
 $('otaBtn').onclick = async () => {
   if (!otaFile || !confirm(t('confirm.ota', { name: otaFile.name }))) return;
   otaBusy = true; renderOta();
-  const bar = $('otaBar').firstElementChild;
-  bar.style.width = '0';
   try {
-    const r = await sendRaw('/api/ota', otaFile, (p) => { bar.style.width = p + '%'; $('otaHint').textContent = t('ota.running', { pct: Math.round(p) }); });
-    say(t('ota.done', { v: r.version }));
+    await installOta(otaFile);
     otaFile = null;
   } catch (e) { say(t('ota.failed', { msg: e.message }), true); }
   otaBusy = false;
@@ -2233,7 +2310,7 @@ applyI18n();
 drawMark(); $('mark').onclick = drawMark;
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', setFavicon);   // Favicon in den neuen Farben
 fillPlotModels(); renderStatus(); renderUpload();
-poll(); checkAuth();   // Status ist auch ohne Anmeldung lesbar, die Verbindungsanzeige oben stimmt so von Anfang an
+poll(); checkAuth(); loadReleases();   // Status ist auch ohne Anmeldung lesbar, die Verbindungsanzeige oben stimmt so von Anfang an
 </script>
 </body>
 </html>

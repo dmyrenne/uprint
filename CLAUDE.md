@@ -130,6 +130,8 @@ Where the project is heading, based on the open issues and branches:
 paths (`main/`, `CMakeLists.txt`, `dependencies.lock`, `sdkconfig.defaults*`, `partitions-*.csv`) creates a
 pre-release `vX.Y.Z-alpha.N`; merging the PR into `main` creates `vX.Y.Z` (patch bump, or `minor`/`major` via PR
 label) and deletes the related alphas. `PROJECT_VER` comes from `UPRINT_VERSION` in CI, from `git describe`
-locally. `flasher.yml` rebuilds the GitHub Pages web flasher (`flasher/index.html`) from the releases.
+locally. `flasher.yml` rebuilds the GitHub Pages web flasher (`flasher/index.html`) from the releases. It also puts
+the OTA images and `releases.json` (with size and SHA-256 per variant) on Pages, where the web UI picks up the latest
+release for its update button (#47; Pages allows CORS, github.com release downloads don't).
 
 `PCB/` (separate repo) and `tools/` are gitignored.
