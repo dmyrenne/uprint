@@ -17,7 +17,10 @@ USB (for example the Prusa MK3S) and with AxiDraw / NextDraw pen plotters (EiBot
 - **Printer-side actions:** filament runout, pause and stop on the printer's own display, and questions the printer
   asks (answered in the browser)
 - **Slicer upload** via PrusaLink and OctoPrint compatible APIs, found automatically on the network (mDNS)
-- **Pen plotter mode** for AxiDraw / NextDraw with G-code from [µplot](https://github.com/dmyrenne/uplot)
+- **Pen plotter mode** for AxiDraw / NextDraw: drop an SVG and [µplot](https://github.com/dmyrenne/uplot) turns it
+  into G-code, or upload G-code from µplot
+- **2D or 3D:** every file is tagged as a 3D print, an AxiDraw plot or a pen plot for the printer, so a plot never
+  ends up on the printer by mistake
 - **Status LEDs** (SK6812, WS2812, WS2811, RGB or RGBW) with a progress bar and an identification pattern for print farms
 - **Setup on one page** through the device's own access point with a captive portal: device name, Wi-Fi and an
   optional password; or run it access point only
@@ -152,8 +155,24 @@ settings.
 Set **Settings → Device type** to **AxiDraw / NextDraw**. µprint then translates G-code into EiBotBoard commands
 itself, with motion planning (acceleration, cornering) on the ESP32-S3. The files come from
 [µplot](https://github.com/dmyrenne/uplot) in AxiDraw mode (SVG → µplot → µprint → AxiDraw): their first line is
-`; uplot-axidraw 1`, other files are rejected in plotter mode. Speeds, acceleration, pen servo type and pen heights
-are set under **Settings**.
+`; uplot-axidraw 1`, other files are rejected in plotter mode. Speeds, acceleration, pen servo type, pen heights
+and the drawing area (model presets or your own size) are set under **Settings**.
+
+**SVG files** can be dropped straight into the upload field. µprint asks µplot about the SVG (page size, number of
+lines, whether [vpype](https://github.com/abey79/vpype) already optimized it) and converts it with one click: the
+page is kept at 1:1 with its top left corner at the origin, so you place the sheet where the pen sits at power-on.
+A preview shows the drawing area, the page and the lines before you upload. **Edit in µplot** opens µplot with the
+SVG, the device type and the drawing area for full layout control, and µplot's **Send to µprint** brings the G-code
+back. The browser talks to µplot directly; µprint itself needs no internet access.
+
+The µplot address is set under **Settings → µplot** (default: the public instance at `https://uplot.dmy.work`).
+µplot stores nothing on its server: files only exist while a request runs, and profiles stay in your browser. The
+SVG still has to travel to the µplot server for the conversion; if you don't want that, run your own instance
+(Docker, also on your own computer) and enter its address.
+
+In the file list every G-code file shows whether it is a **3D** print, a **2D AxiDraw** plot or a **2D printer**
+pen plot (detected from the first 4 KB). In plotter mode only AxiDraw files can be started, and µprint asks before
+plotting a file that reaches beyond the drawing area; in printer mode it asks before printing an AxiDraw file.
 
 The **PRG** button on the plotter pauses and resumes, for example to change pens. Cancelling lifts the pen and
 returns to the origin. A built-in **AxiDraw test** checks the connection, firmware, pen and button and produces a

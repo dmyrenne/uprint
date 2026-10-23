@@ -85,6 +85,12 @@ contracts and are the best entry point.
   NVS namespace `diag`. Web UI subpage `#log`, `GET /api/log?since=` for polling, `GET /api/diag` for the report.
   `diag_console` (after `settings_init`) always detaches UART0 RX (XIAO D7) and, with `settings_t.console` off,
   stops UART output and frees TX (D6) too; `pin_usable()` in `settings.c` follows the same rule.
+- **gcode_kind.c** — 2D/3D detection (#12), pure C: classifies the first 4 KB of a G-code file (`; uplot-axidraw 1`,
+  `; uplot-printer 1`, slicer headers, temperatures, extrusion) and reads `; uplot-bounds`; cached per file in the web
+  server task, delivered as `kind`/`bounds` in `/api/files`. The web UI uses it for badges and start checks.
+- **µplot integration** (#20, uplot#2/#3) lives entirely in the browser: `index.html` calls µplot's `/api/inspect`
+  and `/api/convert` (CORS) at `settings_t.uplot_url` for SVGs (page 1:1, `optimize=auto`, area `plot_w`×`plot_h`), and
+  exchanges SVG/G-code with µplot windows via `postMessage` (`#import`, `#import-svg`). The firmware never talks to µplot.
 - **reset.c** — factory reset (#13): settings only or everything incl. Wi-Fi, then restart; holding BOOT (GPIO 0)
   for 10 s while running does the full reset (only if GPIO 0 isn't an SD/LED pin). Wiping a volume is
   `storage_wipe()` in storage.c (#14).

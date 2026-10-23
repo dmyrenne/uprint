@@ -1,6 +1,6 @@
 # AxiDraw- und NextDraw-Unterstützung (Recherche)
 
-Stand: 23.10.2026. Hardwaretests mit einem AxiDraw mit **EBB-Firmware 2.8.1** (Logs vom 08.10.2026 mit
+Stand: 23.10.2026 (µplot-Anbindung im Branch `axidraw`). Hardwaretests mit einem AxiDraw mit **EBB-Firmware 2.8.1** (Logs vom 08.10.2026 mit
 µprint 0.4.0-alpha.4 und vom 23.10.2026 mit 0.8.0-alpha.2). Alles zu FW 3.x stammt nur aus der Dokumentation.
 
 > **Wir können nur mit FW 2.x testen.** Unterstützung für FW 3.x (u. a. NextDraw) ist **Beta**: µprint erkennt
@@ -135,6 +135,10 @@ auf `axidraw-compatibility`). Bis #11 gemergt ist, entstehen die Vorab-Versionen
   rundet sie vorerst auf unten/oben). Die Servohöhen stellt man in µprint ein.
 - `G00`/`G01` mit `F` (mm/min); µprint begrenzt auf seine Höchstgeschwindigkeiten (G0 und G1 getrennt).
 - Am Ende zurück auf `X0 Y0`, dann `M84`. Kein `G28`, `M3`, `M5`.
+- Zweite Zeile `; uplot-bounds x0 y0 x1 y1`: Ausdehnung der gezeichneten Linien in mm (optional, Kommentar, ab µplot
+  mit µprint-Anbindung). µprint zeigt damit ohne die ganze Datei zu lesen, ob der Plot auf die Zeichenfläche passt.
+- Drucker-G-Code von µplot (Stifthalter am 3D-Drucker) beginnt mit `; uplot-printer 1`, ältere Dateien mit
+  `; -- setup`; µprint stuft beide als „2D Drucker“ ein.
 - µprint lehnt ab: `E`-Werte, Temperaturbefehle, Kreisbögen (`G2`/`G3`), Bewegungen ohne `G0`/`G1`.
 
 ### Übersetzer (`main/plot.c`)
@@ -171,9 +175,29 @@ mit den Prozentwerten, Wartezeiten des Stifts.
 
 ## Aufteilung zwischen µplot und µprint
 
-Nullpunkt, Achsrichtung und Zeichenfläche regelt **µplot** über ein AxiDraw-Profil. Das AxiDraw hat seinen
-Nullpunkt oben links (Stiftposition beim Einschalten), Y zeigt vom Gerät weg, und es gibt keinen Düsen-Offset.
-µprint übersetzt nur und rechnet nichts um. So stimmt der G-Code mit der µplot-Vorschau überein.
+Nullpunkt, Achsrichtung und Lage der Grafik regelt **µplot**. Das AxiDraw hat seinen Nullpunkt oben links
+(Stiftposition beim Einschalten), Y zeigt vom Gerät weg, und es gibt keinen Düsen-Offset. µprint übersetzt nur und
+rechnet nichts um. So stimmt der G-Code mit der µplot-Vorschau überein.
+
+Die **Zeichenfläche** ist in µprint eingestellt (Einstellungen → Plotter, Modellvorlagen wie in µplot) und geht von
+dort an µplot. Zusammenspiel (Branch `axidraw`, #12, #20, uplot#2, uplot#3):
+
+- **SVG in µprint ablegen:** Die µprint-Seite schickt sie im Browser an µplot (`/api/inspect`, `/api/convert`, CORS
+  offen). Angezeigt werden Papierformat, Linien und ob vpype schon optimiert hat (Metadaten der SVG, z. B. aus dem
+  handcoded.art plotter workbench oder `vpype … write`). „In G-Code umwandeln“ legt die Seite 1:1 mit der oberen
+  linken Papierecke an den Nullpunkt (`placement=page`) und optimiert nur, wenn nötig (`optimize=auto`). Die
+  Vorschau zeigt Fläche, Seite und Linien, hochgeladen wird mit dem normalen Upload.
+- **In µplot bearbeiten:** µprint öffnet `<µplot>/?uprint=<µprint>#import-svg` und übergibt SVG, Gerätetyp und
+  Fläche per `postMessage`; „An µprint senden“ in µplot bringt den G-Code in dasselbe Fenster zurück.
+- **Von µplot aus:** „An µprint senden“ öffnet `<µprint>/#import`, µprint meldet `uprint-ready` mit Gerätetyp,
+  µplot schickt `uplot-gcode`, µprint meldet nach dem Hochladen `uprint-uploaded`.
+- **µplot-Adresse** in µprint unter Einstellungen → µplot, Standard `https://uplot.dmy.work`. Der µplot-Server
+  speichert nichts (uplot#2): Dateien nur während einer Anfrage, Profile im Browser. Wer die SVG gar nicht aus dem
+  Haus geben will, trägt eine eigene Instanz ein.
+- **2D/3D (#12):** `/api/files` liefert je Datei `kind` (`print`, `axidraw`, `pen`, `unknown`) aus den ersten
+  4 KB (`main/gcode_kind.c`, mit Zwischenspeicher) und `bounds` aus `; uplot-bounds`. Im AxiDraw-Modus sind nur
+  AxiDraw-Dateien startbar; ragt die Ausdehnung über die Fläche, fragt µprint nach. Im Druckermodus fragt es bei
+  AxiDraw-Dateien nach, weil `Z0` dort die Düse aufs Bett fahren würde.
 
 ## Testmodus (Alpha)
 
@@ -224,7 +248,14 @@ listet alle Releases; der Umschalter „Release / Alpha“ filtert das Versions-
 10. ~~µplot: AxiDraw-Modus laut [uplot#1](https://github.com/dmyrenne/uplot/issues/1)~~ (erledigt in µplot
     95a3e7c: Zeichenfläche mit Modellvorlagen, Offset 0, Nullpunkt oben links ohne Umklappen in Y, Z 0/1,
     Kennung in der ersten Zeile, Ende auf X0 Y0)
-11. Gesamttest beim Bekannten: SVG → µplot → µprint → AxiDraw, mit Stiftwechsel über die Taste
+11. Gesamttest beim Bekannten: SVG → µplot → µprint → AxiDraw, mit Stiftwechsel über die Taste. Dabei auch die
+    SVG direkt in µprint ablegen (`docs/feedback/001-*.svg`, A5 mit 21 mm Rand: Blatt an die Stiftposition beim
+    Einschalten legen)
+12. ~~2D- und 3D-G-Code unterscheiden ([#12](https://github.com/dmyrenne/uprint/issues/12))~~ (erledigt,
+    `main/gcode_kind.c`, Abzeichen und Startprüfung in der Dateiliste)
+13. ~~µplot anbinden ([#20](https://github.com/dmyrenne/uprint/issues/20),
+    [uplot#3](https://github.com/dmyrenne/uplot/issues/3))~~ (erledigt: SVG direkt in µprint, In µplot bearbeiten,
+    An µprint senden; Seite 1:1 und „Optimieren nur wenn nötig“ in µplot, dort auch Profile im Browser, uplot#2)
 
 ## Offen
 
