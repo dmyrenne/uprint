@@ -180,7 +180,7 @@ By default it looks like this. If several states apply at once, the upper one wi
 | Find device (button under Hardware) | flashes white for 10 s |
 | Firmware update | purple bar with the progress |
 | Error | red, breathing |
-| Heating | orange bar: current / target temperature |
+| Heating | orange bar: current / target temperature, never shrinks, until the first extruding move |
 | Printing or plotting | blue bar with the progress, the leading edge breathes |
 | Paused | amber bar, pulsing |
 | Finished | green until the next print starts |

@@ -40,6 +40,8 @@ typedef struct {
     char notice[64];
     // Drucker wartet während des Drucks auf eine Eingabe an seinem Display ("busy: paused for user", z. B. M600)
     bool user_wait;
+    // Erste Bewegung mit Extrusion gesendet (nach Aufheizen, Referenzieren und Vermessen beginnt der Druck)
+    bool extruding;
     // Rückfrage des Druckers ("// action:prompt_…"), Antwort über printer_prompt_answer()
     bool prompt;
     char prompt_text[64];

@@ -443,25 +443,22 @@ static led_state_t pick_state(float *value)
     if (ps.state == PRINTER_ERROR) {
         return LED_STATE_ERROR;
     }
-    // Aufheizen nur bis zum ersten Erreichen der Temperaturen; danach (Schwankungen, Temperaturwechsel im
-    // G-Code) zählen nur noch Fortschritt, Pause und Fehler
-    static bool s_heated;
+    // Aufheizen bis zur ersten Fahrt mit Extrusion, danach (Schwankungen, Temperaturwechsel im G-Code) zählen
+    // nur noch Fortschritt, Pause und Fehler. Der Balken wird dabei nie kürzer: nach dem Erreichen liegen die
+    // Temperaturen oft kurz darüber und fallen auf den Sollwert zurück, dazu kommen Referenzieren und Vermessen.
+    static float s_heat;
     if (ps.state != PRINTER_PRINTING && ps.state != PRINTER_PAUSED) {
-        s_heated = false;
+        s_heat = 0;
     }
     if (ps.state == PRINTER_PRINTING && ps.user_wait) {
         return LED_STATE_PAUSED;   // wartet am Display, z. B. Filamentwechsel
     }
     if (ps.state == PRINTER_PRINTING) {
-        bool hot = ps.hotend_target > 0 && ps.hotend < ps.hotend_target - 3;
-        bool bed = ps.bed_target > 0 && ps.bed < ps.bed_target - 2;
-        if (!s_heated && !hot && !bed && ps.hotend_target > 0) {
-            s_heated = true;
-        }
-        if (!s_heated && (hot || bed)) {
-            float h = hot ? ps.hotend / ps.hotend_target : 1.0f;
-            float b = bed ? ps.bed / ps.bed_target : 1.0f;
-            *value = fminf(h, b);
+        if (!ps.extruding && (ps.hotend_target > 0 || ps.bed_target > 0)) {
+            float h = ps.hotend_target > 0 ? fminf(ps.hotend / ps.hotend_target, 1.0f) : 1.0f;
+            float b = ps.bed_target > 0 ? fminf(ps.bed / ps.bed_target, 1.0f) : 1.0f;
+            s_heat = fmaxf(s_heat, fminf(h, b));
+            *value = s_heat;
             return LED_STATE_HEATING;
         }
         return LED_STATE_PRINTING;

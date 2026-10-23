@@ -354,6 +354,12 @@ static void track_motion(const char *cmd)
         if (gcode_param(cmd, 'F', &v) && v > 0) {
             s_feed = v;
         }
+        // Fahrt mit Extrusion: der eigentliche Druck (bzw. die Vorlauflinie) beginnt; reines Vorschieben zählt nicht
+        if (!s_st.extruding && gcode_param(cmd, 'E', &v) && v > 0 && (gcode_has(cmd, 'X') || gcode_has(cmd, 'Y'))) {
+            LOCK();
+            s_st.extruding = true;
+            UNLOCK();
+        }
         break;
     case 28:
         // Referenzieren ohne Achsangabe (oder mit Z) setzt Z auf einen unbekannten Wert
@@ -1181,6 +1187,7 @@ esp_err_t printer_start(storage_vol_t vol, const char *name)
         s_m73_bytes = 0;
         s_st.notice[0] = '\0';
         s_st.user_wait = false;
+        s_st.extruding = false;
         s_st.prompt = false;
         strlcpy(s_st.message, "Druck läuft", sizeof(s_st.message));
         s_req_start = true;
