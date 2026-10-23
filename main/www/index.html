@@ -12,12 +12,14 @@
     --sans: 'Space Grotesk', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
     --bg: #f3f4f6; --panel: #ffffff; --field: #ffffff; --ink: #0c0d10; --muted: #71737c; --line: #e3e4e8; --line-strong: #c9cbd2;
     --accent: #2340ff; --accent-soft: #e8ebff; --accent-ink: #ffffff; --warn: #d4380d; --warn-bg: #fff1eb;
+    --hold: #9a5b00; --hold-bg: #fff4dc;
     --dot: #d9dbe1;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0b0c0f; --panel: #121318; --field: #0b0c0f; --ink: #eceef3; --muted: #8b8e99; --line: #23252d; --line-strong: #353843;
       --accent: #7187ff; --accent-soft: #1b2146; --accent-ink: #0b0c0f; --warn: #ff8a66; --warn-bg: #2d1710;
+      --hold: #ffb547; --hold-bg: #2b2010;
       --dot: #1e2027;
     }
   }
@@ -71,6 +73,7 @@
   .tab.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .tab.wait { border-color: var(--accent); color: var(--accent); }
   .tab.bad { background: var(--warn-bg); border-color: transparent; color: var(--warn); }
+  .tab.hold { background: var(--hold-bg); border-color: transparent; color: var(--hold); }
   .tab.busy::before { animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
 
@@ -889,8 +892,11 @@ function renderStatus() {
   const state = offline ? 'offline' : s.state || 'connecting';
   const tab = $('tab');
   tab.textContent = t(s.unresponsive && !offline ? 'state.unresponsive'
-    : state === 'disconnected' && axiMode() ? 'state.axiDisconnected' : 'state.' + state);
-  tab.className = 'tab ' + ({ idle: 'on', printing: 'on busy', paused: 'on', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
+    : state === 'disconnected' && axiMode() ? 'state.axiDisconnected'
+    : state === 'printing' && s.user_wait ? 'state.userWait' : 'state.' + state);
+  // Pause und Warten am Display in eigener Farbe, damit sie nicht wie „bereit“ aussehen
+  const hold = !offline && (state === 'paused' || (state === 'printing' && s.user_wait));
+  tab.className = 'tab ' + (hold ? 'hold busy' : { idle: 'on', printing: 'on busy', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
 
   // Fortschritt und Restzeit aus M73 (Slicer), sonst nach gesendeten Bytes geschätzt
   const pct = a ? (s.progress >= 0 ? s.progress : s.size ? s.pos / s.size * 100 : 0) : done ? 100 : 0;
@@ -928,7 +934,7 @@ function renderStatus() {
   // Meldungen der Firmware wie „Druck fertig …“ zusätzlich zeigen, solange nichts läuft
   const note = !offline && !done && s.state === 'idle' && !s.finished && s.message && !['Drucker bereit', 'Fehler quittiert'].includes(s.message) ? s.message : '';
   // Meldungen des Druckers selbst ("action:notification") haben Vorrang
-  const shownNote = !offline && s.notice ? s.notice : note;
+  const shownNote = !offline && s.notice ? s.notice : !offline && a && s.user_wait ? t('job.userWait') : note;
   $('jobNote').textContent = shownNote; $('jobNote').hidden = !shownNote;
   renderPrompt(offline ? null : s.prompt);
   $('jobTitle').textContent = title;

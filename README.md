@@ -105,8 +105,10 @@ background, and offers a **Reconnect** button.
 µprint also follows what happens on the printer itself (Marlin and Prusa *host actions*): pausing or stopping on the
 printer's display pauses or cancels the print in µprint too, and on a filament runout the printer parks and µprint
 waits. Notes from the printer appear in the print card, and when the printer asks something (for example whether the
-new filament came out clean), the question shows up there with its buttons. If the slicer wrote progress and time
-left into the file (`M73`), µprint shows those values instead of its own estimate.
+new filament came out clean), the question shows up there with its buttons. While the printer waits for input on its
+own display (for example during a filament change), the print card says so. On a Prusa MK3/MK3S a print paused from
+the display is resumed in the web UI, because the printer leaves that to the host. If the slicer wrote progress and
+time left into the file (`M73`), µprint shows those values instead of its own estimate.
 
 The settings are split into two cards:
 

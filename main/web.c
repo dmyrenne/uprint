@@ -116,7 +116,8 @@ static esp_err_t status_get(httpd_req_t *req)
     // Meldung und Rückfrage des Druckers (#33), als eigene Stücke, damit der Puffer oben klein bleibt
     static char esc[sizeof(st.prompt_text) * 6];
     http_json_escape(esc, sizeof(esc), st.notice);
-    snprintf(body, sizeof(body), ",\"notice\":\"%s\",\"prompt\":", esc);
+    snprintf(body, sizeof(body), ",\"notice\":\"%s\",\"user_wait\":%s,\"prompt\":", esc,
+             st.user_wait ? "true" : "false");
     httpd_resp_sendstr_chunk(req, body);
     if (!st.prompt) {
         httpd_resp_sendstr_chunk(req, "null}");

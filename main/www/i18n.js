@@ -13,6 +13,7 @@ const I18N = {
     'state.connecting': 'Verbinde …',
     'state.idle': 'Verbunden',
     'state.printing': 'Druckt',
+    'state.userWait': 'Wartet',
     'state.printing.axi': 'Plottet',
     'state.paused': 'Pausiert',
     'state.error': 'Fehler',
@@ -46,6 +47,7 @@ const I18N = {
     'start': 'Drucken',
     'download': 'Download',
     'job.ready': 'bereit zum Drucken',
+    'job.userWait': 'Der Drucker wartet auf eine Eingabe an seinem Display.',
     'delete': 'Löschen',
     'confirm.delete': '„{name}“ löschen?',
 
@@ -358,6 +360,7 @@ const I18N = {
     'state.connecting': 'Connecting …',
     'state.idle': 'Connected',
     'state.printing': 'Printing',
+    'state.userWait': 'Waiting',
     'state.printing.axi': 'Plotting',
     'state.paused': 'Paused',
     'state.error': 'Error',
@@ -391,6 +394,7 @@ const I18N = {
     'start': 'Print',
     'download': 'Download',
     'job.ready': 'ready to print',
+    'job.userWait': 'The printer is waiting for input on its display.',
     'delete': 'Delete',
     'confirm.delete': 'Delete “{name}”?',
 

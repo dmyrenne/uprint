@@ -82,6 +82,9 @@ static uint32_t s_last_n;      // höchste bisher vergebene Zeilennummer
 static uint32_t s_next_n;      // als nächstes zu sendende Nummer (<= s_last_n: Wiederholung)
 static bool s_ready;           // letzte Zeile bestätigt, nächste darf raus
 static bool s_need_sync;
+// Nächste Zeile ist "M110 N<n>": setzt die Zeilennummer im Drucker auf unsere, z. B. wenn er nach einem
+// abgebrochenen Druck noch alte Zeilen haben will
+static bool s_renumber;
 static int64_t s_last_io_us;
 static int64_t s_connect_since;   // Beginn des aktuellen Verbindungsversuchs
 static char s_inject[INJECT_LEN][CMD_BUF];
@@ -97,6 +100,7 @@ static bool s_z_known;
 static float s_z;
 static float s_feed;           // zuletzt gesetzter Vorschub (mm/min), 0 = unbekannt
 static bool s_lifted;          // beim Pausieren angehoben
+static char s_pause_msg[64];   // Grund der Pause ("Pausiert", "Pausiert am Drucker"), Zusatz beim Anheben dahinter
 static float s_pause_z;        // Z vor dem Anheben
 
 #define LOCK()   xSemaphoreTake(s_lock, portMAX_DELAY)
@@ -119,6 +123,9 @@ static void set_state(printer_state_t state, const char *fmt, ...)
     LOCK();
     s_st.state = state;
     strlcpy(s_st.message, msg, sizeof(s_st.message));
+    if (state != PRINTER_PRINTING && state != PRINTER_PAUSED) {
+        s_st.user_wait = false;
+    }
     UNLOCK();
     ESP_LOGI(TAG, "[%s] %s", printer_state_name(state), msg);
 }
@@ -411,15 +418,18 @@ static void pause_lift(void)
     }
     if (!s_z_known || !s_abs_xyz) {
         ESP_LOGW(TAG, "Z-Position unbekannt, pausiere ohne Anheben");
-        set_pause_message("Pausiert (Z-Position unbekannt, nicht angehoben)");
+        char msg[sizeof(s_st.message)];
+        snprintf(msg, sizeof(msg), "%s (Z-Position unbekannt, nicht angehoben)", s_pause_msg);
+        set_pause_message(msg);
         return;
     }
     s_pause_z = s_z;
     s_lifted = true;
     snprintf(cmd, sizeof(cmd), "G1 Z%.2f F600", s_z + cfg.pause_lift);
     inject(cmd);
-    snprintf(cmd, sizeof(cmd), "Pausiert, Düse um %d mm angehoben", cfg.pause_lift);
-    set_pause_message(cmd);
+    char msg[sizeof(s_st.message)];
+    snprintf(msg, sizeof(msg), "%s, Düse um %d mm angehoben", s_pause_msg, cfg.pause_lift);
+    set_pause_message(msg);
 }
 
 static void resume_lower(void)
@@ -548,8 +558,27 @@ static int read_file_line(char *out)
     return ferror(s_file) ? -2 : 0;
 }
 
+// Neue Zeile mit der nächsten Nummer senden und für "Resend:" merken
+static void send_new(const char *cmd)
+{
+    uint32_t n = ++s_last_n;
+    history_t *h = &s_hist[n % HISTORY_LEN];
+    h->n = n;
+    strlcpy(h->cmd, cmd, sizeof(h->cmd));
+    s_next_n = n + 1;
+    transmit(n, cmd);
+}
+
 static void send_next(void)
 {
+    if (s_renumber) {
+        // Hat Vorrang vor einer Wiederholung: Der Drucker zählt danach ab dieser Zeile weiter
+        s_renumber = false;
+        char cmd[CMD_BUF];
+        snprintf(cmd, sizeof(cmd), "M110 N%" PRIu32, s_last_n + 1);
+        send_new(cmd);
+        return;
+    }
     if (s_next_n <= s_last_n) {
         const history_t *h = &s_hist[s_next_n % HISTORY_LEN];
         if (h->n != s_next_n) {
@@ -584,13 +613,7 @@ static void send_next(void)
     } else {
         return;
     }
-
-    uint32_t n = ++s_last_n;
-    history_t *h = &s_hist[n % HISTORY_LEN];
-    h->n = n;
-    strlcpy(h->cmd, cmd, sizeof(h->cmd));
-    s_next_n = n + 1;
-    transmit(n, cmd);
+    send_new(cmd);
 }
 
 static void parse_temp(const char *line, const char *key, float *value, float *target)
@@ -692,6 +715,13 @@ static bool routine_line(const char *line)
     return starts_with(line, "ok") || starts_with(line, "T:");
 }
 
+static void set_user_wait(bool wait)
+{
+    LOCK();
+    s_st.user_wait = wait && job_active(s_st.state);
+    UNLOCK();
+}
+
 static void handle_line(const char *line)
 {
     s_last_io_us = now_us();
@@ -708,12 +738,27 @@ static void handle_line(const char *line)
     }
     parse_temps(line);
 
+    if (starts_with(line, "ok") || strstr(line, "busy: processing")) {
+        set_user_wait(false);
+    }
     if (starts_with(line, "ok")) {
         s_ready = true;
         return;
     }
+    if (strstr(line, "busy: paused for user")) {
+        // Marlin und Prusa warten am Display (M0, M600 …) und bestätigen die Zeile erst danach
+        set_user_wait(true);
+        return;
+    }
     if (starts_with(line, "Resend:") || starts_with(line, "rs ")) {
         const char *p = strpbrk(line, "0123456789");
+        if (p && s_ready && !job_active(get_state())) {
+            // Nichts unterwegs und kein Druck, z. B. nach einer Kollision am Prusa (CRASH_RECOVER) nach dem Abbruch:
+            // keine alten Zeilen wiederholen, sondern die Zählung im Drucker angleichen
+            ESP_LOGW(TAG, "Drucker fordert Zeile %s erneut an, es läuft aber kein Druck: gleiche Zeilennummer an", p);
+            s_renumber = true;
+            return;
+        }
         if (p) {
             uint32_t n = strtoul(p, NULL, 10);
             if (n >= 1 && n <= s_last_n + 1) {
@@ -890,6 +935,7 @@ static void process_requests(void)
         if (!axi) {
             load_shutdown(path);
             reset_motion();
+            s_renumber = true;   // falls der Drucker noch an einem früheren Druck hängt
         }
         LOCK();
         s_st.file_size = size;
@@ -1112,6 +1158,7 @@ esp_err_t printer_start(storage_vol_t vol, const char *name)
         s_st.progress = -1;
         s_st.remaining_s = -1;
         s_st.notice[0] = '\0';
+        s_st.user_wait = false;
         s_st.prompt = false;
         strlcpy(s_st.message, "Druck läuft", sizeof(s_st.message));
         s_req_start = true;
@@ -1131,6 +1178,7 @@ static esp_err_t pause_request(bool lift, const char *msg)
         // Senden anhalten und Düse anheben (im Drucker-Task); Heizungen bleiben an
         s_st.state = PRINTER_PAUSED;
         strlcpy(s_st.message, msg, sizeof(s_st.message));
+        strlcpy(s_pause_msg, msg, sizeof(s_pause_msg));
         s_req_pause = true;
         s_req_pause_nolift = !lift;
     }
