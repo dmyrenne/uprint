@@ -25,7 +25,8 @@ USB (for example the Prusa MK3S) and with AxiDraw / NextDraw pen plotters (EiBot
 - **Setup on one page** through the device's own access point with a captive portal: device name, Wi-Fi and an
   optional password; or run it access point only
 - **Optional password** for the web interface; print status and file list stay readable without signing in
-- **Updates over the air** from the web interface, with automatic rollback if a new version fails to start, plus a
+- **Updates over the air** from the web interface, one click to the latest release on GitHub or with a downloaded
+  file, with automatic rollback if a new version fails to start, plus a
   [web flasher](https://dmyrenne.github.io/uprint/) for the first install
 - **Diagnostics:** a live log in the browser that survives restarts and crashes, optionally with the printer
   communication, and a diagnostics file to attach to bug reports
@@ -241,9 +242,12 @@ that the log may contain your Wi-Fi name and file names.
 
 ## Updating
 
-New versions appear under [Releases](https://github.com/dmyrenne/uprint/releases). Updating needs no cable: download
-the `uprint-…-ota.bin` file for your variant (`basic`, `n16r8` or `xiao` in the name) and install it in µprint under
-**Settings → Firmware**, which also shows the installed variant. µprint restarts afterwards; your settings, Wi-Fi and
+New versions appear under [Releases](https://github.com/dmyrenne/uprint/releases). Updating needs no cable. When the
+browser you use µprint from can reach the internet, **Settings → Firmware** shows the latest release for your variant
+(and a note next to the version at the bottom of the page); **Update to …** downloads it and installs it. Tick **Also
+offer alpha versions** to get pre-releases too. The browser fetches the file from GitHub Pages and hands it to µprint,
+so µprint itself never needs internet access. Without internet, download the `uprint-…-ota.bin` file for your variant
+(`basic`, `n16r8` or `xiao` in the name) and choose it in the same place, which also shows the installed variant. µprint restarts afterwards; your settings, Wi-Fi and
 all files are kept. A new version only counts as good once it has started up completely; if it crashes before that,
 µprint goes back to the previous version by itself and says so under **Settings → Firmware**. This needs the
 bootloader from v0.8.0 or later, so devices flashed with an older version have to be flashed once with the web flasher

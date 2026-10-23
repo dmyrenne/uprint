@@ -1,5 +1,6 @@
 # Web-Flasher auf GitHub Pages: bietet die letzten 5 stabilen Releases und alle Vorab-Releases (Alpha) zur
-# Auswahl an, damit man auch zu einer älteren Version zurück kann. Da GitHub Pages bei jedem Deploy die ganze
+# Auswahl an, damit man auch zu einer älteren Version zurück kann. Dieselbe releases.json und die OTA-Images
+# nutzt die Weboberfläche von µprint für das Update direkt von GitHub (#47); Pages erlaubt den Abruf per CORS. Da GitHub Pages bei jedem Deploy die ganze
 # Seite ersetzt, wird sie jedes Mal aus den Releases neu zusammengestellt.
 # Läuft nach jedem Release (von firmware.yml angestoßen) und wenn sich die Flasher-Seite in main ändert.
 # Die Seite kommt immer aus main, auch wenn das Release aus einem Branch stammt.
@@ -43,7 +44,7 @@ jobs:
           cp flasher/index.html site/
           cp main/www/fonts/*.woff2 main/www/fonts/OFL-*.txt site/fonts/
           # releases.json: neueste zuerst, je Eintrag Version, Vorab-Kennzeichen, Branch (bei Alphas),
-          # Datum und vorhandene Varianten
+          # Datum, vorhandene Varianten und je Variante Größe und SHA-256 des OTA-Images
           echo '[]' > site/releases.json
           stable=0
           gh release list --exclude-drafts --limit 100 --json tagName,name,isPrerelease,publishedAt \
@@ -55,8 +56,9 @@ jobs:
             fi
             version=${tag#v}
             mkdir -p "dl/$version" "site/firmware/$version"
-            gh release download "$tag" -p '*-factory.bin' -D "dl/$version" || true
+            gh release download "$tag" -p '*-factory.bin' -p '*-ota.bin' -D "dl/$version" || true
             variants='[]'
+            ota='{}'
             # Je Variante ein Image und ein Manifest für ESP Web Tools
             for v in n16r8 basic xiao; do
               [ -f "dl/$version/uprint-$version-$v-factory.bin" ] || continue
@@ -72,11 +74,17 @@ jobs:
           }
           EOF
               variants=$(jq -c --arg v "$v" '. + [$v]' <<<"$variants")
+              # OTA-Image für das Update aus der Weboberfläche
+              f="dl/$version/uprint-$version-$v-ota.bin"
+              [ -f "$f" ] || continue
+              cp "$f" "site/firmware/$version/uprint-$v-ota.bin"
+              ota=$(jq -c --arg v "$v" --argjson size "$(stat -c %s "$f")" --arg sha "$(sha256sum "$f" | cut -d' ' -f1)" \
+                '. + {($v): {size: $size, sha256: $sha}}' <<<"$ota")
             done
             [ "$variants" != '[]' ] || continue
             jq --arg version "$version" --argjson pre "$pre" --arg branch "$branch" --arg date "${date%%T*}" \
-              --argjson variants "$variants" \
-              '. + [{version: $version, prerelease: $pre, branch: $branch, date: $date, variants: $variants}]' \
+              --argjson variants "$variants" --argjson ota "$ota" \
+              '. + [{version: $version, prerelease: $pre, branch: $branch, date: $date, variants: $variants, ota: $ota}]' \
               site/releases.json > releases.tmp
             mv releases.tmp site/releases.json
           done
