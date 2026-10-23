@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <inttypes.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,11 +15,15 @@
 #include "sdkconfig.h"
 
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
+#include "esp_idf_version.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "auth.h"
 #include "axidraw.h"
 #include "captive.h"
+#include "diag.h"
 #include "http_util.h"
 #include "printer.h"
 #include "reset.h"
@@ -27,6 +32,7 @@
 #include "variant.h"
 #include "status_led.h"
 #include "storage.h"
+#include "usb_serial.h"
 #include "web.h"
 #include "wifi.h"
 
@@ -99,13 +105,34 @@ static esp_err_t status_get(httpd_req_t *req)
              "{\"state\":\"%s\",\"file\":\"%s\",\"size\":%" PRIu32 ",\"pos\":%" PRIu32
              ",\"elapsed\":%" PRIu32 ",\"hotend\":%.1f,\"hotend_target\":%.1f"
              ",\"bed\":%.1f,\"bed_target\":%.1f,\"message\":\"%s\",\"storage\":\"%s\""
-             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 ",\"led_id\":\"%s\",\"led_ma\":%d,\"unresponsive\":%s}",
+             ",\"finished\":%s,\"duration\":%" PRIu32 ",\"files_rev\":%" PRIu32 ",\"led_id\":\"%s\",\"led_ma\":%d,\"unresponsive\":%s,\"progress\":%.1f,\"remaining\":%" PRId32,
              printer_state_name(st.state), file, st.file_size, st.file_pos, st.elapsed_s,
              st.hotend, st.hotend_target, st.bed, st.bed_target, msg, storage_id(st.vol),
              st.finished ? "true" : "false", st.duration_s, storage_revision(), led_id, status_led_current_ma(),
-             st.unresponsive ? "true" : "false");
+             st.unresponsive ? "true" : "false", st.progress, st.remaining_s);
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_sendstr(req, body);
+    httpd_resp_sendstr_chunk(req, body);
+
+    // Meldung und Rückfrage des Druckers (#33), als eigene Stücke, damit der Puffer oben klein bleibt
+    static char esc[sizeof(st.prompt_text) * 6];
+    http_json_escape(esc, sizeof(esc), st.notice);
+    snprintf(body, sizeof(body), ",\"notice\":\"%s\",\"user_wait\":%s,\"prompt\":", esc,
+             st.user_wait ? "true" : "false");
+    httpd_resp_sendstr_chunk(req, body);
+    if (!st.prompt) {
+        httpd_resp_sendstr_chunk(req, "null}");
+        return httpd_resp_sendstr_chunk(req, NULL);
+    }
+    http_json_escape(esc, sizeof(esc), st.prompt_text);
+    snprintf(body, sizeof(body), "{\"text\":\"%s\",\"choices\":[", esc);
+    httpd_resp_sendstr_chunk(req, body);
+    for (int i = 0; i < st.prompt_choices; i++) {
+        http_json_escape(esc, sizeof(esc), st.prompt_choice[i]);
+        snprintf(body, sizeof(body), "%s\"%s\"", i ? "," : "", esc);
+        httpd_resp_sendstr_chunk(req, body);
+    }
+    httpd_resp_sendstr_chunk(req, "]}}");
+    return httpd_resp_sendstr_chunk(req, NULL);
 }
 
 static esp_err_t files_get(httpd_req_t *req)
@@ -315,6 +342,17 @@ static esp_err_t resume_post(httpd_req_t *req)
     return send_result(req, printer_resume(), "Druck ist nicht pausiert");
 }
 
+// ?choice=<n>: Antwort auf eine Rückfrage des Druckers (#33)
+static esp_err_t prompt_post(httpd_req_t *req)
+{
+    char query[32], val[8];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "choice", val, sizeof(val)) != ESP_OK) {
+        return http_send_error(req, "400 Bad Request", "choice fehlt");
+    }
+    return send_result(req, printer_prompt_answer(atoi(val)), "Keine offene Rückfrage des Druckers");
+}
+
 static esp_err_t retry_post(httpd_req_t *req)
 {
     return send_result(req, printer_retry(), "Drucker wartet gerade nicht auf eine Verbindung");
@@ -339,7 +377,7 @@ static esp_err_t wifi_get(httpd_req_t *req)
              ",\"reason\":%d,\"ap\":%s,\"ap_ssid\":\"%s\",\"ap_ip\":\"192.168.4.1\",\"hostname\":\"%s\""
              ",\"ap_only\":%s,\"ap_off_in\":%d,\"via_ap\":%s,\"portal\":%s}",
              st.configured ? "true" : "false", st.connected ? "true" : "false", ssid, st.ip, st.rssi,
-             st.last_reason, st.ap_active ? "true" : "false", st.hostname, st.hostname,
+             st.last_reason, st.ap_active ? "true" : "false", st.ap_ssid, st.hostname,
              st.ap_only ? "true" : "false", st.ap_off_in, via_ap ? "true" : "false",
              via_ap && st.ap_active && !st.ap_only ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
@@ -420,6 +458,17 @@ static esp_err_t wifi_delete(httpd_req_t *req)
     return send_result(req, wifi_forget(), "");
 }
 
+// Version eines Updates, das beim Start fehlgeschlagen ist (der Bootloader ist zurückgekehrt), sonst ""
+static void failed_update(char *out, size_t len)
+{
+    out[0] = '\0';
+    const esp_partition_t *bad = esp_ota_get_last_invalid_partition();
+    esp_app_desc_t desc;
+    if (bad && esp_ota_get_partition_description(bad, &desc) == ESP_OK) {
+        http_json_escape(out, len, desc.version);
+    }
+}
+
 static esp_err_t settings_get_handler(httpd_req_t *req)
 {
     settings_t c;
@@ -433,11 +482,14 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     http_json_escape(version, sizeof(version), esp_app_get_description()->version);
     http_json_escape(host, sizeof(host), c.hostname);
     http_json_escape(pass, sizeof(pass), c.ap_password);
+    char failed[32 * 6];
+    failed_update(failed, sizeof(failed));
     size_t n = snprintf(body, sizeof(body),
                         "{\"device_name\":\"%s\",\"hostname\":\"%s\",\"ap_password\":\"%s\",\"api_key\":\"%s\""
-                        ",\"reboot_required\":%s,\"version\":\"%s\",\"variant\":\"%s\"",
+                        ",\"reboot_required\":%s,\"version\":\"%s\",\"variant\":\"%s\",\"failed_update\":\"%s\""
+                        ",\"default_hostname\":\"%s\"",
                         name, host, pass, c.api_key, settings_reboot_required() ? "true" : "false", version,
-                        uprint_variant());
+                        uprint_variant(), failed, settings_default_hostname());
     for (size_t i = 0; i < SETTINGS_INT_FIELD_COUNT && n < sizeof(body); i++) {
         const settings_int_field_t *f = &SETTINGS_INT_FIELDS[i];
         n += snprintf(body + n, sizeof(body) - n, ",\"%s\":%d", f->key, SETTINGS_INT(&c, f));
@@ -490,14 +542,18 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     settings_t c;
     settings_get(&c);
     char buf[64 * 3 + 1];
+    if (form_value(body, "hostname", buf, sizeof(buf))) {
+        strlcpy(c.hostname, buf, sizeof(c.hostname));
+    }
+    // Ein geänderter Gerätename bestimmt auch den Hostnamen (ein mitgeschickter Hostname zählt dann nicht)
     if (form_value(body, "device_name", buf, sizeof(buf))) {
         if (strlen(buf) >= sizeof(c.device_name)) {
             return http_send_error(req, "400 Bad Request", "Gerätename: höchstens 32 Bytes");
         }
-        strlcpy(c.device_name, buf, sizeof(c.device_name));
-    }
-    if (form_value(body, "hostname", buf, sizeof(buf))) {
-        strlcpy(c.hostname, buf, sizeof(c.hostname));
+        if (strcmp(buf, c.device_name) != 0) {
+            strlcpy(c.device_name, buf, sizeof(c.device_name));
+            settings_hostname_from_name(c.device_name, c.hostname, sizeof(c.hostname));
+        }
     }
     if (form_value(body, "ap_password", buf, sizeof(buf))) {
         strlcpy(c.ap_password, buf, sizeof(c.ap_password));
@@ -948,6 +1004,342 @@ static esp_err_t reboot_post(httpd_req_t *req)
     return http_send_ok(req);
 }
 
+// ---------- Diagnose (#36) ----------
+
+static bool query_u64(httpd_req_t *req, const char *key, uint64_t *out)
+{
+    char query[96], val[24];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, key, val, sizeof(val)) != ESP_OK) {
+        return false;
+    }
+    char *end;
+    *out = strtoull(val, &end, 10);
+    return end != val && *end == '\0';
+}
+
+// Sendet das Log von pos bis end in Stücken; cut = die erste (angeschnittene) Zeile weglassen
+static esp_err_t send_log(httpd_req_t *req, uint64_t pos, uint64_t end, bool cut)
+{
+    static char buf[4096];
+    while (pos < end) {
+        uint64_t want = end - pos;
+        size_t n = diag_log_read(&pos, buf, want < sizeof(buf) ? (size_t)want : sizeof(buf));
+        if (n == 0) {
+            break;
+        }
+        char *p = buf;
+        if (cut) {
+            char *nl = memchr(buf, '\n', n);
+            if (!nl) {
+                continue;
+            }
+            cut = false;
+            n -= nl + 1 - buf;
+            p = nl + 1;
+        }
+        if (n > 0 && httpd_resp_send_chunk(req, p, n) != ESP_OK) {
+            return ESP_FAIL;
+        }
+    }
+    return ESP_OK;
+}
+
+// ?since=<pos>: neue Zeilen ab dieser Position, sonst die letzten ?tail=<bytes> (Standard 64 KB).
+// X-Log-Next ist die Position für die nächste Abfrage, X-Log-Serial der Mitschnitt der Druckerkommunikation.
+static esp_err_t log_get(httpd_req_t *req)
+{
+    static char next[24], serial[4];
+    uint64_t end = diag_log_end();
+    uint64_t start = diag_log_start();
+    uint64_t pos, tail = 64 * 1024;
+    bool cut = false;
+    if (!query_u64(req, "since", &pos)) {
+        query_u64(req, "tail", &tail);
+        pos = end - start > tail ? end - tail : start;
+        cut = pos > start;
+    } else if (pos > end) {
+        pos = start;   // nach dem Einschalten beginnt das Log neu
+    }
+    snprintf(next, sizeof(next), "%" PRIu64, end);
+    snprintf(serial, sizeof(serial), "%d", (int)diag_serial());
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "X-Log-Next", next);
+    httpd_resp_set_hdr(req, "X-Log-Serial", serial);
+    if (send_log(req, pos, end, cut) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+static esp_err_t log_delete(httpd_req_t *req)
+{
+    diag_log_clear();
+    return http_send_ok(req);
+}
+
+// ?level=0|1|2 (diag_serial_t)
+static esp_err_t log_serial_post(httpd_req_t *req)
+{
+    uint64_t level;
+    if (!query_u64(req, "level", &level) || level > DIAG_SERIAL_ALL) {
+        return http_send_error(req, "400 Bad Request", "level=0, 1 oder 2");
+    }
+    diag_set_serial((diag_serial_t)level);
+    return http_send_ok(req);
+}
+
+__attribute__((format(printf, 2, 3)))
+static esp_err_t diag_printf(httpd_req_t *req, const char *fmt, ...)
+{
+    char line[256];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    if (n < 0) {
+        return ESP_OK;
+    }
+    return httpd_resp_send_chunk(req, line, (size_t)n < sizeof(line) ? (size_t)n : sizeof(line) - 1);
+}
+
+// Diagnose als Textdatei für Fehlerberichte: Gerät, Zustand, Einstellungen ohne Passwörter und API-Schlüssel (den
+// WLAN-Namen nur, soweit er im Log steht), dann das ganze Log
+static esp_err_t diag_get(httpd_req_t *req)
+{
+    static char disposition[96];
+    settings_t c;
+    wifi_status_t w;
+    printer_status_t ps;
+    char usb[128];
+    settings_get(&c);
+    wifi_get_status(&w);
+    printer_get_status(&ps);
+    usb_serial_info(usb, sizeof(usb));
+    snprintf(disposition, sizeof(disposition), "attachment; filename=\"uprint-diagnose-%s.txt\"", c.hostname);
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Content-Disposition", disposition);
+
+    const esp_app_desc_t *app = esp_app_get_description();
+    int64_t up = esp_timer_get_time() / 1000000;
+    char failed[32 * 6];
+    failed_update(failed, sizeof(failed));
+    diag_printf(req, "µprint Diagnose\n\n");
+    diag_printf(req, "Firmware:      %s (%s), ESP-IDF %s, gebaut %s %s\n", app->version, uprint_variant(),
+                esp_get_idf_version(), app->date, app->time);
+    if (failed[0]) {
+        diag_printf(req, "Rollback:      Update auf %s ist fehlgeschlagen\n", failed);
+    }
+    diag_printf(req, "Laufzeit:      %" PRId64 " h %02" PRId64 " min %02" PRId64 " s\n", up / 3600, up / 60 % 60,
+                up % 60);
+    diag_printf(req, "Neustart:      %s (Start %" PRIu32 " seit dem Einschalten)\n", diag_reset_reason(),
+                diag_boot_count());
+    diag_printf(req, "RAM intern:    %u frei, mindestens %u frei seit dem Start\n",
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+    diag_printf(req, "PSRAM:         %u frei\n", (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    diag_printf(req, "WLAN:          %s, %s, IP %s, %d dBm, letzter Trennungsgrund %d\n",
+                w.connected ? "verbunden" : w.configured ? "nicht verbunden" : "nicht eingerichtet",
+                w.ap_active ? "Access Point offen" : "Access Point zu", w.ip[0] ? w.ip : "-", w.rssi, w.last_reason);
+    diag_printf(req, "USB:           %s, %s\n", usb_serial_connected() ? "verbunden" : "nicht verbunden", usb);
+    diag_printf(req, "Drucker:       %s, %s\n", printer_state_name(ps.state), ps.message);
+    if (ps.file[0]) {
+        diag_printf(req, "Datei:         %s (%s), %" PRIu32 " von %" PRIu32 " Bytes\n", ps.file, storage_id(ps.vol),
+                    ps.file_pos, ps.file_size);
+    }
+    if (ps.notice[0]) {
+        diag_printf(req, "Hinweis:       %s\n", ps.notice);
+    }
+    for (int v = 0; v < STORAGE_COUNT; v++) {
+        if (!storage_present(v)) {
+            continue;
+        }
+        uint64_t total = 0, free = 0;
+        bool ready = storage_ready(v) && storage_usage(v, &total, &free) == ESP_OK;
+        diag_printf(req, "Speicher %-5s %s, %" PRIu64 " von %" PRIu64 " KB frei\n", storage_id(v),
+                    ready ? "bereit" : "nicht bereit", free / 1024, total / 1024);
+    }
+    diag_printf(req, "Passwort:      %s\n", auth_password_set() ? "gesetzt" : "keins");
+    diag_printf(req, "Mitschnitt:    %d\n\nEinstellungen:\n  device_name=%s\n  hostname=%s\n", (int)diag_serial(),
+                c.device_name, c.hostname);
+    for (size_t i = 0; i < SETTINGS_INT_FIELD_COUNT; i++) {
+        const settings_int_field_t *f = &SETTINGS_INT_FIELDS[i];
+        diag_printf(req, "  %s=%d\n", f->key, SETTINGS_INT(&c, f));
+    }
+    uint64_t start = diag_log_start(), end = diag_log_end();
+    diag_printf(req, "\nLog (%" PRIu64 " Bytes, Puffer %u KB, %s):\n", end - start, (unsigned)(diag_log_size() / 1024),
+                diag_log_kept() ? "mit den Läufen vor dem letzten Neustart" : "seit dem Einschalten");
+    if (send_log(req, start, end, start > 0 && end - start >= diag_log_size()) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+// ---------- Anmeldung (#31) ----------
+
+#define SESSION_COOKIE "uprint_session"
+
+// Ohne gesetztes Passwort ist alles offen, sonst braucht es ein gültiges Sitzungs-Cookie
+static bool session_ok(httpd_req_t *req)
+{
+    if (!auth_password_set()) {
+        return true;
+    }
+    char token[AUTH_TOKEN_LEN + 1];
+    size_t len = sizeof(token);
+    return httpd_req_get_cookie_val(req, SESSION_COOKIE, token, &len) == ESP_OK && auth_token_valid(token);
+}
+
+// Vor jeden geschützten Handler gesetzt; user_ctx ist der eigentliche Handler
+static esp_err_t guarded(httpd_req_t *req)
+{
+    if (!session_ok(req)) {
+        return http_send_error(req, "401 Unauthorized", "Bitte anmelden");
+    }
+    esp_err_t (*handler)(httpd_req_t *) = req->user_ctx;
+    return handler(req);
+}
+
+// Ohne Anmeldung erreichbar: die Oberfläche selbst, Status und Dateien lesen und die Anmeldung
+static bool route_open(const httpd_uri_t *r)
+{
+    if (r->handler == asset_get || strcmp(r->uri, "/api/auth") == 0) {
+        return true;
+    }
+    return r->method == HTTP_GET && (strcmp(r->uri, "/api/status") == 0 || strcmp(r->uri, "/api/files") == 0 ||
+                                     strcmp(r->uri, "/api/download") == 0);
+}
+
+// Neues Sitzungs-Cookie setzen und {"ok":true} senden
+static esp_err_t send_session(httpd_req_t *req)
+{
+    char token[AUTH_TOKEN_LEN + 1];
+    char cookie[AUTH_TOKEN_LEN + 96];
+    auth_new_token(token);
+    snprintf(cookie, sizeof(cookie), SESSION_COOKIE "=%s; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict", token);
+    httpd_resp_set_hdr(req, "Set-Cookie", cookie);
+    return http_send_ok(req);
+}
+
+static esp_err_t auth_get(httpd_req_t *req)
+{
+    char body[80];
+    snprintf(body, sizeof(body), "{\"password\":%s,\"session\":%s,\"setup\":%s}", auth_password_set() ? "true" : "false",
+             auth_password_set() && session_ok(req) ? "true" : "false", auth_setup_pending() ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, body);
+}
+
+// Prüft das Passwort; bei Fehler ist die Antwort schon gesendet
+static bool password_ok(httpd_req_t *req, const char *password, esp_err_t *ret)
+{
+    int wait_s;
+    switch (auth_check_password(password, &wait_s)) {
+    case AUTH_OK:
+        return true;
+    case AUTH_LOCKED: {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "Zu viele Fehlversuche, bitte in %d s erneut versuchen", wait_s);
+        *ret = http_send_error(req, "429 Too Many Requests", msg);
+        return false;
+    }
+    default:
+        *ret = http_send_error(req, "403 Forbidden", "Falsches Passwort");
+        return false;
+    }
+}
+
+// Anmelden, Body: password=<…>
+static esp_err_t auth_post(httpd_req_t *req)
+{
+    char body[256];
+    char pass[AUTH_PASSWORD_MAX * 3 + 1];
+    if (!http_recv_body(req, body, sizeof(body)) || httpd_query_key_value(body, "password", pass, sizeof(pass)) != ESP_OK) {
+        return http_send_error(req, "400 Bad Request", "Passwort fehlt");
+    }
+    http_url_decode(pass);
+    if (!auth_password_set()) {
+        return http_send_ok(req);
+    }
+    esp_err_t ret;
+    if (!password_ok(req, pass, &ret)) {
+        return ret;
+    }
+    ESP_LOGI(TAG, "Angemeldet");
+    return send_session(req);
+}
+
+// Abmelden: nur dieses Gerät, das Cookie wird gelöscht
+static esp_err_t auth_delete(httpd_req_t *req)
+{
+    httpd_resp_set_hdr(req, "Set-Cookie", SESSION_COOKIE "=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict");
+    return http_send_ok(req);
+}
+
+// "Ohne Passwort fortfahren": nicht mehr nach einem Passwort fragen
+static esp_err_t auth_skip_post(httpd_req_t *req)
+{
+    if (auth_password_set()) {
+        return http_send_error(req, "409 Conflict", "Es ist schon ein Passwort gesetzt");
+    }
+    return send_result(req, auth_skip(), "");
+}
+
+// Passwort festlegen oder ändern, Body: password=<neu>&current=<bisher>&ap=1 (auch für den Access Point).
+// Meldet alle anderen Sitzungen ab, diese bekommt ein neues Cookie. remove=1&current=<bisher> entfernt es.
+static esp_err_t password_post(httpd_req_t *req)
+{
+    char body[640];
+    char pass[AUTH_PASSWORD_MAX * 3 + 1] = "";
+    char current[AUTH_PASSWORD_MAX * 3 + 1] = "";
+    char ap[4] = "0", remove[4] = "0";
+    if (!http_recv_body(req, body, sizeof(body))) {
+        return http_send_error(req, "400 Bad Request", "Ungültige Anfrage");
+    }
+    httpd_query_key_value(body, "remove", remove, sizeof(remove));
+    bool removing = strcmp(remove, "1") == 0;
+    if (!removing && httpd_query_key_value(body, "password", pass, sizeof(pass)) != ESP_OK) {
+        return http_send_error(req, "400 Bad Request", "Passwort fehlt");
+    }
+    http_url_decode(pass);
+    httpd_query_key_value(body, "ap", ap, sizeof(ap));
+    size_t len = strlen(pass);
+    if (!removing && (len < AUTH_PASSWORD_MIN || len > AUTH_PASSWORD_MAX)) {
+        return http_send_error(req, "400 Bad Request", "Passwort: 8–63 Zeichen");
+    }
+    if (auth_password_set()) {
+        httpd_query_key_value(body, "current", current, sizeof(current));
+        http_url_decode(current);
+        esp_err_t ret;
+        if (!password_ok(req, current, &ret)) {
+            return ret;
+        }
+    }
+    if (removing) {
+        // Das Passwort des Access Points bleibt, es lässt sich unter "Netzwerk" ändern
+        if (auth_remove() != ESP_OK) {
+            return http_send_error(req, "500 Internal Server Error", "Passwort konnte nicht entfernt werden");
+        }
+        return auth_delete(req);
+    }
+    if (strcmp(ap, "1") == 0) {
+        // Gleiches Passwort für den Access Point, der dann nicht mehr offen ist (wirksam nach Neustart)
+        settings_t c;
+        settings_get(&c);
+        strlcpy(c.ap_password, pass, sizeof(c.ap_password));
+        const char *error;
+        if (settings_update(&c, &error) != ESP_OK) {
+            return http_send_error(req, "500 Internal Server Error", error);
+        }
+    }
+    if (auth_set_password(pass) != ESP_OK) {
+        return http_send_error(req, "500 Internal Server Error", "Passwort konnte nicht gespeichert werden");
+    }
+    return send_session(req);
+}
+
 // Prüfadressen der Betriebssysteme und die Antwort, die "Internet erreichbar" bedeutet
 typedef struct {
     const char *path;
@@ -999,7 +1391,7 @@ static esp_err_t not_found(httpd_req_t *req, httpd_err_code_t err)
 esp_err_t web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 48;
+    cfg.max_uri_handlers = 56;
     cfg.uri_match_fn = httpd_uri_match_wildcard;   // für PUT /api/v1/files/*
     cfg.stack_size = 8192;
     cfg.recv_wait_timeout = 10;
@@ -1023,6 +1415,7 @@ esp_err_t web_start(void)
         {.uri = "/api/resume",  .method = HTTP_POST,   .handler = resume_post},
         {.uri = "/api/cancel",  .method = HTTP_POST,   .handler = cancel_post},
         {.uri = "/api/printer/retry", .method = HTTP_POST, .handler = retry_post},
+        {.uri = "/api/printer/prompt", .method = HTTP_POST, .handler = prompt_post},
         {.uri = "/api/wifi",      .method = HTTP_GET,    .handler = wifi_get},
         {.uri = "/api/wifi",      .method = HTTP_POST,   .handler = wifi_post},
         {.uri = "/api/wifi",      .method = HTTP_DELETE, .handler = wifi_delete},
@@ -1045,9 +1438,23 @@ esp_err_t web_start(void)
         {.uri = "/api/leds/reset",    .method = HTTP_POST, .handler = leds_reset_post},
         {.uri = "/api/leds/preview",  .method = HTTP_POST, .handler = leds_preview_post},
         {.uri = "/api/led/find",      .method = HTTP_POST, .handler = led_find_post},
+        {.uri = "/api/auth",          .method = HTTP_GET,    .handler = auth_get},
+        {.uri = "/api/auth",          .method = HTTP_POST,   .handler = auth_post},
+        {.uri = "/api/auth",          .method = HTTP_DELETE, .handler = auth_delete},
+        {.uri = "/api/auth/password", .method = HTTP_POST,   .handler = password_post},
+        {.uri = "/api/auth/skip",     .method = HTTP_POST,   .handler = auth_skip_post},
+        {.uri = "/api/log",           .method = HTTP_GET,    .handler = log_get},
+        {.uri = "/api/log",           .method = HTTP_DELETE, .handler = log_delete},
+        {.uri = "/api/log/serial",    .method = HTTP_POST,   .handler = log_serial_post},
+        {.uri = "/api/diag",          .method = HTTP_GET,    .handler = diag_get},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
-        ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &routes[i]), TAG, "route %s", routes[i].uri);
+        httpd_uri_t r = routes[i];
+        if (!route_open(&r)) {
+            r.user_ctx = (void *)r.handler;
+            r.handler = guarded;
+        }
+        ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &r), TAG, "route %s", r.uri);
     }
     ESP_RETURN_ON_ERROR(slicer_api_register(server), TAG, "Slicer-API");
     httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, not_found);

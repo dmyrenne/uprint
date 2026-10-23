@@ -49,8 +49,10 @@ static int s_last_reason;
 
 static volatile bool s_scanning;
 
-// beim Start aus den Einstellungen übernommen, Änderungen gelten nach Neustart
+// beim Start aus den Einstellungen übernommen; der Hostname ändert sich über wifi_apply_device_name(), das
+// Passwort des Access Points erst nach einem Neustart
 static char s_hostname[33];
+static char s_ap_ssid[33];   // ändert sich erst beim nächsten Öffnen, wenn der Hostname wechselt
 static char s_ap_password[64];
 
 #define LOCK()   xSemaphoreTake(s_lock, portMAX_DELAY)
@@ -145,7 +147,8 @@ static void set_ap(bool on)
 
     if (on) {
         wifi_config_t cfg = {0};
-        strlcpy((char *)cfg.ap.ssid, s_hostname, sizeof(cfg.ap.ssid));
+        strlcpy(s_ap_ssid, s_hostname, sizeof(s_ap_ssid));
+        strlcpy((char *)cfg.ap.ssid, s_ap_ssid, sizeof(cfg.ap.ssid));
         cfg.ap.ssid_len = strlen((char *)cfg.ap.ssid);
         strlcpy((char *)cfg.ap.password, s_ap_password, sizeof(cfg.ap.password));
         cfg.ap.authmode = strlen(s_ap_password) >= 8 ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
@@ -154,7 +157,7 @@ static void set_ap(bool on)
         esp_wifi_set_mode(WIFI_MODE_APSTA);
         esp_wifi_set_config(WIFI_IF_AP, &cfg);
         captive_dns_start();
-        ESP_LOGI(TAG, "Access Point \"%s\" offen: http://192.168.4.1", s_hostname);
+        ESP_LOGI(TAG, "Access Point \"%s\" offen: http://192.168.4.1", s_ap_ssid);
     } else {
         esp_wifi_set_mode(WIFI_MODE_STA);
         ESP_LOGI(TAG, "Access Point geschlossen");
@@ -354,6 +357,7 @@ void wifi_get_status(wifi_status_t *out)
     out->last_reason = s_last_reason;
     strlcpy(out->ssid, s_ssid, sizeof(out->ssid));
     strlcpy(out->hostname, s_hostname, sizeof(out->hostname));
+    strlcpy(out->ap_ssid, out->ap_active ? s_ap_ssid : s_hostname, sizeof(out->ap_ssid));
     esp_ip4_addr_t ip = s_ip;
     UNLOCK();
 
@@ -517,6 +521,15 @@ void wifi_apply_device_name(void)
 {
     settings_t cfg;
     settings_get(&cfg);
+    if (strcmp(cfg.hostname, s_hostname) != 0) {
+        // DHCP meldet ihn bei der nächsten Verlängerung, der Access Point heißt beim nächsten Öffnen so
+        LOCK();
+        strlcpy(s_hostname, cfg.hostname, sizeof(s_hostname));
+        UNLOCK();
+        esp_netif_set_hostname(s_sta, s_hostname);
+        mdns_hostname_set(s_hostname);
+        ESP_LOGI(TAG, "Hostname jetzt %s (http://%s.local)", s_hostname, s_hostname);
+    }
     const char *name = cfg.device_name[0] ? cfg.device_name : "µprint";
     mdns_instance_name_set(name);
     mdns_service_instance_name_set("_http", "_tcp", name);

@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "auth.h"
 #include "printer.h"
 #include "reset.h"
 #include "settings.h"
@@ -32,6 +33,9 @@ esp_err_t reset_device(bool all)
     status_led_reset_config();
     if (all && err == ESP_OK) {
         err = wifi_erase_stored();
+    }
+    if (all && err == ESP_OK) {
+        err = auth_erase();
     }
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Zurücksetzen fehlgeschlagen: %s", esp_err_to_name(err));

@@ -26,9 +26,10 @@ typedef enum {
 } led_order_t;
 
 typedef struct {
-    // Anzeigename des Geräts, leer = "µprint" (sofort wirksam)
+    // Anzeigename des Geräts, leer = "µprint" (sofort wirksam); der Hostname wird daraus gebildet
     char device_name[33];
-    // Netzwerk (wirksam nach Neustart)
+    // Netzwerk: Hostname sofort (mDNS, DHCP; der Access Point heißt beim nächsten Öffnen so),
+    // Passwort des Access Points nach Neustart
     char hostname[33];
     char ap_password[64];
     // Angeschlossenes Gerät, device_type_t (sofort wirksam, verbindet neu)
@@ -54,6 +55,9 @@ typedef struct {
     int sd_miso;
     int sd_sclk;
     int sd_cs;
+    // Log-Ausgabe über UART0 (XIAO: D6 TX, D7 RX; sonst GPIO 43/44), wirksam nach Neustart. Aus: beide Pins frei
+    // für SD und LEDs, das Log gibt es dann nur in der Weboberfläche (diag.h)
+    int console;
     // Status-LEDs (adressierbar, z. B. SK6812), sofort wirksam
     int led_pin;          // -1 = aus
     int led_count;        // 0 = aus
@@ -89,8 +93,17 @@ bool settings_reboot_required(void);
 // Erzeugt einen neuen API-Schlüssel und speichert ihn
 esp_err_t settings_new_api_key(void);
 
-// Löscht alle gespeicherten Einstellungen (wirksam nach dem Neustart); new_api_key = false behält den Schlüssel
-esp_err_t settings_reset(bool new_api_key);
+// Hostname ab Werk, z. B. "uprint-3a5c" (aus der MAC-Adresse)
+const char *settings_default_hostname(void);
+
+// Hostname aus dem Gerätenamen: klein, Umlaute umschrieben, alles andere als Bindestrich, höchstens 32 Zeichen,
+// z. B. "MK3S Werkstatt" -> "mk3s-werkstatt"; ohne verwertbare Zeichen der Hostname ab Werk.
+// hostFromName() in index.html macht dasselbe für die Vorschau.
+void settings_hostname_from_name(const char *name, char *out, size_t len);
+
+// Löscht alle gespeicherten Einstellungen (wirksam nach dem Neustart); all = false behält API-Schlüssel und
+// Access-Point-Passwort
+esp_err_t settings_reset(bool all);
 
 #ifdef __cplusplus
 }

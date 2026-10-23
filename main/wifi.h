@@ -11,7 +11,8 @@
  */
 esp_err_t wifi_init(void);
 
-// Gerätename aus den Einstellungen im mDNS übernehmen (sichtbar z. B. bei der Druckersuche im Slicer)
+// Gerätename und Hostname aus den Einstellungen übernehmen: Name im mDNS (sichtbar z. B. bei der Druckersuche im
+// Slicer), Hostname sofort für mDNS und DHCP; der Access Point heißt beim nächsten Öffnen so
 void wifi_apply_device_name(void);
 
 typedef struct {
@@ -21,7 +22,8 @@ typedef struct {
     bool ap_only;        // ohne WLAN fortgefahren: Access Point bleibt an, kein Captive Portal
     int ap_off_in;       // Sekunden, bis sich der Access Point schließt, -1 = nicht geplant
     char ssid[33];
-    char hostname[33];   // aktiver Hostname (= SSID des Access Points)
+    char hostname[33];   // aktiver Hostname
+    char ap_ssid[33];    // Name des offenen Access Points; geschlossen der, unter dem er sich öffnen würde
     char ip[16];
     int rssi;            // dBm, 0 wenn nicht verbunden
     int last_reason;     // letzter Trennungsgrund (wifi_err_reason_t), 0 = keiner

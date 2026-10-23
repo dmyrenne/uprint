@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.c" "variant.c" "settings.c" "http_util.c" "slicer.c" "wifi.c" "captive.c" "storage.c" "usb_serial.cpp" "printer.c" "axidraw.c" "plot.c" "status_led.c" "reset.c" "web.c"
+    SRCS "main.c" "variant.c" "settings.c" "http_util.c" "slicer.c" "wifi.c" "captive.c" "storage.c" "usb_serial.cpp" "printer.c" "axidraw.c" "plot.c" "status_led.c" "reset.c" "auth.c" "diag.c" "web.c"
     INCLUDE_DIRS "."
     EMBED_FILES "www/index.html" "www/i18n.js"
                 "www/fonts/space-grotesk.woff2" "www/fonts/jetbrains-mono.woff2")

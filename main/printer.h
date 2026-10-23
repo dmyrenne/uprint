@@ -15,6 +15,8 @@ typedef enum {
     PRINTER_ERROR,
 } printer_state_t;
 
+#define PRINTER_PROMPT_CHOICES 4
+
 typedef struct {
     printer_state_t state;
     storage_vol_t vol;
@@ -31,6 +33,18 @@ typedef struct {
     // Letzter Druck lief bis zum Dateiende (file, vol, file_size bleiben bis zum nächsten Start erhalten)
     bool finished;
     uint32_t duration_s;
+    // Aus M73 in der Datei (Slicer), -1 = keine Angabe; sonst schätzt die Oberfläche nach Bytes (#34)
+    float progress;       // %
+    int32_t remaining_s;
+    // Meldung des Druckers über "// action:notification …", leer = keine
+    char notice[64];
+    // Drucker wartet während des Drucks auf eine Eingabe an seinem Display ("busy: paused for user", z. B. M600)
+    bool user_wait;
+    // Rückfrage des Druckers ("// action:prompt_…"), Antwort über printer_prompt_answer()
+    bool prompt;
+    char prompt_text[64];
+    char prompt_choice[PRINTER_PROMPT_CHOICES][24];
+    int prompt_choices;
     // USB-Gerät da, antwortet aber seit CONNECT_TIMEOUT nicht (z. B. Drucker aus); im Hintergrund wird weiter versucht
     bool unresponsive;
 } printer_status_t;
@@ -46,6 +60,9 @@ esp_err_t printer_pause(void);
 esp_err_t printer_resume(void);
 // Bricht einen Druck ab bzw. quittiert einen Fehler.
 esp_err_t printer_cancel(void);
+
+// Antwort auf eine Rückfrage des Druckers (Index der Auswahl); ESP_ERR_INVALID_STATE ohne offene Rückfrage
+esp_err_t printer_prompt_answer(int choice);
 
 // Antwortet der Drucker nicht (unresponsive): sofort neu versuchen, die Wartezeit beginnt von vorn.
 // ESP_ERR_INVALID_STATE in jedem anderen Zustand.

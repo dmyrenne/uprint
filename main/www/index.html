@@ -12,12 +12,14 @@
     --sans: 'Space Grotesk', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
     --bg: #f3f4f6; --panel: #ffffff; --field: #ffffff; --ink: #0c0d10; --muted: #71737c; --line: #e3e4e8; --line-strong: #c9cbd2;
     --accent: #2340ff; --accent-soft: #e8ebff; --accent-ink: #ffffff; --warn: #d4380d; --warn-bg: #fff1eb;
+    --hold: #9a5b00; --hold-bg: #fff4dc;
     --dot: #d9dbe1;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0b0c0f; --panel: #121318; --field: #0b0c0f; --ink: #eceef3; --muted: #8b8e99; --line: #23252d; --line-strong: #353843;
       --accent: #7187ff; --accent-soft: #1b2146; --accent-ink: #0b0c0f; --warn: #ff8a66; --warn-bg: #2d1710;
+      --hold: #ffb547; --hold-bg: #2b2010;
       --dot: #1e2027;
     }
   }
@@ -71,6 +73,7 @@
   .tab.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .tab.wait { border-color: var(--accent); color: var(--accent); }
   .tab.bad { background: var(--warn-bg); border-color: transparent; color: var(--warn); }
+  .tab.hold { background: var(--hold-bg); border-color: transparent; color: var(--hold); }
   .tab.busy::before { animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
 
@@ -126,9 +129,13 @@
   .derived.bad b { color: inherit; }
   .derived div + div { margin-top: 4px; }
   /* Einrichtung über das Captive Portal: nur die WLAN-Karte */
-  body:not(.setup) .setup-only { display: none !important; }
+  body:not(.setup) .setup-only, body.setup .no-setup { display: none !important; }
   body.setup main > :not(#setupSlot):not(#messages), body.setup .foot, body.setup .stats { display: none; }
   #setupSlot { max-width: 560px; margin: 0 auto; width: 100%; }
+  /* Anmeldung bzw. Passwort festlegen (#31): steht allein auf der Seite, bis es erledigt ist */
+  body.gate main > :not(#authBox):not(#messages), body.gate .foot, body.gate .stats { display: none; }
+  #authBox { max-width: 440px; margin: 0 auto; width: 100%; }
+  #authBox .row { margin-top: 4px; }
   body.setup #wifiBox summary { cursor: default; }
   body.setup #wifiBox summary::after, body.setup #wifiForget, body.setup #wifiHint { display: none; }
   .handoff { font-size: 14px; }
@@ -225,12 +232,13 @@
   /* Während eines Drucks gesperrt (#16): sichtbar, aber nicht bedienbar */
   [inert] { opacity: .5; }
   .lock-note { margin: 0 0 12px; }
+  .host-prompt { margin: 12px 0 0; font-size: 13px; }
 
   /* ---------- Status-LEDs ---------- */
   .led-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--line-strong); }
   body.leds main > :not(#ledsView):not(#messages) { display: none; }
   .leds-view { max-width: 920px; width: 100%; margin: 0 auto; }
-  .leds-view .back { font-size: 13px; display: inline-block; margin-bottom: 12px; }
+  .leds-view .back, .log-view .back { font-size: 13px; display: inline-block; margin-bottom: 12px; }
   .led-rows { margin: 8px -6px 0; }
   .led-row { display: grid; grid-template-columns: minmax(130px, 1.2fr) 44px minmax(140px, 1.2fr) minmax(150px, 1fr) auto; gap: 8px 12px;
              align-items: center; padding: 9px 6px; border-top: 1px solid var(--line); }
@@ -263,6 +271,18 @@
   .axi-prompt { font-size: 15px; font-weight: 600; margin-top: 14px; }
   .axi-log { font: 500 11px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
              margin: 14px 0 0; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* ---------- Unterseite #log (#36) ---------- */
+  body.log main > :not(#logView):not(#messages) { display: none; }
+  .log-view { max-width: 1200px; width: 100%; margin: 0 auto; }
+  .log-tools { align-items: flex-end; margin-top: 10px; }
+  .log-tools .spacer { flex: 1; }
+  .log-text { font: 500 11px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+              padding: 8px 10px; margin: 14px 0 0; height: 65vh; min-height: 240px; overflow: auto; white-space: pre-wrap;
+              overflow-wrap: anywhere; }
+  .log-text .e { color: var(--warn); }
+  .log-text .w { color: #b7791f; }
+  .log-text .s { color: var(--muted); }
+  .log-text .b { color: var(--accent); font-weight: 600; }
   .axi-obs { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
   .axi-obs textarea { font: 13px var(--sans, inherit); color: var(--ink); background: var(--field); border: 1px solid var(--line-strong);
                       border-radius: 6px; padding: 7px 9px; resize: vertical; }
@@ -315,6 +335,17 @@
 <main>
   <div id="messages"></div>
   <div id="setupSlot"></div>
+  <section class="card" id="authBox" hidden>
+    <h2 id="authTitle"></h2>
+    <p class="hint" id="authIntro" style="margin:0 0 14px"></p>
+    <form id="authForm" class="grid">
+      <label class="full"><span id="authPassLabel"></span><input type="password" id="authPass" maxlength="63" required></label>
+      <label class="full" id="authRepRow"><span data-i18n="auth.repeat"></span><input type="password" id="authRep" maxlength="63" autocomplete="new-password"></label>
+      <label class="check full" id="authApRow"><input type="checkbox" id="authAp" checked> <span data-i18n="auth.ap"></span></label>
+      <div class="row full"><button type="submit" class="primary" id="authBtn"></button><button type="button" id="authSkip" data-i18n="auth.skip"></button></div>
+      <p class="hint full" id="authSkipHint" data-i18n="auth.skip.hint"></p>
+    </form>
+  </section>
 
   <!-- Unterseite #leds: Darstellung der Status-LEDs je Zustand -->
   <section class="card leds-view" id="ledsView" hidden>
@@ -340,6 +371,30 @@
       <span class="spacer"></span>
       <button type="button" class="warn" id="ledReset" data-i18n="leds.reset"></button>
     </div>
+  </section>
+
+  <!-- Unterseite #log: Live-Log und Diagnose (#36) -->
+  <section class="card log-view" id="logView" hidden>
+    <a class="back" href="#" data-i18n="leds.back"></a>
+    <h2 data-i18n="log.title"></h2>
+    <p class="hint" data-i18n="log.intro"></p>
+    <div class="row log-tools">
+      <label><span data-i18n="log.serial"></span><select id="logSerial">
+        <option value="0" data-i18n="log.serial.0"></option><option value="1" data-i18n="log.serial.1"></option>
+        <option value="2" data-i18n="log.serial.2"></option>
+      </select></label>
+      <label><span data-i18n="log.filter"></span><select id="logFilter">
+        <option value="all" data-i18n="log.filter.all"></option><option value="printer" data-i18n="log.filter.printer"></option>
+        <option value="warn" data-i18n="log.filter.warn"></option>
+      </select></label>
+      <label class="check"><input type="checkbox" id="logFollow" checked> <span data-i18n="log.follow"></span></label>
+      <span class="spacer"></span>
+      <button type="button" class="small" id="logPause" data-i18n="log.pause"></button>
+      <button type="button" class="small" id="logDiag" data-i18n="diag.download"></button>
+      <button type="button" class="small warn" id="logClear" data-i18n="log.clear"></button>
+    </div>
+    <p class="hint" data-i18n="log.serial.hint"></p>
+    <pre class="log-text" id="logText"></pre>
   </section>
 
   <section class="card">
@@ -404,6 +459,11 @@
         <div class="job-title" id="jobTitle"></div>
         <div class="job-sub" id="jobSub"></div>
         <div class="job-note" id="jobNote" hidden></div>
+        <!-- Rückfrage des Druckers, z. B. beim Filamentwechsel (#33) -->
+        <div class="derived host-prompt" id="hostPrompt" hidden>
+          <div id="hostPromptText"></div>
+          <div class="row" id="hostPromptChoices" style="margin-top:8px"></div>
+        </div>
         <div id="jobProgress" hidden>
           <div class="bar big"><i id="jobBar"></i></div>
           <div class="job-meta"><span id="jobPct"></span><span id="jobEta"></span></div>
@@ -480,9 +540,15 @@
 
   <div class="col side">
   <details class="card" id="wifiBox">
-    <summary data-i18n="h.wifi"></summary>
+    <summary><span class="no-setup" data-i18n="h.wifi"></span><span class="setup-only" data-i18n="setup.title"></span></summary>
     <p class="derived lock-note" data-i18n="lock.print" hidden></p>
     <p class="hint setup-only" id="setupIntro" data-i18n="setup.intro" style="margin:0 0 12px"></p>
+    <!-- Ersteinrichtung über das Captive Portal: Name, WLAN und freiwilliges Passwort auf einer Seite -->
+    <div class="grid setup-only" id="setupNameBox" style="margin-bottom:16px">
+      <label class="full"><span data-i18n="set.device_name"></span><input type="text" id="setupName" maxlength="32" placeholder="µprint" autocomplete="off"></label>
+      <p class="hint full" id="setupAddr"></p>
+    </div>
+    <p class="sub setup-only" id="setupWifiSub" data-i18n="h.wifi" style="margin:0 0 8px"></p>
     <div class="derived" id="wifiStatus"></div>
     <div class="handoff" id="handoff" hidden>
       <p id="handoffText" style="margin:0"></p>
@@ -499,6 +565,13 @@
       <label class="full" id="ssidRow" hidden><span data-i18n="wifi.ssid"></span><input type="text" id="wifiSsid" maxlength="32" autocomplete="off"></label>
       <label class="full"><span data-i18n="wifi.password"></span><input type="password" id="wifiPass" maxlength="63" autocomplete="off"></label>
       <label class="check full"><input type="checkbox" id="wifiShow"> <span data-i18n="wifi.show"></span></label>
+    </div>
+    <div class="grid setup-only" style="margin-top:16px">
+      <p class="sub full" data-i18n="setup.pw"></p>
+      <label><span data-i18n="auth.password"></span><input type="password" id="setupPass" maxlength="63" autocomplete="new-password"></label>
+      <label><span data-i18n="auth.repeat"></span><input type="password" id="setupRep" maxlength="63" autocomplete="new-password"></label>
+      <label class="check full"><input type="checkbox" id="setupAp" checked> <span data-i18n="auth.ap"></span></label>
+      <p class="hint full" data-i18n="setup.pw.hint"></p>
     </div>
     <div class="row" style="margin-top:12px">
       <button type="button" class="primary" id="wifiConnect" data-i18n="wifi.connect"></button>
@@ -518,6 +591,7 @@
     <form id="setForm" class="grid" autocomplete="off" onsubmit="return false">
       <p class="sub full" data-i18n="set.device"></p>
       <label class="full"><span data-i18n="set.device_name"></span><input type="text" name="device_name" maxlength="32" placeholder="µprint"></label>
+      <p class="hint full" id="setAddr"></p>
       <p class="hint full" data-i18n="set.device.hint"></p>
 
       <p class="sub full" data-i18n="set.printer"></p>
@@ -562,8 +636,7 @@
       <p class="hint full" id="slicerHint"></p>
 
       <p class="sub full" data-i18n="set.network"></p>
-      <label><span data-i18n="set.hostname"></span><input type="text" name="hostname" maxlength="32" spellcheck="false"></label>
-      <label><span data-i18n="set.ap_password"></span><input type="password" name="ap_password" maxlength="63"></label>
+      <label class="full"><span data-i18n="set.ap_password"></span><input type="password" name="ap_password" maxlength="63"></label>
       <p class="hint full" data-i18n="set.network.hint"></p>
     </form>
     <div class="row set-actions" id="setActions">
@@ -578,6 +651,7 @@
     <div class="ota">
       <p class="sub" data-i18n="set.firmware"></p>
       <p class="hint" id="otaVersion" style="margin:0 0 10px"></p>
+      <p class="derived bad" id="otaRollback" hidden></p>
       <div class="row">
         <button type="button" id="otaPick" data-i18n="ota.choose"></button>
         <button type="button" class="primary" id="otaBtn" data-i18n="ota.install"></button>
@@ -586,6 +660,30 @@
       <div class="bar" id="otaBar" hidden><i></i></div>
       <p class="hint" id="otaHint"></p>
       <input type="file" id="otaFile" accept=".bin" hidden>
+    </div>
+    <div class="ota" id="pwBox">
+      <p class="sub" data-i18n="auth.title"></p>
+      <p class="derived" id="pwNone" data-i18n="auth.none" hidden></p>
+      <form class="grid" id="pwForm">
+        <label class="full" id="pwCurRow"><span data-i18n="auth.current"></span><input type="password" id="pwCur" maxlength="63" autocomplete="current-password"></label>
+        <label><span data-i18n="auth.new"></span><input type="password" id="pwNew" maxlength="63" autocomplete="new-password"></label>
+        <label><span data-i18n="auth.repeat"></span><input type="password" id="pwRep" maxlength="63" autocomplete="new-password"></label>
+        <label class="check full"><input type="checkbox" id="pwAp"> <span data-i18n="auth.ap"></span></label>
+        <div class="row full">
+          <button type="submit" class="primary" id="pwBtn"></button>
+          <button type="button" class="warn" id="pwRemove" data-i18n="auth.remove"></button>
+          <button type="button" id="logoutBtn" data-i18n="auth.logout"></button>
+        </div>
+      </form>
+      <p class="hint" id="pwHint"></p>
+    </div>
+    <div class="ota" id="diagBox">
+      <p class="sub" data-i18n="diag.title"></p>
+      <div class="row">
+        <button type="button" id="diagDownload" data-i18n="diag.download"></button>
+        <a href="#log" data-i18n="diag.open"></a>
+      </div>
+      <p class="hint" data-i18n="diag.hint"></p>
     </div>
     <div class="ota" id="resetBox">
       <p class="sub" data-i18n="reset.title"></p>
@@ -608,6 +706,10 @@
       <label><span>SCLK</span><input type="number" name="sd_sclk" min="0" max="48"></label>
       <label><span>CS</span><input type="number" name="sd_cs" min="0" max="48"></label>
       <p class="hint full" id="sdPinHint" hidden data-i18n="set.sd.hint.xiao"></p>
+
+      <p class="sub full" data-i18n="set.console"></p>
+      <label class="check full"><input type="checkbox" name="console"> <span data-i18n="set.console_enable"></span></label>
+      <p class="hint full" id="consoleHint" data-i18n="set.console.hint"></p>
 
       <p class="sub full" data-i18n="set.leds"></p>
       <label><span data-i18n="set.led_pin"></span><input type="number" name="led_pin" min="-1" max="48"></label>
@@ -670,6 +772,7 @@ async function api(method, url, body) {
   let r;
   try { r = await fetch(url, { method, body }); } catch (e) { throw new Error(t('err.network')); }
   let j = {}; try { j = await r.json(); } catch {}
+  if (r.status === 401 && !authMode) showAuth('login');   // z. B. Passwort auf einem anderen Gerät geändert
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 }
@@ -789,15 +892,20 @@ function renderStatus() {
   const state = offline ? 'offline' : s.state || 'connecting';
   const tab = $('tab');
   tab.textContent = t(s.unresponsive && !offline ? 'state.unresponsive'
-    : state === 'disconnected' && axiMode() ? 'state.axiDisconnected' : 'state.' + state);
-  tab.className = 'tab ' + ({ idle: 'on', printing: 'on busy', paused: 'on', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
+    : state === 'disconnected' && axiMode() ? 'state.axiDisconnected'
+    : state === 'printing' && s.user_wait ? 'state.userWait' : 'state.' + state);
+  // Pause und Warten am Display in eigener Farbe, damit sie nicht wie „bereit“ aussehen
+  const hold = !offline && (state === 'paused' || (state === 'printing' && s.user_wait));
+  tab.className = 'tab ' + (hold ? 'hold busy' : { idle: 'on', printing: 'on busy', connecting: 'wait busy', error: 'bad', offline: 'bad' }[state] || '');
 
-  const pct = a && s.size ? s.pos / s.size * 100 : done ? 100 : 0;
+  // Fortschritt und Restzeit aus M73 (Slicer), sonst nach gesendeten Bytes geschätzt
+  const pct = a ? (s.progress >= 0 ? s.progress : s.size ? s.pos / s.size * 100 : 0) : done ? 100 : 0;
+  const left = !a ? null : s.remaining >= 0 ? s.remaining : pct > 2 ? s.elapsed * (100 - pct) / pct : null;
   const temp = (v, target) => offline || s.state === 'disconnected' ? '–' : Math.round(v) + '°' + (target > 0 ? ' / ' + Math.round(target) + '°' : '');
   const items = [
     ['stat.progress', show ? num(pct, 1) + ' %' : '–'],
     ['stat.elapsed', a ? fmtTime(s.elapsed) : done ? fmtTime(s.duration) : '–'],
-    ['stat.remaining', a && pct > 2 ? fmtTime(s.elapsed * (100 - pct) / pct) : '–'],
+    ['stat.remaining', left != null ? fmtTime(left) : '–'],
     // Ein Plotter hat keine Temperaturen
     ...(axiMode() ? [] : [['stat.hotend', temp(s.hotend, s.hotend_target)], ['stat.bed', temp(s.bed, s.bed_target)]]),
   ];
@@ -825,7 +933,10 @@ function renderStatus() {
   else { title = t('stage.idle'); sub = t('stage.idleHint'); }
   // Meldungen der Firmware wie „Druck fertig …“ zusätzlich zeigen, solange nichts läuft
   const note = !offline && !done && s.state === 'idle' && !s.finished && s.message && !['Drucker bereit', 'Fehler quittiert'].includes(s.message) ? s.message : '';
-  $('jobNote').textContent = note; $('jobNote').hidden = !note;
+  // Meldungen des Druckers selbst ("action:notification") haben Vorrang
+  const shownNote = !offline && s.notice ? s.notice : !offline && a && s.user_wait ? t('job.userWait') : note;
+  $('jobNote').textContent = shownNote; $('jobNote').hidden = !shownNote;
+  renderPrompt(offline ? null : s.prompt);
   $('jobTitle').textContent = title;
   // Während des Drucks den übersetzten Zustand zeigen, sonst die Meldung der Firmware
   $('jobSub').textContent = a ? volName(s.storage) + ' · ' + t('state.' + s.state) : done ? volName(s.storage) + ' · ' + t('stage.done') : sub;
@@ -833,7 +944,7 @@ function renderStatus() {
   $('jobProgress').hidden = !show;
   $('jobBar').style.width = pct + '%';
   $('jobPct').textContent = show ? num(pct, 1) + ' %' : '';
-  $('jobEta').textContent = a && pct > 2 ? t('job.remaining', { t: fmtTime(s.elapsed * (100 - pct) / pct) })
+  $('jobEta').textContent = left != null ? t('job.remaining', { t: fmtTime(left) })
                           : done ? t('job.duration', { t: fmtTime(s.duration) }) : '';
   // Animation während des Drucks und fertig gedruckt danach
   $('anim').hidden = !show;
@@ -857,6 +968,21 @@ function renderLock() {
 }
 $('bStart').onclick = () => { const f = selected() || finishedFile(); if (f) act('POST', '/api/print' + fileQuery(f)); };
 $('bRetry').onclick = () => act('POST', '/api/printer/retry');
+
+// Rückfrage des Druckers mit Auswahl; die Antwort geht als M876 S<n> an den Drucker
+let promptKey = '';
+function renderPrompt(p) {
+  $('hostPrompt').hidden = !p;
+  const key = p ? JSON.stringify(p) : '';
+  if (!p || key === promptKey) { promptKey = key; return; }   // Knöpfe nicht bei jeder Abfrage neu bauen
+  promptKey = key;
+  $('hostPromptText').textContent = p.text || t('prompt.title');
+  $('hostPromptChoices').replaceChildren(...p.choices.map((c, i) => {
+    const b = el('button', 'small' + (i === 0 ? ' primary' : ''), c); b.type = 'button';
+    b.onclick = () => act('POST', '/api/printer/prompt?choice=' + i);
+    return b;
+  }));
+}
 
 // ---------- Dateien ----------
 async function loadFiles() {
@@ -1068,6 +1194,8 @@ let wifiOpened = false, scanned = false;
 async function loadWifi() {
   try { wifi = await api('GET', '/api/wifi'); } catch { return; }
   renderWifi();
+  // Erst das WLAN, dann einmal nach einem Passwort fragen (auch nach "Ohne WLAN fortfahren")
+  if (auth && auth.setup && !wifi.portal && !authMode) showAuth('setup');
   if (!wifiOpened) {   // Beim ersten Laden ohne Verbindung (z. B. über den Access Point) gleich aufklappen
     wifiOpened = true;
     if (!wifi.connected) { $('wifiBox').open = true; scan(); }
@@ -1106,6 +1234,7 @@ function renderSetup() {
     if (setupMode) { $('setupSlot').append(box); box.open = true; }   // gesucht wird beim ersten Laden ohne Verbindung
     else { $('setBox').before(box); handoffAt = 0; }
   }
+  $('wifiConnect').textContent = t(setupMode ? 'setup.go' : 'wifi.connect');
   const handoff = setupMode && w.connected && w.ap && w.ap_off_in >= 0;
   if (handoff) {
     handoffAt = Date.now() + w.ap_off_in * 1000;
@@ -1115,7 +1244,7 @@ function renderSetup() {
   }
   if (handoff || !handoffAt) {   // nach Ablauf stehen lassen, solange die Seite noch im Einrichtungsmodus ist
     $('handoff').hidden = !handoff;
-    for (const id of ['wifiForm', 'wifiStatus', 'setupIntro']) $(id).hidden = handoff;
+    for (const id of ['wifiForm', 'wifiStatus', 'setupIntro', 'setupNameBox', 'setupWifiSub']) $(id).hidden = handoff;
   }
   tickHandoff();
 }
@@ -1138,6 +1267,7 @@ for (const b of document.querySelectorAll('[data-copy]')) {
 $('wifiBox').querySelector('summary').onclick = (e) => { if (setupMode) e.preventDefault(); };
 $('wifiApOnly').onclick = async () => {
   try {
+    if (!await saveSetup()) return;
     await api('POST', '/api/wifi/ap-only');
     say(t('setup.apOnly.done', { ssid: wifi ? wifi.ap_ssid : 'uprint', ip: wifi ? wifi.ap_ip : '192.168.4.1' }));
     await loadWifi();
@@ -1198,10 +1328,34 @@ $('wifiScan').onclick = scan;
 $('wifiBox').ontoggle = () => { if ($('wifiBox').open && !scanned) scan(); };
 $('wifiShow').onchange = () => { $('wifiPass').type = $('wifiShow').checked ? 'text' : 'password'; };
 
+// Ersteinrichtung: Name und Passwort vor dem WLAN speichern (das WLAN verbindet neu). false bei Eingabefehlern.
+async function saveSetup() {
+  if (!setupMode) return true;
+  const pass = $('setupPass').value, ap = $('setupAp').checked;
+  if (pass && pass.length < 8) { say(t('auth.short'), true); return false; }
+  if (pass !== $('setupRep').value) { say(t('auth.mismatch'), true); return false; }
+  const name = $('setupName').value.trim();
+  if (settings && name !== settings.device_name) {
+    settings = await api('POST', '/api/settings', new URLSearchParams({ device_name: name }));
+    writeSettings(settings); renderSettings();
+  }
+  if (pass) {
+    await api('POST', '/api/auth/password', new URLSearchParams({ password: pass, ap: ap ? '1' : '0' }));
+    auth = { password: true, session: true, setup: false };
+  } else if (auth && auth.setup) {
+    await api('POST', '/api/auth/skip');
+    auth.setup = false;
+  }
+  $('setupPass').value = $('setupRep').value = '';
+  renderPw();
+  return true;
+}
+
 $('wifiConnect').onclick = async () => {
   const v = $('wifiNet').value, ssid = v === OTHER ? $('wifiSsid').value.trim() : v;
   if (!ssid) { say(t('wifi.needSsid'), true); return; }
   try {
+    if (!await saveSetup()) return;
     await api('POST', '/api/wifi', new URLSearchParams({ ssid, password: $('wifiPass').value }));
     $('wifiPass').value = '';
     say(t('wifi.saved', { ssid }));
@@ -1218,7 +1372,7 @@ async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1
 // ---------- Einstellungen ----------
 const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y',
   'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay',
-  'hostname', 'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs',
+  'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs', 'console',
   'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness', 'led_max_ma', 'led_ma'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm'), hwForm = $('hwForm');
@@ -1229,12 +1383,16 @@ const setValue = (e) => (e.type === 'checkbox' ? (e.checked ? '1' : '0') : e.val
 function readSettings() {
   return Object.fromEntries(SET_KEYS.map((k) => [k, setValue(field(k))]));
 }
-// XIAO: Pins mit ihrer Beschriftung auf dem Board statt als GPIO-Nummer, D6 ist die Log-Ausgabe der Konsole
+// XIAO: Pins mit ihrer Beschriftung auf dem Board statt als GPIO-Nummer, D6 ist die Log-Ausgabe der Konsole und
+// nur ohne Konsole wählbar
 const SD_PINS = ['sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
-const XIAO_PINS = [[1, 'D0'], [2, 'D1'], [3, 'D2'], [4, 'D3'], [5, 'D4'], [6, 'D5'], [44, 'D7'], [7, 'D8'], [8, 'D9'], [9, 'D10']];
+const XIAO_PINS = [[1, 'D0'], [2, 'D1'], [3, 'D2'], [4, 'D3'], [5, 'D4'], [6, 'D5'], [43, 'D6'], [44, 'D7'], [7, 'D8'], [8, 'D9'], [9, 'D10']];
 function xiaoPins(s) {
   $('sdPinHint').hidden = s.variant !== 'xiao';
+  $('consoleHint').dataset.i18n = s.variant === 'xiao' ? 'set.console.hint.xiao' : 'set.console.hint';
+  $('consoleHint').textContent = t($('consoleHint').dataset.i18n);
   if (s.variant !== 'xiao') return;
+  const board = XIAO_PINS.filter(([g]) => g !== 43 || String(s.console) !== '1');
   for (const k of [...SD_PINS, 'led_pin']) {
     let sel = field(k);
     if (sel.tagName !== 'SELECT') {
@@ -1242,9 +1400,9 @@ function xiaoPins(s) {
       sel.name = k;
       field(k).replaceWith(sel);
     }
-    const pins = k === 'sd_cs' ? [...XIAO_PINS, [21, t('set.sd.slot')]] : k === 'led_pin' ? [[-1, t('leds.off')], ...XIAO_PINS]
-      : [...XIAO_PINS];
-    if (!pins.some(([g]) => g === s[k])) pins.push([s[k], 'GPIO ' + s[k]]);   // sollte die Firmware nie liefern
+    const pins = k === 'sd_cs' ? [...board, [21, t('set.sd.slot')]] : k === 'led_pin' ? [[-1, t('leds.off')], ...board]
+      : [...board];
+    if (!pins.some(([g]) => g === Number(s[k]))) pins.push([s[k], 'GPIO ' + s[k]]);   // D6, wenn die Konsole wieder an ist
     sel.replaceChildren(...pins.map(([g, label]) => new Option(label, g)));
   }
 }
@@ -1275,7 +1433,7 @@ function renderSettings() {
     bar.classList.toggle('floating', mod);
   }
   $('rebootBox').hidden = $('hwRebootBox').hidden = !settings || !settings.reboot_required;
-  renderOta(); renderSlicer(); renderName(); renderAxi();
+  renderOta(); renderSlicer(); renderName(); renderAxi(); renderAddr();
 }
 async function loadSettings() {
   try { settings = await api('GET', '/api/settings'); } catch { return; }
@@ -1284,6 +1442,13 @@ async function loadSettings() {
   if (ledEdit) buildLedGrid();   // Anzahl LEDs für das Muster der Kennung
 }
 for (const f of [setForm, hwForm]) { f.addEventListener('input', renderSettings); f.addEventListener('change', renderSettings); }
+// Konsole an/aus ändert auf dem XIAO, ob D6 wählbar ist; die gewählten Pins bleiben stehen
+hwForm.elements.console.addEventListener('change', () => {
+  if (!settings) return;
+  const cur = readSettings();
+  xiaoPins({ ...cur, variant: settings.variant });
+  for (const k of [...SD_PINS, 'led_pin']) field(k).value = cur[k];
+});
 $('setSave').onclick = async () => {
   try {
     const s = readSettings();
@@ -1298,11 +1463,50 @@ $('setRevert').onclick = () => { writeSettings(settings); renderSettings(); say(
 // ---------- Zurücksetzen (#13) ----------
 for (const [id, scope] of [['resetSettings', 'settings'], ['resetAll', 'all']]) {
   $(id).onclick = async () => {
-    if (!confirm(t('confirm.reset.' + scope, { ssid: wifi ? wifi.ap_ssid : 'uprint' }))) return;
-    try { await api('POST', '/api/reset?scope=' + scope); say(t('reset.done.' + scope, { ssid: wifi ? wifi.ap_ssid : 'uprint' })); }
+    // Nach dem Zurücksetzen heißt der Access Point wie der Hostname ab Werk
+    const ssid = settings ? settings.default_hostname : 'uprint';
+    if (!confirm(t('confirm.reset.' + scope, { ssid }))) return;
+    try { await api('POST', '/api/reset?scope=' + scope); say(t('reset.done.' + scope, { ssid })); }
     catch (e) { say(e.message, true); }
   };
 }
+// ---------- Passwort der Weboberfläche (#31) ----------
+// Ohne Passwort: anlegen; mit Passwort: ändern, entfernen, abmelden
+function renderPw() {
+  const has = !!(auth && auth.password);
+  $('pwNone').hidden = has;
+  $('pwCurRow').hidden = $('pwRemove').hidden = $('logoutBtn').hidden = !has;
+  $('pwBtn').textContent = t(has ? 'auth.change' : 'auth.create');
+  $('pwHint').textContent = t(has ? 'auth.hint' : 'auth.hint.none');
+}
+$('pwForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const pass = $('pwNew').value, had = auth.password;
+  if (pass.length < 8) return say(t('auth.short'), true);
+  if (pass !== $('pwRep').value) return say(t('auth.mismatch'), true);
+  try {
+    await api('POST', '/api/auth/password', new URLSearchParams({ current: $('pwCur').value, password: pass, ap: $('pwAp').checked ? '1' : '0' }));
+    $('pwForm').reset();
+    say(t(had ? 'auth.changed' : $('pwAp').checked ? 'auth.set.ap' : 'auth.set'));
+    auth = { password: true, session: true, setup: false }; renderPw();
+    loadSettings();   // Access-Point-Passwort und "Neustart nötig"
+  } catch (e) { say(e.message, true); }
+};
+$('pwRemove').onclick = async () => {
+  if (!$('pwCur').value) { $('pwCur').focus(); return say(t('auth.current.missing'), true); }
+  if (!confirm(t('confirm.auth.remove'))) return;
+  try {
+    await api('POST', '/api/auth/password', new URLSearchParams({ remove: '1', current: $('pwCur').value }));
+    $('pwForm').reset();
+    say(t('auth.removed'));
+    auth = { password: false, session: false, setup: false }; renderPw();
+  } catch (e) { say(e.message, true); }
+};
+$('logoutBtn').onclick = async () => {
+  try { await api('DELETE', '/api/auth'); } catch {}
+  location.reload();   // nichts von den Einstellungen stehen lassen
+};
+
 $('rebootBtn').onclick = $('hwRebootBtn').onclick = async () => {
   if (!confirm(t('confirm.reboot'))) return;
   try { await api('POST', '/api/reboot'); say(t('set.rebooting')); } catch (e) { say(e.message, true); }
@@ -1516,8 +1720,108 @@ function ledView() {
 }
 window.addEventListener('hashchange', ledView);
 
+// ---------- Unterseite #log: Live-Log und Diagnose (#36) ----------
+// logPos = Position für die nächste Abfrage (X-Log-Next), null = die letzten 64 KB holen
+const LOG_KEEP = 4000;   // Zeilen in der Ansicht
+let logPos = null, logRest = '', logLines = [], logPaused = false, logTimer = null;
+function logClass(l) {
+  if (l.startsWith('=====')) return 'b';
+  return { E: 'e', W: 'w', S: 's' }[l[0]] || '';
+}
+function logShown(l) {
+  const f = $('logFilter').value;
+  if (l.startsWith('=====')) return true;
+  if (f === 'printer') return / printer: /.test(l);
+  if (f === 'warn') return /^[EW] \(/.test(l);
+  return true;
+}
+function logLine(l) {
+  const c = logClass(l);
+  return c ? el('span', c, l + '\n') : document.createTextNode(l + '\n');
+}
+function logRender() {
+  $('logText').replaceChildren(...logLines.filter(logShown).map(logLine));
+  logScroll();
+}
+function logScroll() { if ($('logFollow').checked) $('logText').scrollTop = $('logText').scrollHeight; }
+function logAppend(text) {
+  const parts = (logRest + text).split('\n');
+  logRest = parts.pop();
+  const fresh = parts.filter((l) => l !== '');
+  logLines.push(...fresh);
+  const pre = $('logText');
+  if (logLines.length > LOG_KEEP) { logLines = logLines.slice(-LOG_KEEP); logRender(); return; }
+  pre.append(...fresh.filter(logShown).map(logLine));
+  logScroll();
+}
+function logReset() { logPos = null; logRest = ''; logLines = []; $('logText').replaceChildren(); }
+async function pollLog() {
+  clearTimeout(logTimer);
+  if (location.hash !== '#log') return;
+  if (!logPaused && !document.hidden) {
+    try {
+      const r = await fetch('/api/log?' + (logPos === null ? 'tail=65536' : 'since=' + logPos), { cache: 'no-store' });
+      if (r.status === 401 && !authMode) showAuth('login');
+      if (r.ok) {
+        const next = Number(r.headers.get('X-Log-Next'));
+        const text = await r.text();
+        if (logPos !== null && next < logPos) logReset();   // nach dem Einschalten beginnt das Log neu
+        logAppend(text);
+        logPos = next;
+        if (document.activeElement !== $('logSerial')) $('logSerial').value = r.headers.get('X-Log-Serial') || '0';
+      }
+    } catch {}
+  }
+  logTimer = setTimeout(pollLog, 1000);
+}
+function logView() {
+  const on = location.hash === '#log';
+  document.body.classList.toggle('log', on);
+  $('logView').hidden = !on;
+  if (on) { logReset(); window.scrollTo(0, 0); pollLog(); }
+}
+window.addEventListener('hashchange', logView);
+$('logFilter').onchange = logRender;
+$('logFollow').onchange = logScroll;
+$('logPause').onclick = () => {
+  logPaused = !logPaused;
+  $('logPause').textContent = t(logPaused ? 'log.resume' : 'log.pause');
+  if (!logPaused) pollLog();
+};
+$('logSerial').onchange = async () => {
+  try { await api('POST', '/api/log/serial?level=' + $('logSerial').value); say(t('log.serial.saved')); }
+  catch (e) { say(e.message, true); }
+};
+$('logClear').onclick = async () => {
+  if (!confirm(t('confirm.log.clear'))) return;
+  try { await api('DELETE', '/api/log'); logRest = ''; logLines = []; $('logText').replaceChildren(); }
+  catch (e) { say(e.message, true); }
+};
+$('logDiag').onclick = $('diagDownload').onclick = () => {
+  const a = el('a'); a.href = '/api/diag'; a.download = ''; a.click();
+};
+
 // ---------- Gerätename ----------
 // Gespeicherter Name oben und im Browser-Tab; ohne Namen wie gewohnt „µprint“
+// Wie settings_hostname_from_name() in settings.c
+const HOST_MAP = { 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss', 'µ': 'u', 'μ': 'u' };
+function hostFromName(name, def) {
+  const h = name.toLowerCase().replace(/[äöüßµμ]/g, (c) => HOST_MAP[c]).replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+/, '').slice(0, 32).replace(/-+$/, '');
+  return h || def;
+}
+// Adresse zum Namen: unverändert die tatsächliche, sonst die künftige
+function addrFor(name) {
+  if (!settings) return '';
+  const host = name === settings.device_name ? settings.hostname : hostFromName(name, settings.default_hostname);
+  return t('set.addr', { host });
+}
+function renderAddr() {
+  $('setAddr').textContent = addrFor(setForm.elements.device_name.value.trim());
+  $('setupAddr').textContent = addrFor($('setupName').value.trim());
+}
+$('setupName').oninput = renderAddr;
+
 function renderName() {
   const name = settings && settings.device_name;
   $('devName').textContent = name || 'µprint';
@@ -1547,6 +1851,9 @@ $('apiNew').onclick = async () => {
 let otaFile = null, otaBusy = false;
 function renderOta() {
   $('otaVersion').textContent = settings ? t('ota.version', { v: settings.version, variant: settings.variant }) : '';
+  const failed = settings && settings.failed_update;
+  $('otaRollback').hidden = !failed;
+  if (failed) $('otaRollback').textContent = t('ota.rolledBack', { failed, v: settings.version });
   if (!otaBusy) $('otaHint').textContent = t('ota.hint', { variant: settings ? settings.variant : '…' });
   $('otaName').textContent = otaFile ? otaFile.name + ' · ' + fmtSize(otaFile.size) : '';
   $('otaPick').disabled = otaBusy;
@@ -1581,16 +1888,73 @@ $('lang').onchange = () => {
   LANG = $('lang').value;
   try { localStorage.setItem('uprint-lang', LANG); } catch {}
   applyI18n(); renderName(); renderStatus(); renderVolumes(); renderUpload(); renderWifi();
+  if (authMode) showAuth(authMode);
+  renderPw();
   if (ledEdit) buildLedRows();
   if (settings) { const cur = readSettings(); writeSettings({ ...settings, ...cur, baud: +cur.baud }); }
   renderAxi();
 };
 
+// ---------- Anmeldung (#31) ----------
+// login: Passwort gesetzt, keine gültige Sitzung; setup: noch kein Passwort und die Frage danach nicht übersprungen.
+// Die Frage kommt erst nach der WLAN-Einrichtung (nicht im Captive Portal), siehe loadWifi().
+let authMode = null, started = false, auth = null;
+function showAuth(mode) {
+  authMode = mode;
+  document.body.classList.toggle('gate', !!mode);
+  $('authBox').hidden = !mode;
+  if (!mode) return;
+  const setup = mode === 'setup';
+  $('authTitle').textContent = t('auth.' + mode + '.title');
+  $('authIntro').textContent = t('auth.' + mode + '.intro');
+  $('authPassLabel').textContent = t(setup ? 'auth.new' : 'auth.password');
+  $('authPass').autocomplete = setup ? 'new-password' : 'current-password';
+  $('authRepRow').hidden = $('authApRow').hidden = $('authSkip').hidden = $('authSkipHint').hidden = !setup;
+  $('authBtn').textContent = t('auth.' + mode + '.btn');
+  $('authPass').focus();
+}
+$('authForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const pass = $('authPass').value, setup = authMode === 'setup', ap = $('authAp').checked;
+  try {
+    if (setup) {
+      if (pass.length < 8) throw new Error(t('auth.short'));
+      if (pass !== $('authRep').value) throw new Error(t('auth.mismatch'));
+      await api('POST', '/api/auth/password', new URLSearchParams({ password: pass, ap: ap ? '1' : '0' }));
+      say(t(ap ? 'auth.set.ap' : 'auth.set'));
+      auth = { password: true, session: true, setup: false };
+    } else {
+      await api('POST', '/api/auth', new URLSearchParams({ password: pass }));
+    }
+    $('authForm').reset();
+    showAuth(null); renderPw();
+    if (started) loadSettings(); else start();
+  } catch (e) { say(e.message, true); }
+};
+$('authSkip').onclick = async () => {
+  try {
+    await api('POST', '/api/auth/skip');
+    auth.setup = false;
+    showAuth(null); renderPw();
+    say(t('auth.skipped'));
+  } catch (e) { say(e.message, true); }
+};
+async function checkAuth() {
+  try { auth = await api('GET', '/api/auth'); } catch { setTimeout(checkAuth, 3000); return; }
+  renderPw();
+  showAuth(auth.password && !auth.session ? 'login' : null);
+  if (!authMode) start();
+}
+function start() {
+  started = true;
+  pollWifi(); loadSettings(); pollAxi(); ledView(); logView();
+}
+
 // ---------- Start ----------
 applyI18n();
 drawMark(); $('mark').onclick = drawMark;
 renderStatus(); renderUpload();
-poll(); pollWifi(); loadSettings(); pollAxi(); ledView();
+poll(); checkAuth();   // Status ist auch ohne Anmeldung lesbar, die Verbindungsanzeige oben stimmt so von Anfang an
 </script>
 </body>
 </html>

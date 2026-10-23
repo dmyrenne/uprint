@@ -488,8 +488,10 @@ static esp_err_t job_get(httpd_req_t *req)
     char body[ESCAPED_NAME_MAX + 512];
     printer_get_status(&st);
     bool active = st.state == PRINTER_PRINTING || st.state == PRINTER_PAUSED;
-    float completion = active && st.file_size ? 100.0f * st.file_pos / st.file_size : 0;
-    long left = active && completion > 2 ? (long)(st.elapsed_s * (100 - completion) / completion) : -1;
+    // Angaben des Slicers (M73) haben Vorrang vor der Schätzung nach Bytes
+    float completion = !active ? 0 : st.progress >= 0 ? st.progress : st.file_size ? 100.0f * st.file_pos / st.file_size : 0;
+    long left = !active ? -1 : st.remaining_s >= 0 ? st.remaining_s
+              : completion > 2 ? (long)(st.elapsed_s * (100 - completion) / completion) : -1;
     http_json_escape(esc, sizeof(esc), active ? st.file : "");
     char left_str[16] = "null";
     if (left >= 0) {

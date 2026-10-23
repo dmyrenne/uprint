@@ -407,6 +407,8 @@ static void render(const led_config_t *cfg, led_state_t state, float value, int6
                 level = gamma_level(f - full);
                 if (lk->effect == LED_FX_BAR) {
                     level = fmaxf(level, 0.3f * gamma_level(wave(t, BAR_EDGE_MS)));
+                } else {
+                    level = fmaxf(level, 0.3f);   // sonst ist eine Pause kurz nach dem Start dunkel
                 }
             }
             level *= pulse;
@@ -436,15 +438,27 @@ static led_state_t pick_state(float *value)
     wifi_status_t ws;
     printer_get_status(&ps);
     wifi_get_status(&ws);
-    *value = ps.file_size ? (float)ps.file_pos / ps.file_size : 0.0f;
+    *value = ps.progress >= 0 ? ps.progress / 100.0f : ps.file_size ? (float)ps.file_pos / ps.file_size : 0.0f;
 
     if (ps.state == PRINTER_ERROR) {
         return LED_STATE_ERROR;
     }
+    // Aufheizen nur bis zum ersten Erreichen der Temperaturen; danach (Schwankungen, Temperaturwechsel im
+    // G-Code) zählen nur noch Fortschritt, Pause und Fehler
+    static bool s_heated;
+    if (ps.state != PRINTER_PRINTING && ps.state != PRINTER_PAUSED) {
+        s_heated = false;
+    }
+    if (ps.state == PRINTER_PRINTING && ps.user_wait) {
+        return LED_STATE_PAUSED;   // wartet am Display, z. B. Filamentwechsel
+    }
     if (ps.state == PRINTER_PRINTING) {
         bool hot = ps.hotend_target > 0 && ps.hotend < ps.hotend_target - 3;
         bool bed = ps.bed_target > 0 && ps.bed < ps.bed_target - 2;
-        if (hot || bed) {
+        if (!s_heated && !hot && !bed && ps.hotend_target > 0) {
+            s_heated = true;
+        }
+        if (!s_heated && (hot || bed)) {
             float h = hot ? ps.hotend / ps.hotend_target : 1.0f;
             float b = bed ? ps.bed / ps.bed_target : 1.0f;
             *value = fminf(h, b);
