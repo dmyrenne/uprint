@@ -1,7 +1,7 @@
 # AxiDraw- und NextDraw-Unterstützung (Recherche)
 
-Stand: 08.10.2026. Erster Hardwaretest mit einem AxiDraw mit **EBB-Firmware 2.8.1** (Log vom 08.10.2026,
-µprint 0.4.0-alpha.4). Alles zu FW 3.x stammt nur aus der Dokumentation.
+Stand: 23.10.2026. Hardwaretests mit einem AxiDraw mit **EBB-Firmware 2.8.1** (Logs vom 08.10.2026 mit
+µprint 0.4.0-alpha.4 und vom 23.10.2026 mit 0.8.0-alpha.2). Alles zu FW 3.x stammt nur aus der Dokumentation.
 
 > **Wir können nur mit FW 2.x testen.** Unterstützung für FW 3.x (u. a. NextDraw) ist **Beta**: µprint erkennt
 > die Version und erwartet das dokumentierte Antwortformat, geprüft hat das niemand. Wer ein Gerät mit FW 3.x
@@ -209,8 +209,8 @@ listet alle Releases; der Umschalter „Release / Alpha“ filtert das Versions-
 1. ~~Gerätetyp in den Einstellungen~~ (erledigt für den Testmodus)
 2. ~~Testmodus mit Log~~ (erledigt, wartet auf den ersten Hardwaretest)
 3. ~~Hardwaretest beim Bekannten, Log auswerten~~ (erledigt: FW 2.8.1, Log vom 08.10.2026)
-4. Protokollschicht für den Plotter-Modus: Antwortformat je Firmware (für den Testmodus erledigt, `ebb_cmd`
-   und `ebb_detect` in `main/axidraw.c`). Zweiter Test mit alpha.5 bestätigt das für FW 2.x, FW 3.x bleibt Beta
+4. ~~Protokollschicht für den Plotter-Modus: Antwortformat je Firmware~~ (erledigt, `ebb_cmd` und `ebb_detect`
+   in `main/axidraw.c`; für FW 2.x bestätigt durch den zweiten Test vom 23.10.2026, FW 3.x bleibt Beta)
 5. ~~Einstellungen für den Plotter~~ (erledigt: Geschwindigkeit Zeichnen/Verfahren, Beschleunigung, Stift-Servo
    Standard/bürstenlos (NextDraw), Stifthöhen in %, Wartezeit)
 6. ~~Übersetzer G-Code → `LM`/`SP` mit Vorausschau~~ (erledigt, `main/plot.c`, am PC getestet)
@@ -228,7 +228,9 @@ listet alle Releases; der Umschalter „Release / Alpha“ filtert das Versions-
 
 ## Offen
 
-- Zweiter Test mit alpha.5: Kommen alle Antworten ohne Zeitablauf und ohne „Antwort unvollständig“ an?
+- ~~Zweiter Test: Kommen alle Antworten ohne Zeitablauf und ohne „Antwort unvollständig“ an?~~ Ja: Test vom
+  23.10.2026 mit µprint 0.8.0-alpha.2 (n16r8), FW 2.8.1, vollständig durchgelaufen. Jede Antwort nach 2–3 ms,
+  nach allen Fahrten `QS` wieder `0,0`, PRG-Taste live und als Merker erkannt
 - Stimmen 80 Schritte/mm? Beim nächsten Test die 10-mm-Fahrt mit dem Lineal nachmessen
 - Stift-Timing und Servowerte je Maschine. Der Test nutzt `SP` mit den Werten aus der Firmware; `S2` mit
   eigenen Werten und der NextDraw-Pin kommen später
