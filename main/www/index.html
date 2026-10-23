@@ -177,6 +177,13 @@
   .files li.empty { color: var(--muted); font-size: 13px; cursor: default; }
   .files li.empty:hover { background: none; }
   .files li.active .name { color: var(--accent); font-weight: 600; }
+  .files li .tag.bad { background: var(--warn-bg); color: var(--warn); }
+  /* SVG aus µplot: Vorschau der Fahrwege auf der Zeichenfläche */
+  .svg-prev { display: block; width: 100%; max-height: 280px; margin: 0 0 10px; border: 1px solid var(--line); border-radius: 8px;
+              background: var(--bg); }
+  .svg-prev .area { fill: var(--panel); }
+  .svg-prev .page { fill: none; stroke: var(--line-strong); stroke-dasharray: 4 3; }
+  .svg-prev .draw { fill: none; stroke: var(--ink); stroke-linecap: round; stroke-linejoin: round; }
   .badge { font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: .04em; padding: 3px 8px; border-radius: 99px;
            background: var(--warn-bg); color: var(--warn); white-space: nowrap; }
   .sub { font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 10px 0 -4px; }
@@ -515,7 +522,19 @@
     <div class="drop" id="drop" tabindex="0" role="button">
       <strong id="dropTitle"></strong>
       <span id="dropSub"></span>
-      <input type="file" id="file" accept=".gcode,.gco,.g" hidden>
+      <input type="file" id="file" accept=".gcode,.gco,.g,.svg,image/svg+xml" hidden>
+    </div>
+    <p class="hint" id="uplotHint"></p>
+    <!-- SVG: über µplot prüfen und in G-Code umwandeln, oder in µplot bearbeiten -->
+    <div id="svgBox" hidden style="margin-top:10px">
+      <p class="derived" id="svgInfo" hidden></p>
+      <svg class="svg-prev" id="svgPrev" hidden></svg>
+      <div class="row">
+        <button type="button" class="primary" id="svgConvert" data-i18n="svg.convert"></button>
+        <button type="button" id="svgEdit" data-i18n="svg.edit"></button>
+        <button type="button" id="svgCancel" data-i18n="cancel"></button>
+      </div>
+      <p class="hint" id="svgHint"></p>
     </div>
     <div id="upForm" hidden style="margin-top:10px">
       <div class="row">
@@ -633,7 +652,16 @@
       </select></label>
       <label data-dev="1"><span data-i18n="set.pen_up"></span><input type="number" name="pen_up" min="0" max="100" step="1"></label>
       <label data-dev="1"><span data-i18n="set.pen_down"></span><input type="number" name="pen_down" min="0" max="100" step="1"></label>
+      <label class="full" data-dev="1"><span data-i18n="set.plot_model"></span><select id="plotModel"></select></label>
+      <label data-dev="1"><span data-i18n="set.plot_w"></span><input type="number" name="plot_w" min="10" max="2000" step="1"></label>
+      <label data-dev="1"><span data-i18n="set.plot_h"></span><input type="number" name="plot_h" min="10" max="2000" step="1"></label>
       <p class="hint full" data-dev="1" data-i18n="set.plotter.hint"></p>
+
+      <p class="sub full" data-i18n="set.uplot"></p>
+      <label class="full"><span data-i18n="set.uplot_url"></span>
+        <span class="pick"><input type="text" name="uplot_url" maxlength="95" spellcheck="false" placeholder="https://uplot.dmy.work"><button type="button" id="uplotCheck" data-i18n="set.uplot_check"></button></span>
+      </label>
+      <p class="hint full" id="uplotStatus" data-i18n="set.uplot.hint"></p>
 
       <p class="sub full" data-i18n="set.slicer"></p>
       <label class="full"><span data-i18n="set.api_key"></span>
@@ -942,7 +970,8 @@ function renderStatus() {
 
   // Bedienelemente bleiben sichtbar und sind nur aktiv, wenn sie etwas bewirken
   const chosen = selected(), again = !chosen && finishedFile();
-  $('bStart').disabled = offline || s.state !== 'idle' || !(chosen || again);
+  const issue = fileIssue(chosen || again);
+  $('bStart').disabled = offline || s.state !== 'idle' || !(chosen || again) || !!(issue && issue.block);
   $('bStart').textContent = t(done ? 'reprint' : 'start');
   $('bPause').hidden = !offline && s.state === 'paused';
   $('bPause').disabled = offline || s.state !== 'printing';
@@ -958,7 +987,11 @@ function renderStatus() {
   else if (s.state === 'disconnected') { const k = axiMode() ? 'stage.axiDisconnected' : 'stage.disconnected'; title = t(k); sub = t(k + 'Hint'); }
   else if (s.state === 'connecting') { title = t('stage.connecting'); sub = ''; }
   else if (s.state === 'error') { title = t('state.error'); sub = s.message; }
-  else if (chosen) { title = chosen.name; sub = volName(chosen.storage) + ' · ' + fmtSize(chosen.size) + ' · ' + t('job.ready'); }
+  else if (chosen) {
+    title = chosen.name;
+    sub = volName(chosen.storage) + ' · ' + fmtSize(chosen.size) + ' · ' + (issue ? issueText(issue, chosen) : t('job.ready'));
+    bad = !!issue;
+  }
   else { title = t('stage.idle'); sub = t('stage.idleHint'); }
   // Meldungen der Firmware wie „Druck fertig …“ zusätzlich zeigen, solange nichts läuft
   const note = !offline && !done && s.state === 'idle' && !s.finished && s.message && !['Drucker bereit', 'Fehler quittiert'].includes(s.message) ? s.message : '';
@@ -997,7 +1030,11 @@ function renderLock() {
   for (const id of LOCKED) $(id).inert = lock;
   for (const n of document.querySelectorAll('.lock-note')) { n.hidden = !lock; n.textContent = t('lock.print'); }   // .axi: „Plot“
 }
-$('bStart').onclick = () => { const f = selected() || finishedFile(); if (f) act('POST', '/api/print' + fileQuery(f)); };
+$('bStart').onclick = () => {
+  const f = selected() || finishedFile(), issue = fileIssue(f);
+  if (!f || (issue && issue.block) || (issue && !confirm(issueText(issue, f)))) return;
+  act('POST', '/api/print' + fileQuery(f));
+};
 $('bRetry').onclick = () => act('POST', '/api/printer/retry');
 
 // Rückfrage des Druckers mit Auswahl; die Antwort geht als M876 S<n> an den Drucker
@@ -1091,6 +1128,9 @@ function renderFiles() {
     const li = el('li', [printing ? 'active' : '', fileKey(f) === selKey ? 'sel' : ''].join(' ').trim());
     const info = el('div', 'info'), meta = el('span', 'meta');
     meta.append(el('span', 'tag', volName(f.storage)), fmtSize(f.size));
+    // 2D/3D (#12); im Plotter-Modus dazu, ob die Zeichnung auf die Zeichenfläche passt
+    if (KIND_TAGS[f.kind]) meta.append(el('span', 'tag', t(KIND_TAGS[f.kind])));
+    if (axiMode() && f.kind === 'axidraw' && f.bounds && !boundsFit(f.bounds)) meta.append(el('span', 'tag bad', t('kind.tooBig')));
     info.append(el('span', 'name', f.name), meta);
     li.tabIndex = 0;
     li.setAttribute('aria-selected', fileKey(f) === selKey);
@@ -1116,6 +1156,203 @@ function renderFiles() {
   }));
 }
 
+// ---------- 2D oder 3D (#12) ----------
+const KIND_TAGS = { print: 'kind.print', axidraw: 'kind.axidraw', pen: 'kind.pen' };
+const plotArea = () => ({ w: settings ? settings.plot_w : 300, h: settings ? settings.plot_h : 218 });
+// Ausdehnung x0 y0 x1 y1 aus "; uplot-bounds" innerhalb der Zeichenfläche (Nullpunkt oben links)?
+const boundsFit = (b) => { const a = plotArea(); return b[0] >= -0.01 && b[1] >= -0.01 && b[2] <= a.w + 0.01 && b[3] <= a.h + 0.01; };
+// Passt die Datei zum Gerät? block: nicht startbar (die Firmware lehnt sie ohnehin ab), warn: nachfragen
+function fileIssue(f) {
+  if (!f || !f.kind) return null;
+  if (axiMode()) {
+    if (f.kind !== 'axidraw') return { block: f.kind === 'unknown' ? 'issue.axiUnknown' : 'issue.axiNot' };
+    if (f.bounds && !boundsFit(f.bounds)) return { warn: 'issue.tooBig' };
+  } else if (f.kind === 'axidraw') return { warn: 'issue.axiOnPrinter' };
+  return null;
+}
+function issueText(issue, f) {
+  const a = plotArea(), b = f.bounds || [0, 0, 0, 0];
+  return t(issue.block || issue.warn, { w: a.w, h: a.h, bw: num(b[2]), bh: num(b[3]) });
+}
+
+// ---------- µplot: SVG → G-Code ----------
+// Die Seite ruft µplot direkt aus dem Browser auf (µplot erlaubt das per CORS); µprint selbst braucht kein Internet.
+// Umwandeln nur im Plotter-Modus: Seite 1:1, Papierecke am Nullpunkt, Fläche und Geschwindigkeiten aus µprint.
+// "In µplot bearbeiten" öffnet µplot und übergibt die SVG per postMessage; zurück kommt der G-Code ebenso.
+const uplotUrl = () => ((settings && settings.uplot_url) || '').replace(/\/+$/, '');
+const uplotOrigin = () => { try { return new URL(uplotUrl()).origin; } catch { return null; } };
+let svgPick = null, svgInfo = null, svgBusy = false, svgMsg = null;
+let importFrom = null;   // Fenster, von dem G-Code angenommen wird: {win, origin}; origin null = jeder (öffnendes Fenster)
+let importReply = null;  // nach dem Hochladen "uprint-uploaded" dorthin melden
+async function uplotPost(path, fd) {
+  let r;
+  try { r = await fetch(uplotUrl() + path, { method: 'POST', body: fd }); }
+  catch { throw new Error(t('svg.unreachable', { url: uplotUrl() })); }
+  let j = {}; try { j = await r.json(); } catch {}
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+const fmtLen = (mm) => mm >= 1000 ? num(mm / 1000, 2) + ' m' : num(mm) + ' mm';
+async function openSvg(file) {
+  pick = null; svgPick = file; svgInfo = null; svgMsg = null; $('svgPrev').toggleAttribute('hidden', true);   // SVG-Element: kein .hidden
+  renderUpload();
+  if (!uplotUrl()) { svgMsg = { text: t('svg.noUplot'), bad: true }; return renderSvg(); }
+  svgBusy = true; svgMsg = { text: t('svg.inspecting') }; renderSvg();
+  const fd = new FormData(); fd.append('svg', file);
+  try { svgInfo = await uplotPost('/api/inspect', fd); svgMsg = null; }
+  catch (e) { svgMsg = { text: e.message, bad: true }; }
+  if (svgPick !== file) return;   // inzwischen etwas anderes gewählt
+  svgBusy = false; renderSvg();
+}
+function renderSvg() {
+  $('svgBox').hidden = !svgPick;
+  if (!svgPick) return;
+  const i = svgInfo, axi = axiMode(), a = plotArea();
+  const info = i ? [t('svg.page', { w: num(i.page_w), h: num(i.page_h), lines: i.lines }),
+                    t(i.optimized ? 'svg.optimized' : 'svg.notOptimized', { travel: fmtLen(i.travel_length) })] : [];
+  const tooBig = axi && i && i.bounds && !boundsFit(i.bounds);
+  if (tooBig) info.push(t('svg.tooBig', { w: a.w, h: a.h }));
+  $('svgInfo').textContent = info.join(' · ');
+  $('svgInfo').className = 'derived' + (tooBig ? ' bad' : '');
+  $('svgInfo').hidden = !i;
+  $('svgConvert').hidden = !axi;
+  $('svgConvert').disabled = svgBusy || !i || uploading;
+  $('svgEdit').disabled = !uplotOrigin() || uploading;
+  const msg = svgMsg || (!axi ? { text: t('svg.printerHint') } : null);
+  $('svgHint').textContent = msg ? msg.text : '';
+  $('svgHint').className = 'hint' + (msg && msg.bad ? ' bad' : '');
+}
+// Vorschau aus dem G-Code: Linien mit Stift unten (Z0) auf der Zeichenfläche, Seite gestrichelt
+function drawPreview(gcode, info) {
+  const a = plotArea(), out = [];
+  let x = 0, y = 0, down = false, path = '';
+  for (const raw of gcode.split('\n')) {
+    const line = raw.split(';')[0].trim();
+    if (!/^G0*[01]\b/i.test(line)) continue;
+    const v = (k) => { const m = line.match(new RegExp('\\b' + k + '(-?[\\d.]+)', 'i')); return m ? +m[1] : null; };
+    const z = v('Z');
+    if (z !== null) down = z < 0.5;
+    const nx = v('X') ?? x, ny = v('Y') ?? y;
+    if (nx !== x || ny !== y) path += (down ? 'L' : 'M') + nx.toFixed(2) + ' ' + ny.toFixed(2);
+    x = nx; y = ny;
+  }
+  const page = info && info.page_w ? `<rect class="page" x="0" y="0" width="${info.page_w}" height="${info.page_h}" vector-effect="non-scaling-stroke"/>` : '';
+  out.push(`<rect class="area" x="0" y="0" width="${a.w}" height="${a.h}"/>`, page,
+           `<path class="draw" stroke-width="0.4" d="${path}"/>`);
+  const svg = $('svgPrev');
+  svg.setAttribute('viewBox', `-4 -4 ${a.w + 8} ${a.h + 8}`);
+  svg.innerHTML = out.join('');
+  svg.toggleAttribute('hidden', false);
+}
+$('svgConvert').onclick = async () => {
+  const s = settings, file = svgPick, fd = new FormData();
+  fd.append('svg', file);
+  const opts = { machine: 'axidraw', placement: 'page', optimize: 'auto', bed_w: s.plot_w, bed_h: s.plot_h, safety: 0,
+                 feed_draw: s.plot_draw * 60, feed_travel: s.plot_travel * 60 };
+  for (const [k, v] of Object.entries(opts)) fd.append(k, v);
+  svgBusy = true; svgMsg = { text: t('svg.converting') }; renderSvg();
+  try {
+    const r = await uplotPost('/api/convert', fd);
+    if (svgPick !== file) return;
+    drawPreview(r.gcode, r.info);
+    pick = new File([r.gcode], file.name.replace(/\.svg$/i, '') + '.gcode', { type: 'text/plain' });
+    svgMsg = { text: t('svg.converted', { travel: fmtLen(r.stats.travel_length) }) };
+    $('target').value = bestTarget(pick.size);
+    renderUpload();
+  } catch (e) { svgMsg = { text: e.message, bad: true }; }
+  svgBusy = false; renderSvg();
+};
+$('svgCancel').onclick = () => { svgPick = pick = null; renderUpload(); renderSvg(); };
+$('svgEdit').onclick = async () => {
+  const origin = uplotOrigin(), file = svgPick;
+  if (!origin || !file) return;
+  const svg = await file.text();
+  const win = window.open(uplotUrl() + '/?uprint=' + encodeURIComponent(location.origin) + '#import-svg', 'uplot');
+  if (!win) { say(t('svg.blocked'), true); return; }
+  importFrom = { win, origin };   // "An µprint senden" in µplot schickt den G-Code hierher zurück
+  const onMsg = (e) => {
+    if (e.source !== win || e.origin !== origin || !e.data || e.data.type !== 'uplot-ready') return;
+    removeEventListener('message', onMsg);
+    win.postMessage({ type: 'uprint-svg', name: file.name, svg, device_type: settings.device_type,
+                      area: { w: settings.plot_w, h: settings.plot_h } }, origin);
+  };
+  addEventListener('message', onMsg);
+  setTimeout(() => removeEventListener('message', onMsg), 120000);
+  say(t('svg.opened'));
+};
+
+// G-Code aus µplot annehmen (#20): als ausgewählte Datei ins Upload-Fenster, hochgeladen wird erst nach Bestätigung
+const safeName = (n) => (String(n || 'plot.gcode').replace(/[\x00-\x1f\/\\:*?"<>|]/g, '_').replace(/^\.+/, '') || 'plot.gcode').slice(0, 120);
+addEventListener('message', (e) => {
+  const d = e.data;
+  if (!importFrom || e.source !== importFrom.win || (importFrom.origin && e.origin !== importFrom.origin)) return;
+  if (!d || d.type !== 'uplot-gcode' || typeof d.gcode !== 'string') return;
+  importReply = { win: e.source, origin: e.origin };
+  svgPick = null; renderSvg();
+  pick = new File([d.gcode], safeName(d.name), { type: 'text/plain' });
+  $('target').value = bestTarget(pick.size);
+  renderUpload();
+  $('drop').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  say(t('import.received', { name: pick.name }));
+});
+// Aus µplot geöffnet (<µprint>/#import): bereit melden, sobald Gerätetyp und Version bekannt sind
+let importPending = false;
+if (location.hash === '#import' && window.opener) {
+  importPending = true;
+  importFrom = { win: window.opener, origin: null };
+  history.replaceState(null, '', location.pathname + location.search);   // Neuladen fordert nichts erneut an
+}
+function importReady() {
+  if (!importPending || !settings) return;
+  importPending = false;
+  window.opener.postMessage({ type: 'uprint-ready', version: settings.version, device_type: settings.device_type }, '*');
+}
+function renderUplotHint() {
+  const url = uplotUrl(), hint = $('uplotHint');
+  hint.hidden = !url;
+  if (!url) return;
+  const a = el('a', '', 'µplot');
+  a.href = url + '/?uprint=' + encodeURIComponent(location.origin); a.target = '_blank'; a.rel = 'opener';
+  hint.replaceChildren(...tNodes(axiMode() ? 'upload.uplotHint.axi' : 'upload.uplotHint', { link: a }));
+}
+
+// Zeichenfläche: Modelle wie in µplot (AXIDRAW_MODELS, Maße aus den Herstellerangaben)
+const PLOT_MODELS = [
+  ['AxiDraw V3, SE/A4 · NextDraw 8511', 300, 218], ['AxiDraw V3/A3, SE/A3 · NextDraw 1117', 430, 297],
+  ['AxiDraw V3 XLX', 595, 218], ['AxiDraw SE/A2', 594, 432], ['AxiDraw SE/A1 · NextDraw 2234', 864, 594],
+  ['AxiDraw V3/B6', 190, 140], ['AxiDraw MiniKit', 160, 101],
+];
+function syncPlotModel() {
+  const w = +setForm.elements.plot_w.value, h = +setForm.elements.plot_h.value;
+  const i = PLOT_MODELS.findIndex(([, mw, mh]) => mw === w && mh === h);
+  $('plotModel').value = i < 0 ? '' : String(i);
+}
+function fillPlotModels() {
+  $('plotModel').replaceChildren(new Option(t('set.plot_model.custom'), ''),
+    ...PLOT_MODELS.map(([n, w, h], i) => new Option(`${n} (${w} × ${h} mm)`, i)));
+  syncPlotModel();
+}
+$('plotModel').onchange = (e) => {
+  const m = PLOT_MODELS[+e.target.value];
+  if (!m) return;
+  setForm.elements.plot_w.value = m[1]; setForm.elements.plot_h.value = m[2];
+  renderSettings();
+};
+// Erreichbarkeit von µplot aus diesem Browser prüfen (die Adresse aus dem Formular, auch ungespeichert)
+$('uplotCheck').onclick = async () => {
+  const url = setForm.elements.uplot_url.value.trim().replace(/\/+$/, ''), out = $('uplotStatus');
+  if (!url) { out.textContent = t('set.uplot.empty'); out.className = 'hint full'; return; }
+  out.textContent = t('set.uplot.checking'); out.className = 'hint full';
+  try {
+    const r = await fetch(url + '/api/defaults');
+    const j = await r.json();
+    if (!r.ok || !j.defaults) throw new Error();
+    out.textContent = t('set.uplot.ok', { n: j.axidraw_models.length });
+  } catch {
+    out.textContent = t('svg.unreachable', { url }); out.className = 'hint full bad';
+  }
+};
+
 // ---------- Hochladen ----------
 const readyVols = () => volumes.filter((v) => v.ready);
 function bestTarget(size) {   // SD bevorzugt, sonst der erste Speicher mit genug Platz
@@ -1125,7 +1362,9 @@ function bestTarget(size) {   // SD bevorzugt, sonst der erste Speicher mit genu
   return v ? v.id : '';
 }
 function choose(file) {
+  if (/\.svg$/i.test(file.name) || file.type === 'image/svg+xml') { openSvg(file); return; }
   if (!/\.(gcode|gco|g)$/i.test(file.name)) { say(t('upload.badType'), true); return; }
+  svgPick = null; renderSvg();
   pick = file;
   renderUpload();
   $('target').value = bestTarget(file.size);
@@ -1187,7 +1426,8 @@ $('upBtn').onclick = async () => {
   try {
     await sendRaw('/api/upload' + fileQuery({ storage, name: f.name }), f, (p) => { upPct = p; renderUpload(); }, (x) => { upXhr = x; });
     say(t('upload.done', { name: f.name, speed: fmtSize(f.size / ((performance.now() - t0) / 1000)) }));
-    pick = null;
+    pick = null; svgPick = null; renderSvg();
+    if (importReply) { try { importReply.win.postMessage({ type: 'uprint-uploaded', name: f.name }, importReply.origin); } catch {} importReply = null; }
     selKey = storage + '/' + f.name;   // frisch hochgeladene Datei gleich auswählen
   } catch (e) {
     if (e.aborted) say(t('upload.cancelled'));
@@ -1402,7 +1642,7 @@ async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1
 
 // ---------- Einstellungen ----------
 const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y',
-  'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay',
+  'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay', 'plot_w', 'plot_h', 'uplot_url',
   'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs', 'console',
   'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness', 'led_max_ma', 'led_ma'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
@@ -1445,6 +1685,7 @@ function writeSettings(s) {
     const e = field(k);
     if (e.type === 'checkbox') e.checked = s[k] === 1; else e.value = s[k];
   }
+  syncPlotModel();
 }
 // Geändert insgesamt bzw. in einem der beiden Formulare (für das Abzeichen der Karte)
 const setModified = (form) => !!settings &&
@@ -1464,15 +1705,18 @@ function renderSettings() {
     bar.classList.toggle('floating', mod);
   }
   $('rebootBox').hidden = $('hwRebootBox').hidden = !settings || !settings.reboot_required;
-  renderOta(); renderSlicer(); renderName(); renderAxi(); renderAddr();
+  renderOta(); renderSlicer(); renderName(); renderAxi(); renderAddr(); renderUplotHint(); renderSvg();
 }
 async function loadSettings() {
   try { settings = await api('GET', '/api/settings'); } catch { return; }
+  importReady();
   if (!setModified() || !($('setBox').open || $('hwBox').open)) writeSettings(settings);   // laufende Eingaben nicht überschreiben
   renderSettings();
   if (ledEdit) buildLedGrid();   // Anzahl LEDs für das Muster der Kennung
 }
 for (const f of [setForm, hwForm]) { f.addEventListener('input', renderSettings); f.addEventListener('change', renderSettings); }
+setForm.elements.plot_w.addEventListener('input', syncPlotModel);
+setForm.elements.plot_h.addEventListener('input', syncPlotModel);
 // Konsole an/aus ändert auf dem XIAO, ob D6 wählbar ist; die gewählten Pins bleiben stehen
 hwForm.elements.console.addEventListener('change', () => {
   if (!settings) return;
@@ -1918,7 +2162,7 @@ $('lang').value = LANG;
 $('lang').onchange = () => {
   LANG = $('lang').value;
   try { localStorage.setItem('uprint-lang', LANG); } catch {}
-  applyI18n(); renderName(); renderStatus(); renderVolumes(); renderUpload(); renderWifi();
+  applyI18n(); renderName(); renderStatus(); renderVolumes(); renderUpload(); renderWifi(); fillPlotModels(); renderSvg(); renderUplotHint();
   if (authMode) showAuth(authMode);
   renderPw();
   if (ledEdit) buildLedRows();
@@ -1985,7 +2229,7 @@ function start() {
 applyI18n();
 drawMark(); $('mark').onclick = drawMark;
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', setFavicon);   // Favicon in den neuen Farben
-renderStatus(); renderUpload();
+fillPlotModels(); renderStatus(); renderUpload();
 poll(); checkAuth();   // Status ist auch ohne Anmeldung lesbar, die Verbindungsanzeige oben stimmt so von Anfang an
 </script>
 </body>
