@@ -1141,9 +1141,17 @@ void printer_get_status(printer_status_t *out)
 {
     LOCK();
     *out = s_st;
-    if (out->state == PRINTER_PRINTING && out->progress >= 0 && s_m73_bytes > 0 && out->file_pos > s_m73_pos) {
-        float step = fminf((out->file_pos - s_m73_pos) / s_m73_bytes, s_m73_gap - 0.1f);
-        out->progress = fminf(out->progress + fmaxf(step, 0), 100);
+    if (out->state == PRINTER_PRINTING && out->progress >= 0 && out->file_pos > s_m73_pos) {
+        // Vor dem zweiten M73 (z. B. von P0 bis P1) gibt es noch keinen Schritt: Rest der Datei gleichmäßig verteilt
+        float bytes = s_m73_bytes, gap = s_m73_gap;
+        if (bytes <= 0 && s_m73_p < 100 && out->file_size > s_m73_pos) {
+            bytes = (out->file_size - s_m73_pos) / (100 - s_m73_p);
+            gap = 1;
+        }
+        if (bytes > 0) {
+            float step = fminf((out->file_pos - s_m73_pos) / bytes, gap - 0.1f);
+            out->progress = fminf(out->progress + fmaxf(step, 0), 100);
+        }
     }
     UNLOCK();
     if (job_active(out->state)) {
