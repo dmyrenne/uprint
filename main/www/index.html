@@ -942,6 +942,8 @@ async function refreshStatus() {
     st = s; offline = false;
     renderStatus(); renderLedDot();
     if (changed) loadFiles();
+    // After an update the device serves the new web UI: reload instead of keeping the old page (and its update button)
+    if (back && otaReboot) { location.reload(); return; }
     if (back) loadSettings();
   } catch (e) {
     offline = true; renderStatus();
@@ -2139,7 +2141,7 @@ $('apiNew').onclick = async () => {
 };
 
 // ---------- Firmware-Update ----------
-let otaFile = null, otaBusy = false;
+let otaFile = null, otaBusy = false, otaReboot = null;
 
 // ---------- Update von GitHub (#47) ----------
 // releases.json und die OTA-Images liegen auf GitHub Pages (flasher.yml), Pages erlaubt den Abruf per CORS. Der
@@ -2181,6 +2183,12 @@ async function installOta(blob) {
   bar.style.width = '0';
   const r = await sendRaw('/api/ota', blob, (p) => { bar.style.width = p + '%'; $('otaHint').textContent = t('ota.running', { pct: Math.round(p) }); });
   say(t('ota.done', { v: r.version }));
+  // The status poll reloads the page once the device is back; if it never saw the restart, check the version
+  otaReboot = r.version;
+  setTimeout(async function check() {
+    try { if ((await api('GET', '/api/settings')).version === otaReboot) return location.reload(); } catch {}
+    setTimeout(check, 3000);
+  }, 15000);
 }
 $('otaGithub').onclick = async () => {
   const rel = updateAvailable(), info = rel && rel.ota[settings.variant];
