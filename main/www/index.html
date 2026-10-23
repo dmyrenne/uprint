@@ -493,26 +493,6 @@
     </div>
   </section>
 
-  <details class="card wide" id="axiBox" open hidden>
-    <summary data-i18n="h.axidraw"></summary>
-    <p class="hint" data-i18n="axi.intro" style="margin-top:0"></p>
-    <label class="check" style="margin-top:12px"><input type="checkbox" id="axiMotion"> <span data-i18n="axi.motion"></span></label>
-    <div class="row" style="margin-top:12px">
-      <button type="button" class="primary" id="axiStart" data-i18n="axi.start"></button>
-      <button type="button" class="danger" id="axiAbort" data-i18n="axi.abort"></button>
-    </div>
-    <div class="derived axi-prompt" id="axiPrompt" hidden></div>
-    <div class="axi-obs" id="axiObs" hidden>
-      <p class="sub" data-i18n="axi.obs"></p>
-      <label class="check"><input type="checkbox" data-obs="axi.obs.pen"> <span data-i18n="axi.obs.pen"></span></label>
-      <label class="check"><input type="checkbox" data-obs="axi.obs.square"> <span data-i18n="axi.obs.square"></span></label>
-      <label class="check"><input type="checkbox" data-obs="axi.obs.lm"> <span data-i18n="axi.obs.lm"></span></label>
-      <label class="check"><input type="checkbox" data-obs="axi.obs.home"> <span data-i18n="axi.obs.home"></span></label>
-      <label><span data-i18n="axi.notes"></span><textarea id="axiNotes" rows="3"></textarea></label>
-      <div class="row"><button type="button" class="primary" id="axiDownload" data-i18n="axi.download"></button></div>
-    </div>
-    <pre class="axi-log" id="axiLog" hidden></pre>
-  </details>
 
   <div class="cols">
   <div class="col">
@@ -771,10 +751,31 @@
       <div class="row" style="margin-top:8px"><button type="button" class="small" id="hwRebootBtn" data-i18n="set.rebootNow"></button></div>
     </div>
   </details>
+  <!-- Selbsttest für Rückmeldungen, vor allem von Geräten mit EBB-Firmware 3.x (docs/axidraw.md) -->
+  <details class="card" id="axiBox" hidden>
+    <summary data-i18n="h.axidraw"></summary>
+    <p class="hint" data-i18n="axi.intro" style="margin-top:0"></p>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="axiMotion"> <span data-i18n="axi.motion"></span></label>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="primary" id="axiStart" data-i18n="axi.start"></button>
+      <button type="button" class="danger" id="axiAbort" data-i18n="axi.abort"></button>
+    </div>
+    <div class="derived axi-prompt" id="axiPrompt" hidden></div>
+    <div class="axi-obs" id="axiObs" hidden>
+      <p class="sub" data-i18n="axi.obs"></p>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.pen"> <span data-i18n="axi.obs.pen"></span></label>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.square"> <span data-i18n="axi.obs.square"></span></label>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.lm"> <span data-i18n="axi.obs.lm"></span></label>
+      <label class="check"><input type="checkbox" data-obs="axi.obs.home"> <span data-i18n="axi.obs.home"></span></label>
+      <label><span data-i18n="axi.notes"></span><textarea id="axiNotes" rows="3"></textarea></label>
+      <div class="row"><button type="button" class="primary" id="axiDownload" data-i18n="axi.download"></button></div>
+    </div>
+    <pre class="axi-log" id="axiLog" hidden></pre>
+  </details>
   </div>
   </div>
 </main>
-<footer class="foot" data-i18n-html="footer.html"></footer>
+<footer class="foot"><span data-i18n-html="footer.html"></span><span id="footVersion"></span></footer>
 
 <script src="i18n.js"></script>
 <script>
@@ -2126,6 +2127,8 @@ $('apiNew').onclick = async () => {
 let otaFile = null, otaBusy = false;
 function renderOta() {
   $('otaVersion').textContent = settings ? t('ota.version', { v: settings.version, variant: settings.variant }) : '';
+  // CI baut ohne führendes v (0.9.0), lokale Builds mit (v0.9.0-3-gabc)
+  $('footVersion').textContent = settings ? ' · v' + settings.version.replace(/^v/, '') + ' (' + settings.variant + ')' : '';
   const failed = settings && settings.failed_update;
   $('otaRollback').hidden = !failed;
   if (failed) $('otaRollback').textContent = t('ota.rolledBack', { failed, v: settings.version });
