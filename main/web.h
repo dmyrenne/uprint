@@ -26,6 +26,11 @@
  *   POST   /api/auth/password       password=<neu>&current=<bisher>&ap=1 festlegen bzw. ändern, meldet alle ab;
  *                                   remove=1&current=<bisher> entfernt es
  *   POST   /api/auth/skip           "Ohne Passwort fortfahren": nicht mehr nach einem Passwort fragen
+ *   GET    /api/log                 Log als Text (diag.h): ?since=<pos> neue Zeilen, sonst die letzten ?tail=<bytes>;
+ *                                   X-Log-Next = Position für die nächste Abfrage, X-Log-Serial = Mitschnitt 0–2
+ *   DELETE /api/log                 Log leeren
+ *   POST   /api/log/serial          ?level=0|1|2 Mitschnitt der Druckerkommunikation (diag_serial_t)
+ *   GET    /api/diag                Diagnose zum Herunterladen (Textdatei mit Zustand, Einstellungen und Log)
  *
  * Ist ein Passwort gesetzt (auth.h), brauchen alle Aufrufe außer der Oberfläche, /api/auth, GET /api/status,
  * GET /api/files und GET /api/download ein gültiges Sitzungs-Cookie, sonst 401.

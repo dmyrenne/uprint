@@ -24,6 +24,8 @@ USB (for example the Prusa MK3S) and with AxiDraw / NextDraw pen plotters (EiBot
 - **Optional password** for the web interface; print status and file list stay readable without signing in
 - **Updates over the air** from the web interface, with automatic rollback if a new version fails to start, plus a
   [web flasher](https://dmyrenne.github.io/uprint/) for the first install
+- **Diagnostics:** a live log in the browser that survives restarts and crashes, optionally with the printer
+  communication, and a diagnostics file to attach to bug reports
 - **Safe while printing:** Wi-Fi and settings are locked during a print; if the printer is plugged in but doesn't
   answer, µprint says so and keeps retrying
 
@@ -200,6 +202,20 @@ seconds. The colour of the first LED appears as a dot next to the device name in
 - Files are kept in both cases. To remove them, use **Clear …** next to a storage in the file list: it deletes all
   G-code files on that storage, or formats it completely if you tick the option (also helps with a broken file
   system). It's locked while that storage is being printed from or uploaded to.
+
+## Diagnostics and bug reports
+
+**Settings → Diagnostics → View log** shows the firmware's messages live, without a USB-serial adapter. The log
+survives restarts, crashes and watchdog resets; a separator line names the reason for each restart, and only a power
+cycle clears it. The buffer holds about 1 MB on boards with PSRAM (`n16r8`, `xiao`) and 16 KB on `basic`.
+
+To find out what the printer said, set **Record printer communication** on the log page: *Messages from the printer*
+records everything the printer sends except `ok` and temperature reports (host actions, errors, `busy`), *Everything*
+also records the lines µprint sends. The setting is kept and can be changed during a print.
+
+**Download diagnostics** gives you a text file with version, restart reason, memory, Wi-Fi and USB state, printer
+state, the settings (without passwords and API key) and the whole log. Please attach it when you report a bug; note
+that the log may contain your Wi-Fi name and file names.
 
 ## Updating
 

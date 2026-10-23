@@ -1,0 +1,40 @@
+name: Bug report
+description: Something doesn't work as expected (English or German is fine)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! The most helpful thing you can attach is the **diagnostics file**:
+        web UI → **Settings** → **Download diagnostics**. It contains version, board variant, the reason for the
+        last restart, the device state, settings (without passwords and API keys) and the log, which survives
+        restarts, crashes and watchdog resets. The log may contain your Wi-Fi name and file names.
+
+        For printer problems, first set **Log → Record printer communication** to "Messages from the printer" or
+        "Everything", reproduce the problem, then download the diagnostics.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: µprint version and board
+      description: Shown in the web UI under Settings, e.g. "v0.8.0 (xiao)"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Printer or plotter
+      description: Model and firmware, e.g. "Prusa MK3S, firmware 3.14.1" or "AxiDraw V3, EBB 2.8.1"
+  - type: textarea
+    id: diag
+    attributes:
+      label: Diagnostics
+      description: Drag the downloaded `uprint-diagnose-….txt` file here.
+    validations:
+      required: true

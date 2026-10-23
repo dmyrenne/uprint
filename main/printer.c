@@ -24,6 +24,7 @@
 #include "freertos/task.h"
 
 #include "axidraw.h"
+#include "diag.h"
 #include "printer.h"
 #include "settings.h"
 #include "storage.h"
@@ -221,6 +222,9 @@ static void transmit(uint32_t n, const char *cmd)
     int len = snprintf(out, sizeof(out), "%s*%u\n", body, cs);
 
     ESP_LOGD(TAG, ">> %s", body);
+    if (diag_serial() == DIAG_SERIAL_ALL) {
+        diag_line(TAG, ">> %s", body);
+    }
     s_ready = false;
     s_last_io_us = now_us();
     if (usb_serial_write(out, len) != ESP_OK) {
@@ -678,6 +682,16 @@ static bool host_action(const char *line)
     return true;
 }
 
+// Routine im Mitschnitt DIAG_SERIAL_RX: Bestätigungen ("ok", "ok T:…") und Temperaturmeldungen (M155,
+// z. B. "T:210.0 /210.0 B:60.0 /60.0 @:0")
+static bool routine_line(const char *line)
+{
+    while (*line == ' ') {
+        line++;
+    }
+    return starts_with(line, "ok") || starts_with(line, "T:");
+}
+
 static void handle_line(const char *line)
 {
     s_last_io_us = now_us();
@@ -685,6 +699,10 @@ static void handle_line(const char *line)
         return;
     }
     ESP_LOGD(TAG, "<< %s", line);
+    diag_serial_t log = diag_serial();
+    if (log == DIAG_SERIAL_ALL || (log == DIAG_SERIAL_RX && !routine_line(line))) {
+        diag_line(TAG, "<< %s", line);
+    }
     if (host_action(line)) {
         return;
     }
