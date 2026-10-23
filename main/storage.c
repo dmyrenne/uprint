@@ -54,7 +54,8 @@ static sdmmc_card_t *s_sd_card;
 // nach einem Fehlschlag den CS-Pin frei, ohne dessen Reservierung aufzuheben, also meldet jeder weitere Versuch
 // "conflict found" für CS
 static const char *const SD_LOG_TAGS[] = {"sdmmc_common", "sdmmc_init", "sdmmc_sd", "sdmmc_cmd",
-                                          "sdspi_host", "vfs_fat_sdmmc", "diskio_sdmmc", "gpio"};
+                                          "sdspi_host", "sdspi_transaction", "vfs_fat_sdmmc", "diskio_sdmmc",
+                                          "gpio"};
 
 static void sd_logs_quiet(bool quiet)
 {
