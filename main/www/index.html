@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>µprint</title>
+<link rel="icon" id="favicon" href="data:,">
 <style>
   /* Schriften liegen im Firmware-Image unter /fonts (SIL Open Font License), damit alles auch ohne Internet läuft */
   @font-face { font-family: 'Space Grotesk'; src: url(fonts/space-grotesk.woff2) format('woff2'); font-weight: 300 700; font-display: swap; }
@@ -830,8 +831,18 @@ function drawWaves() {
       out.push(`<path d="M${p.join('L')}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="${front ? 'var(--accent)' : 'var(--panel)'}" stroke-width="${front ? 1.3 : .8}" opacity="${front ? 1 : .85}"/>`);
   }
   $('mark').innerHTML = out.join('');
+  setFavicon();
 }
 
+// Favicon = das gerade gezeichnete Logo; die Farbvariablen gelten dort nicht, deshalb hier eingesetzt
+function setFavicon() {
+  const css = getComputedStyle(document.documentElement);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34 34"><rect width="34" height="34" rx="8" fill="var(--ink)"/>${$('mark').innerHTML}</svg>`
+    .replace(/var\((--[\w-]+)\)/g, (_, v) => css.getPropertyValue(v).trim());
+  $('favicon').href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
+let titleProgress = '';   // Fortschritt vorn im Tabtitel, solange gedruckt oder geplottet wird
 let markAxi = false;
 function drawMark() {   // Logo: bei jedem Laden (und Klick) ein neues Gefäß, die oberste Schicht im Akzent
   markAxi = axiMode();
@@ -842,6 +853,7 @@ function drawMark() {   // Logo: bei jedem Laden (und Klick) ein neues Gefäß, 
     out.push(`<path d="M${(17 - half).toFixed(1)} ${y.toFixed(1)}H${(17 + half).toFixed(1)}" fill="none" stroke-linecap="round" stroke="${top ? 'var(--accent)' : 'var(--panel)'}" stroke-width="${top ? 1.6 : .9}" opacity="${top ? 1 : .8}"/>`);
   }
   $('mark').innerHTML = out.join('');
+  setFavicon();
 }
 
 let layersKey = '';
@@ -944,6 +956,8 @@ function renderStatus() {
   $('jobProgress').hidden = !show;
   $('jobBar').style.width = pct + '%';
   $('jobPct').textContent = show ? num(pct, 1) + ' %' : '';
+  const tp = a ? (s.state === 'paused' ? '⏸ ' : '') + num(pct, 1) + ' %' : '';
+  if (tp !== titleProgress) { titleProgress = tp; renderName(); }
   $('jobEta').textContent = left != null ? t('job.remaining', { t: fmtTime(left) })
                           : done ? t('job.duration', { t: fmtTime(s.duration) }) : '';
   // Animation während des Drucks und fertig gedruckt danach
@@ -1826,7 +1840,7 @@ function renderName() {
   const name = settings && settings.device_name;
   $('devName').textContent = name || 'µprint';
   $('tagline').textContent = t(name ? 'tagline.named' : 'tagline');
-  document.title = name ? name + ' · µprint' : 'µprint';
+  document.title = (titleProgress ? titleProgress + ' · ' : '') + (name ? name + ' · µprint' : 'µprint');
 }
 
 // ---------- Slicer-Anbindung ----------
@@ -1953,6 +1967,7 @@ function start() {
 // ---------- Start ----------
 applyI18n();
 drawMark(); $('mark').onclick = drawMark;
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', setFavicon);   // Favicon in den neuen Farben
 renderStatus(); renderUpload();
 poll(); checkAuth();   // Status ist auch ohne Anmeldung lesbar, die Verbindungsanzeige oben stimmt so von Anfang an
 </script>
