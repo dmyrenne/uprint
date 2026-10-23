@@ -11,10 +11,12 @@ AxiDraw/NextDraw (EiBotBoard) mode exists in alpha (see `docs/axidraw.md`).
 **Name:** always `µprint`, lowercase, with the micro sign `µ` (U+00B5, not the Greek `μ` U+03BC); `uprint` only where
 `µ` isn't possible (repo, hostname, file names, project name in the image).
 
-**Language convention:** the README is in English for an international audience. Code comments, log messages,
-commit messages and PR titles are written in German. Keep it that way. Commit subjects follow the pattern `Bereich: kurze Beschreibung`
-(e.g. `Einstellungen: …`, `CI: …`, `Web-UI: …`). Do not add `Co-Authored-By: Claude` trailers to commits or
-Claude attribution lines to PR descriptions; the Claude credit lives in the README only.
+**Language convention:** everything is English from 2026-10-23 on: commit messages, PR titles and descriptions,
+issues and comments on GitHub, new code comments, log messages and docs. Existing German comments, log messages and
+docs (e.g. `docs/axidraw.md`) are translated step by step, whenever a file is touched anyway; don't mix languages
+within a function or paragraph. The web UI stays bilingual via `i18n.js` (`de` and `en`). Commit subjects follow the
+pattern `Area: short description` (e.g. `Settings: …`, `CI: …`, `Web UI: …`). Do not add `Co-Authored-By: Claude`
+trailers to commits or Claude attribution lines to PR descriptions; the Claude credit lives in the README only.
 
 ## Build & flash
 
