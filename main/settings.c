@@ -19,7 +19,7 @@ static const char *TAG = "settings";
 
 static const settings_t DEFAULTS = {
     .hostname = "uprint",
-    .ap_password = "uprint123",
+    .ap_password = "",   // offen bis zur Ersteinrichtung, die ein Passwort festlegt (#31)
     .device_type = DEVICE_PRINTER,
     .baud = 115200,
     .pause_lift = 5,
@@ -34,6 +34,7 @@ static const settings_t DEFAULTS = {
     .pen_down = 30,
     .pen_delay = 200,
     .sd_enable = 1,
+    .console = 1,
 #ifdef UPRINT_BOARD_XIAO
     // Steckplatz auf dem Kamerabrett des XIAO ESP32S3 Sense (GPIO 10–18 belegt dort die Kamera)
     .sd_mosi = 9,   // D10
@@ -68,7 +69,7 @@ static char s_default_host[33];   // "uprint-3a5c": eindeutig je Gerät, damit s
 #define FIELD(name) {#name, offsetof(settings_t, name)}
 const settings_int_field_t SETTINGS_INT_FIELDS[] = {
     FIELD(device_type), FIELD(baud), FIELD(pause_lift), FIELD(cancel_lift), FIELD(park_x), FIELD(park_y),
-    FIELD(sd_enable), FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs),
+    FIELD(sd_enable), FIELD(sd_mosi), FIELD(sd_miso), FIELD(sd_sclk), FIELD(sd_cs), FIELD(console),
     FIELD(plot_draw), FIELD(plot_travel), FIELD(plot_accel), FIELD(pen_servo), FIELD(pen_up), FIELD(pen_down), FIELD(pen_delay),
     FIELD(led_pin), FIELD(led_count), FIELD(led_brightness), FIELD(led_type), FIELD(led_order), FIELD(led_white),
     FIELD(led_max_ma), FIELD(led_ma),
@@ -163,19 +164,20 @@ void settings_get(settings_t *out)
 #ifdef UPRINT_BOARD_XIAO
 // XIAO ESP32S3: herausgeführt sind D0–D5 (GPIO 1–6), D6/D7 (GPIO 43/44, Konsole) und D8–D10 (GPIO 7–9), GPIO 21
 // ist CS des SD-Steckplatzes auf dem Kamerabrett. Die übrigen GPIOs belegen Kamera, Mikrofon, PSRAM und USB.
-// D7 ist der Empfangspin der Konsole und darf belegt werden, die Log-Ausgabe auf D6 bleibt frei. Die Web-UI zeigt
-// die Pins mit ihrer Beschriftung auf dem Board, gespeichert wird die GPIO-Nummer.
-#define PIN_HINT "SD-Pins: D0–D5, D7–D10 oder der Steckplatz des Sense (CS)"
-static bool pin_usable(int pin)
+// D7 ist der Empfangspin der Konsole und darf immer belegt werden (diag_console trennt ihn ab), D6 nur ohne
+// Konsole. Die Web-UI zeigt die Pins mit ihrer Beschriftung auf dem Board, gespeichert wird die GPIO-Nummer.
+#define PIN_HINT "SD-Pins: D0–D5, D7–D10 oder der Steckplatz des Sense (CS), D6 nur ohne Konsole"
+static bool pin_usable(const settings_t *s, int pin)
 {
-    return (pin >= 1 && pin <= 9) || pin == 21 || pin == 44;
+    return (pin >= 1 && pin <= 9) || pin == 21 || pin == 44 || (pin == 43 && !s->console);
 }
 #else
 // ESP32-S3 mit Octal-PSRAM (N16R8): 19/20 USB, 22–25 gibt es nicht, 26–37 Flash/PSRAM, 43/44 Konsole
-#define PIN_HINT "SD-Pins: GPIO 0–18, 21 oder 38–48 (außer 43/44)"
-static bool pin_usable(int pin)
+#define PIN_HINT "SD-Pins: GPIO 0–18, 21 oder 38–48 (43/44 nur ohne Konsole)"
+static bool pin_usable(const settings_t *s, int pin)
 {
-    return pin >= 0 && pin <= 48 && pin != 19 && pin != 20 && !(pin >= 22 && pin <= 37) && pin != 43 && pin != 44;
+    return pin >= 0 && pin <= 48 && pin != 19 && pin != 20 && !(pin >= 22 && pin <= 37) &&
+           ((pin != 43 && pin != 44) || !s->console);
 }
 #endif
 
@@ -183,7 +185,7 @@ static const char *sd_pins_error(const settings_t *s)
 {
     const int pins[] = {s->sd_mosi, s->sd_miso, s->sd_sclk, s->sd_cs};
     for (int i = 0; i < 4; i++) {
-        if (!pin_usable(pins[i])) {
+        if (!pin_usable(s, pins[i])) {
             return PIN_HINT;
         }
         for (int j = 0; j < i; j++) {
@@ -215,7 +217,7 @@ static const char *led_error(const settings_t *s)
     }
     bool on_sd = s->sd_enable && (s->led_pin == s->sd_mosi || s->led_pin == s->sd_miso || s->led_pin == s->sd_sclk ||
                                   s->led_pin == s->sd_cs);
-    if (s->led_pin != -1 && (!pin_usable(s->led_pin) || on_sd)) {
+    if (s->led_pin != -1 && (!pin_usable(s, s->led_pin) || on_sd)) {
         return "LED-Pin: -1 (aus) oder ein freier Pin, der nicht von der SD-Karte belegt ist";
     }
     return NULL;
@@ -280,6 +282,9 @@ static const char *validate(const settings_t *s)
     if (s->sd_enable != 0 && s->sd_enable != 1) {
         return "microSD: 0 (aus) oder 1 (an)";
     }
+    if (s->console != 0 && s->console != 1) {
+        return "Konsole: 0 (aus) oder 1 (an)";
+    }
     const char *err = s->sd_enable ? sd_pins_error(s) : NULL;
     return err ? err : led_error(s);
 }
@@ -319,9 +324,9 @@ bool settings_reboot_required(void)
 {
     settings_t cur;
     settings_get(&cur);
-    return strcmp(cur.hostname, s_boot.hostname) != 0 || strcmp(cur.ap_password, s_boot.ap_password) != 0 ||
+    return strcmp(cur.ap_password, s_boot.ap_password) != 0 ||
            cur.sd_enable != s_boot.sd_enable || cur.sd_mosi != s_boot.sd_mosi || cur.sd_miso != s_boot.sd_miso ||
-           cur.sd_sclk != s_boot.sd_sclk || cur.sd_cs != s_boot.sd_cs;
+           cur.sd_sclk != s_boot.sd_sclk || cur.sd_cs != s_boot.sd_cs || cur.console != s_boot.console;
 }
 
 esp_err_t settings_new_api_key(void)
@@ -353,7 +358,7 @@ esp_err_t settings_new_api_key(void)
     return ESP_OK;
 }
 
-esp_err_t settings_reset(bool new_api_key)
+esp_err_t settings_reset(bool all)
 {
     settings_t cur;
     settings_get(&cur);
@@ -363,9 +368,13 @@ esp_err_t settings_reset(bool new_api_key)
         return err;
     }
     err = nvs_erase_all(nvs);
-    // Ohne gespeicherten Schlüssel erzeugt settings_init() beim nächsten Start einen neuen
-    if (err == ESP_OK && !new_api_key) {
+    // Ohne gespeicherten Schlüssel erzeugt settings_init() beim nächsten Start einen neuen. Das Passwort des
+    // Access Points bleibt wie das der Weboberfläche, sonst wäre er nach dem Neustart offen.
+    if (err == ESP_OK && !all) {
         err = nvs_set_str(nvs, "api_key", cur.api_key);
+    }
+    if (err == ESP_OK && !all) {
+        err = nvs_set_str(nvs, "ap_password", cur.ap_password);
     }
     if (err == ESP_OK) {
         err = nvs_commit(nvs);
@@ -377,4 +386,54 @@ esp_err_t settings_reset(bool new_api_key)
 const char *settings_default_hostname(void)
 {
     return s_default_host;
+}
+
+void settings_hostname_from_name(const char *name, char *out, size_t len)
+{
+    static const struct {
+        const char *from, *to;
+    } MAP[] = {
+        {"ä", "ae"}, {"ö", "oe"}, {"ü", "ue"}, {"Ä", "ae"}, {"Ö", "oe"}, {"Ü", "ue"}, {"ß", "ss"},
+        {"µ", "u"}, {"μ", "u"},   // Mikro-Zeichen und griechisches My
+    };
+    size_t n = 0;
+    bool dash = false;
+    for (const char *p = name; *p;) {
+        const char *to = NULL;
+        size_t skip = 1;
+        for (size_t i = 0; i < sizeof(MAP) / sizeof(MAP[0]); i++) {
+            size_t l = strlen(MAP[i].from);
+            if (strncmp(p, MAP[i].from, l) == 0) {
+                to = MAP[i].to;
+                skip = l;
+                break;
+            }
+        }
+        char one[2] = {(char)tolower((unsigned char)*p), '\0'};
+        if (!to && isascii((unsigned char)*p) && isalnum((unsigned char)*p)) {
+            to = one;
+        }
+        p += skip;
+        if (!to) {
+            dash = n > 0;   // Trennzeichen, mehrere hintereinander ergeben einen Bindestrich
+            continue;
+        }
+        if (dash) {
+            if (n + 2 >= len) {
+                break;
+            }
+            out[n++] = '-';
+            dash = false;
+        }
+        for (; *to && n + 1 < len; to++) {
+            out[n++] = *to;
+        }
+        if (*to) {
+            break;
+        }
+    }
+    out[n] = '\0';
+    if (n == 0) {
+        strlcpy(out, s_default_host, len);
+    }
 }

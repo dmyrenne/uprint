@@ -38,6 +38,8 @@ typedef struct {
     int32_t remaining_s;
     // Meldung des Druckers über "// action:notification …", leer = keine
     char notice[64];
+    // Drucker wartet während des Drucks auf eine Eingabe an seinem Display ("busy: paused for user", z. B. M600)
+    bool user_wait;
     // Rückfrage des Druckers ("// action:prompt_…"), Antwort über printer_prompt_answer()
     bool prompt;
     char prompt_text[64];
