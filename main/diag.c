@@ -3,15 +3,21 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "driver/gpio.h"
 #include "esp_app_desc.h"
 #include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_private/esp_gpio_reserve.h"
+#include "esp_rom_gpio.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs.h"
 #include "sdkconfig.h"
+#include "soc/gpio_pins.h"
+#include "soc/gpio_sig_map.h"
+#include "soc/uart_pins.h"
 #if CONFIG_SPIRAM
 #include "esp_cache.h"
 #endif
@@ -50,7 +56,7 @@ typedef struct {
 static EXT_RAM_NOINIT_ATTR ring_t s_ring;
 
 static SemaphoreHandle_t s_lock;
-static vprintf_like_t s_uart = vprintf;
+static vprintf_like_t s_uart = vprintf;   // NULL: Konsole aus
 static char s_fmt[FMT_MAX];
 static bool s_kept;
 static esp_reset_reason_t s_reason;
@@ -96,7 +102,7 @@ static int log_vprintf(const char *fmt, va_list ap)
 {
     va_list copy;
     va_copy(copy, ap);
-    int ret = s_uart(fmt, ap);
+    int ret = s_uart ? s_uart(fmt, ap) : 0;
     // Nicht blockieren: Ist der Puffer gerade belegt, fehlt die Zeile eben im Log
     if (can_lock() && xSemaphoreTake(s_lock, pdMS_TO_TICKS(20)) == pdTRUE) {
         int n = vsnprintf(s_fmt, sizeof(s_fmt), fmt, copy);
@@ -196,6 +202,21 @@ void diag_init(void)
 diag_serial_t diag_serial(void)
 {
     return s_serial;
+}
+
+void diag_console(bool on)
+{
+    // Eingaben über die Konsole liest µprint nicht. Der Empfang hängt fest auf 1, damit der Pin (XIAO: D7) als
+    // SD- oder LED-Pin nichts in den UART schiebt, und seine Reservierung durch den UART-Treiber fällt weg.
+    esp_rom_gpio_connect_in_signal(GPIO_MATRIX_CONST_ONE_INPUT, U0RXD_IN_IDX, false);
+    esp_gpio_revoke(BIT64(U0RXD_GPIO_NUM));
+    if (on) {
+        return;
+    }
+    ESP_LOGI(TAG, "Konsole aus, Log nur noch im Puffer; GPIO %d und %d sind frei", U0TXD_GPIO_NUM, U0RXD_GPIO_NUM);
+    s_uart = NULL;
+    esp_gpio_revoke(BIT64(U0TXD_GPIO_NUM));
+    gpio_reset_pin(U0TXD_GPIO_NUM);
 }
 
 void diag_set_serial(diag_serial_t level)

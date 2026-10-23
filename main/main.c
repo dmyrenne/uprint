@@ -26,6 +26,9 @@ void app_main(void)
     // Zuerst, damit der Log-Puffer alle folgenden Meldungen mitbekommt (#36)
     diag_init();
     settings_init();
+    settings_t cfg;
+    settings_get(&cfg);
+    diag_console(cfg.console);
     auth_init();
 
     // Ohne Speicher läuft die Weboberfläche weiter und zeigt den Fehler an

@@ -28,6 +28,11 @@ void diag_init(void);
 // "S (<ms>) <tag>: <text>"
 void diag_line(const char *tag, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
+// Nach settings_init: trennt den Empfang der Konsole (UART0 RX) ab; ohne Konsole geht das Log auch nicht mehr
+// auf UART0 TX, beide Pins sind dann frei (settings_t.console). Der Bootloader schreibt beim Start trotzdem kurz
+// auf TX.
+void diag_console(bool on);
+
 diag_serial_t diag_serial(void);
 void diag_set_serial(diag_serial_t level);
 

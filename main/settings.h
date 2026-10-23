@@ -55,6 +55,9 @@ typedef struct {
     int sd_miso;
     int sd_sclk;
     int sd_cs;
+    // Log-Ausgabe über UART0 (XIAO: D6 TX, D7 RX; sonst GPIO 43/44), wirksam nach Neustart. Aus: beide Pins frei
+    // für SD und LEDs, das Log gibt es dann nur in der Weboberfläche (diag.h)
+    int console;
     // Status-LEDs (adressierbar, z. B. SK6812), sofort wirksam
     int led_pin;          // -1 = aus
     int led_count;        // 0 = aus

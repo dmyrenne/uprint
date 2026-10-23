@@ -83,6 +83,8 @@ contracts and are the best entry point.
   16 KB internal), so it survives software resets, panics and watchdogs; `esp_cache_msync` after each write because
   the S3 data cache would otherwise lose the tail. Printer traffic goes in via `diag_line` only (not UART), level in
   NVS namespace `diag`. Web UI subpage `#log`, `GET /api/log?since=` for polling, `GET /api/diag` for the report.
+  `diag_console` (after `settings_init`) always detaches UART0 RX (XIAO D7) and, with `settings_t.console` off,
+  stops UART output and frees TX (D6) too; `pin_usable()` in `settings.c` follows the same rule.
 - **reset.c** — factory reset (#13): settings only or everything incl. Wi-Fi, then restart; holding BOOT (GPIO 0)
   for 10 s while running does the full reset (only if GPIO 0 isn't an SD/LED pin). Wiping a volume is
   `storage_wipe()` in storage.c (#14).

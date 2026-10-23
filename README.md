@@ -59,7 +59,8 @@ By default the SD module goes to these pins; you can choose others later under *
 | XIAO ESP32S3 Sense (slot) | D10 | D9 | D8 | slot |
 
 On the XIAO you pick the pins as they are labelled on the board. An external SD module works best on D8 (SCLK),
-D9 (MISO) and D10 (MOSI), with CS on any free pin such as D7. Leave D6 free, µprint writes its log there. If you
+D9 (MISO) and D10 (MOSI), with CS on any free pin such as D7. D6 is where µprint writes its log; if you don't need the serial console, switch
+it off under **Hardware → Console (UART)** to free D6 as well (the log stays available in the web UI). If you
 don't use a microSD card, switch it off under **Hardware**, which frees its pins.
 
 Most boards have two USB ports. Use the one labelled `UART` or `COM` to flash the firmware; the printer later goes

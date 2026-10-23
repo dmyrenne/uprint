@@ -704,6 +704,10 @@
       <label><span>CS</span><input type="number" name="sd_cs" min="0" max="48"></label>
       <p class="hint full" id="sdPinHint" hidden data-i18n="set.sd.hint.xiao"></p>
 
+      <p class="sub full" data-i18n="set.console"></p>
+      <label class="check full"><input type="checkbox" name="console"> <span data-i18n="set.console_enable"></span></label>
+      <p class="hint full" id="consoleHint" data-i18n="set.console.hint"></p>
+
       <p class="sub full" data-i18n="set.leds"></p>
       <label><span data-i18n="set.led_pin"></span><input type="number" name="led_pin" min="-1" max="48"></label>
       <label><span data-i18n="set.led_count"></span><input type="number" name="led_count" min="0" max="100"></label>
@@ -1362,7 +1366,7 @@ async function pollWifi() { await loadWifi(); setTimeout(pollWifi, setupMode ? 1
 // ---------- Einstellungen ----------
 const SET_KEYS = ['device_name', 'device_type', 'baud', 'pause_lift', 'cancel_lift', 'park_x', 'park_y',
   'plot_draw', 'plot_travel', 'plot_accel', 'pen_servo', 'pen_up', 'pen_down', 'pen_delay',
-  'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs',
+  'ap_password', 'sd_enable', 'sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs', 'console',
   'led_pin', 'led_count', 'led_type', 'led_order', 'led_white', 'led_brightness', 'led_max_ma', 'led_ma'];
 const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 500000, 921600, 1000000];
 const setForm = $('setForm'), hwForm = $('hwForm');
@@ -1373,12 +1377,16 @@ const setValue = (e) => (e.type === 'checkbox' ? (e.checked ? '1' : '0') : e.val
 function readSettings() {
   return Object.fromEntries(SET_KEYS.map((k) => [k, setValue(field(k))]));
 }
-// XIAO: Pins mit ihrer Beschriftung auf dem Board statt als GPIO-Nummer, D6 ist die Log-Ausgabe der Konsole
+// XIAO: Pins mit ihrer Beschriftung auf dem Board statt als GPIO-Nummer, D6 ist die Log-Ausgabe der Konsole und
+// nur ohne Konsole wählbar
 const SD_PINS = ['sd_mosi', 'sd_miso', 'sd_sclk', 'sd_cs'];
-const XIAO_PINS = [[1, 'D0'], [2, 'D1'], [3, 'D2'], [4, 'D3'], [5, 'D4'], [6, 'D5'], [44, 'D7'], [7, 'D8'], [8, 'D9'], [9, 'D10']];
+const XIAO_PINS = [[1, 'D0'], [2, 'D1'], [3, 'D2'], [4, 'D3'], [5, 'D4'], [6, 'D5'], [43, 'D6'], [44, 'D7'], [7, 'D8'], [8, 'D9'], [9, 'D10']];
 function xiaoPins(s) {
   $('sdPinHint').hidden = s.variant !== 'xiao';
+  $('consoleHint').dataset.i18n = s.variant === 'xiao' ? 'set.console.hint.xiao' : 'set.console.hint';
+  $('consoleHint').textContent = t($('consoleHint').dataset.i18n);
   if (s.variant !== 'xiao') return;
+  const board = XIAO_PINS.filter(([g]) => g !== 43 || String(s.console) !== '1');
   for (const k of [...SD_PINS, 'led_pin']) {
     let sel = field(k);
     if (sel.tagName !== 'SELECT') {
@@ -1386,9 +1394,9 @@ function xiaoPins(s) {
       sel.name = k;
       field(k).replaceWith(sel);
     }
-    const pins = k === 'sd_cs' ? [...XIAO_PINS, [21, t('set.sd.slot')]] : k === 'led_pin' ? [[-1, t('leds.off')], ...XIAO_PINS]
-      : [...XIAO_PINS];
-    if (!pins.some(([g]) => g === s[k])) pins.push([s[k], 'GPIO ' + s[k]]);   // sollte die Firmware nie liefern
+    const pins = k === 'sd_cs' ? [...board, [21, t('set.sd.slot')]] : k === 'led_pin' ? [[-1, t('leds.off')], ...board]
+      : [...board];
+    if (!pins.some(([g]) => g === Number(s[k]))) pins.push([s[k], 'GPIO ' + s[k]]);   // D6, wenn die Konsole wieder an ist
     sel.replaceChildren(...pins.map(([g, label]) => new Option(label, g)));
   }
 }
@@ -1428,6 +1436,13 @@ async function loadSettings() {
   if (ledEdit) buildLedGrid();   // Anzahl LEDs für das Muster der Kennung
 }
 for (const f of [setForm, hwForm]) { f.addEventListener('input', renderSettings); f.addEventListener('change', renderSettings); }
+// Konsole an/aus ändert auf dem XIAO, ob D6 wählbar ist; die gewählten Pins bleiben stehen
+hwForm.elements.console.addEventListener('change', () => {
+  if (!settings) return;
+  const cur = readSettings();
+  xiaoPins({ ...cur, variant: settings.variant });
+  for (const k of [...SD_PINS, 'led_pin']) field(k).value = cur[k];
+});
 $('setSave').onclick = async () => {
   try {
     const s = readSettings();
