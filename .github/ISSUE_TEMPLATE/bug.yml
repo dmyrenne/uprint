@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Thanks for reporting! The most helpful thing you can attach is the **diagnostics file**:
-        web UI → **Settings** → **Download diagnostics**. It contains version, board variant, the reason for the
+        web UI → **System** → **Download diagnostics**. It contains version, board variant, the reason for the
         last restart, the device state, settings (without passwords and API keys) and the log, which survives
         restarts, crashes and watchdog resets. The log may contain your Wi-Fi name and file names.
 

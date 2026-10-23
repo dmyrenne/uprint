@@ -55,7 +55,7 @@ to a USB-A socket soldered to the pads, and **power the XIAO through its 5 V pin
 charger or a computer while µprint is running: both put signals on the same data lines, and the XIAO's Wi-Fi access
 point may then not show up at all or keep disappearing.
 
-By default the SD module goes to these pins; you can choose others later under **Hardware**:
+By default the SD module goes to these pins; you can choose others later under **System**:
 
 | SD module | MOSI | MISO | SCLK | CS |
 | --- | --- | --- | --- | --- |
@@ -64,8 +64,8 @@ By default the SD module goes to these pins; you can choose others later under *
 
 On the XIAO you pick the pins as they are labelled on the board. An external SD module works best on D8 (SCLK),
 D9 (MISO) and D10 (MOSI), with CS on any free pin such as D7. D6 is where µprint writes its log; if you don't need the serial console, switch
-it off under **Hardware → Console (UART)** to free D6 as well (the log stays available in the web UI). If you
-don't use a microSD card, switch it off under **Hardware**, which frees its pins.
+it off under **System → Console (UART)** to free D6 as well (the log stays available in the web UI). If you
+don't use a microSD card, switch it off under **System**, which frees its pins.
 
 Most boards have two USB ports. Use the one labelled `UART` or `COM` to flash the firmware; the printer later goes
 on the other one (usually `USB` or `OTG`). That port has to supply 5 V for the printer to be detected. On many boards
@@ -96,7 +96,7 @@ for three things at once:
   without a name it stays `http://uprint-xxxx.local`
 - your **Wi-Fi** network and its password
 - optionally a **password** for µprint (8–63 characters; by default it also protects the access point from the next
-  restart on). Leave it empty to use µprint without one; you can set one later under **Settings → Web UI password**.
+  restart on). Leave it empty to use µprint without one; you can set one later under **Network → Web UI password**.
 
 The page then shows the new address. If you'd rather not join a network, choose **Continue without Wi-Fi**: the access
 point then stays on permanently.
@@ -114,19 +114,22 @@ own display (for example during a filament change), the print card says so. On a
 the display is resumed in the web UI, because the printer leaves that to the host. If the slicer wrote progress and
 time left into the file (`M73`), µprint shows those values instead of its own estimate.
 
-The settings are split into two cards:
+The settings are split into three cards, and each only shows what fits the device type:
 
-- **Settings:** device name (handy if you have several; it also sets the network address), device type (3D printer
-  or AxiDraw), baud rate, how far the nozzle is lifted when pausing and cancelling and where the head parks, the
-  slicer API key, the access point password, the web UI password, firmware update, and reset.
-- **Hardware:** what is wired to the ESP32-S3: microSD (on/off, pins) and status LEDs.
+- **Device:** device name (handy if you have several; it also sets the network address) and device type (3D printer
+  or AxiDraw). For a printer: baud rate, how far the nozzle is lifted when pausing and cancelling, where the head
+  parks, and the slicer API key. For a plotter: speeds, pen servo and heights, and the drawing area. Plus the µplot
+  address.
+- **Network:** Wi-Fi, the access point password and the web UI password.
+- **System:** firmware update, what is wired to the ESP32-S3 (microSD, console, status LEDs), diagnostics (with the
+  AxiDraw self-test in plotter mode) and reset.
 
-While a print is running, Wi-Fi, settings and hardware can be viewed but not changed.
+While a print is running, the settings can be viewed but not changed.
 
 ## Password
 
 The password for the web interface is optional. Without one, anyone on your network can print, change the Wi-Fi or
-install other firmware. You can set it during setup or later under **Settings → Web UI password**, where you can
+install other firmware. You can set it during setup or later under **Network → Web UI password**, where you can
 also change or remove it and sign out.
 
 - With a password, only the print status and the file list (including downloads) are readable without signing in.
@@ -136,7 +139,7 @@ also change or remove it and sign out.
 - After five wrong attempts, signing in is blocked for 30 seconds, doubling with every further wrong attempt up to
   15 minutes.
 - The slicer API isn't affected: slicers keep using the API key.
-- The access point has its own password (**Settings → Network**). Out of the box it is open; tick **Also use it for
+- The access point has its own password (**Network → Access point**). Out of the box it is open; tick **Also use it for
   the access point** when setting the web password to protect it from the next restart on.
 - Forgot the password? **Reset everything**, or hold `BOOT` for 10 seconds (see below).
 
@@ -144,7 +147,7 @@ also change or remove it and sign out.
 
 µprint speaks the PrusaLink and OctoPrint APIs, so your slicer can send G-code straight to the printer. In
 **PrusaSlicer**, add a physical printer: host type **PrusaLink**, the address of µprint (e.g. `mk3s-workshop.local`) and as API key the value
-from µprint under **Settings → Slicer**. PrusaSlicer also finds µprint on the network via "Browse". **OrcaSlicer**
+from µprint under **Device → Slicer**. PrusaSlicer also finds µprint on the network via "Browse". **OrcaSlicer**
 and other slicers use the host type **OctoPrint** with the same details. When uploading you can choose whether the
 print starts right away.
 
@@ -153,11 +156,11 @@ settings.
 
 ## Pen plotter (AxiDraw / NextDraw)
 
-Set **Settings → Device type** to **AxiDraw / NextDraw**. µprint then translates G-code into EiBotBoard commands
+Set **Device → Device type** to **AxiDraw / NextDraw**. µprint then translates G-code into EiBotBoard commands
 itself, with motion planning (acceleration, cornering) on the ESP32-S3. The files come from
 [µplot](https://github.com/dmyrenne/uplot) in AxiDraw mode (SVG → µplot → µprint → AxiDraw): their first line is
 `; uplot-axidraw 1`, other files are rejected in plotter mode. Speeds, acceleration, pen servo type, pen heights
-and the drawing area (model presets or your own size) are set under **Settings**.
+and the drawing area (model presets or your own size) are set under **Device**.
 
 **SVG files** can be dropped straight into the upload field. µprint asks µplot about the SVG (page size, number of
 lines, whether [vpype](https://github.com/abey79/vpype) already optimized it) and converts it with one click: the
@@ -166,7 +169,7 @@ A preview shows the drawing area, the page and the lines before you upload. **Ed
 SVG, the device type and the drawing area for full layout control, and µplot's **Send to µprint** brings the G-code
 back. The browser talks to µplot directly; µprint itself needs no internet access.
 
-The µplot address is set under **Settings → µplot** (default: the public instance at `https://uplot.dmy.work`).
+The µplot address is set under **Device → µplot** (default: the public instance at `https://uplot.dmy.work`).
 µplot stores nothing on its server: files only exist while a request runs, and profiles stay in your browser. The
 SVG still has to travel to the µplot server for the conversion; if you don't want that, run your own instance
 (Docker, also on your own computer) and enter its address.
@@ -186,7 +189,7 @@ Optionally, a strip of addressable LEDs (SK6812, WS2812 or WS2811, also RGBW) sh
 line goes to a free GPIO **through a 330–470 Ω resistor close to the pin**, plus 5 V and GND. Without that
 resistor, the ringing data line can disturb Wi-Fi: on the XIAO ESP32S3 it dropped out completely until a 330 Ω
 resistor was added. Pin, number of LEDs, LED type, colour order, brightness and a current limit are set under
-**Hardware → Status LEDs** and apply immediately.
+**System → Status LEDs** and apply immediately.
 
 Out of the box, overall brightness is 20 % and the current limit 500 mA. Like WLED, µprint estimates the current
 (about 55 mA per LED at full white) and dims the whole strip before it would exceed the limit; keep the limit below
@@ -217,7 +220,7 @@ seconds. The colour of the first LED appears as a dot next to the device name in
 
 ## Reset and storage
 
-- **Reset settings** (under **Settings**) puts all settings back to factory state, including the LED appearance;
+- **Reset settings** (under **System**) puts all settings back to factory state, including the LED appearance;
   Wi-Fi, API key and passwords are kept, so µprint stays reachable.
 - **Reset everything** also forgets the Wi-Fi and the passwords and creates a new API key; µprint then starts its open
   access point for setup again. Forgot the password, or no web interface: hold the `BOOT` button for 10 seconds
@@ -228,7 +231,7 @@ seconds. The colour of the first LED appears as a dot next to the device name in
 
 ## Diagnostics and bug reports
 
-**Settings → Diagnostics → View log** shows the firmware's messages live, without a USB-serial adapter. The log
+**System → Diagnostics → View log** shows the firmware's messages live, without a USB-serial adapter. The log
 survives restarts, crashes and watchdog resets; a separator line names the reason for each restart, and only a power
 cycle clears it. The buffer holds about 1 MB on boards with PSRAM (`n16r8`, `xiao`) and 16 KB on `basic`.
 
@@ -243,13 +246,13 @@ that the log may contain your Wi-Fi name and file names.
 ## Updating
 
 New versions appear under [Releases](https://github.com/dmyrenne/uprint/releases). Updating needs no cable. When the
-browser you use µprint from can reach the internet, **Settings → Firmware** shows the latest release for your variant
+browser you use µprint from can reach the internet, **System → Firmware** shows the latest release for your variant
 (and a note next to the version at the bottom of the page); **Update to …** downloads it and installs it. Tick **Also
 offer alpha versions** to get pre-releases too. The browser fetches the file from GitHub Pages and hands it to µprint,
 so µprint itself never needs internet access. Without internet, download the `uprint-…-ota.bin` file for your variant
 (`basic`, `n16r8` or `xiao` in the name) and choose it in the same place, which also shows the installed variant. µprint restarts afterwards; your settings, Wi-Fi and
 all files are kept. A new version only counts as good once it has started up completely; if it crashes before that,
-µprint goes back to the previous version by itself and says so under **Settings → Firmware**. This needs the
+µprint goes back to the previous version by itself and says so under **System → Firmware**. This needs the
 bootloader from v0.8.0 or later, so devices flashed with an older version have to be flashed once with the web flasher
 or a cable. You can also simply use the web flasher again, but without erasing the device.
 
@@ -266,7 +269,7 @@ v6.1. The build fetches the other dependencies automatically:
     idf.py -DUPRINT_VARIANT=basic -B build-basic build          # or n16r8, xiao
     idf.py -DUPRINT_VARIANT=basic -B build-basic -p <port> flash
 
-`build-basic/uprint.bin` can then also be installed via **Settings → Firmware**. Releases are built automatically by
+`build-basic/uprint.bin` can then also be installed via **System → Firmware**. Releases are built automatically by
 GitHub Actions: every push to a branch that changes the firmware becomes a pre-release `v1.2.3-alpha.N`, selectable
 in the web flasher under **Alpha**. When the pull request is merged into `main`, it becomes the release `v1.2.3` and
 the branch's alphas are removed. By default the patch number goes up; with the label `minor` or `major` on the pull

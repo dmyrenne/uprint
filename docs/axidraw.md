@@ -179,7 +179,7 @@ Nullpunkt, Achsrichtung und Lage der Grafik regelt **µplot**. Das AxiDraw hat s
 (Stiftposition beim Einschalten), Y zeigt vom Gerät weg, und es gibt keinen Düsen-Offset. µprint übersetzt nur und
 rechnet nichts um. So stimmt der G-Code mit der µplot-Vorschau überein.
 
-Die **Zeichenfläche** ist in µprint eingestellt (Einstellungen → Plotter, Modellvorlagen wie in µplot) und geht von
+Die **Zeichenfläche** ist in µprint eingestellt (Gerät → Plotter, Modellvorlagen wie in µplot) und geht von
 dort an µplot. Zusammenspiel (Branch `axidraw`, #12, #20, uplot#2, uplot#3):
 
 - **SVG in µprint ablegen:** Die µprint-Seite schickt sie im Browser an µplot (`/api/inspect`, `/api/convert`, CORS
@@ -191,7 +191,7 @@ dort an µplot. Zusammenspiel (Branch `axidraw`, #12, #20, uplot#2, uplot#3):
   Fläche per `postMessage`; „An µprint senden“ in µplot bringt den G-Code in dasselbe Fenster zurück.
 - **Von µplot aus:** „An µprint senden“ öffnet `<µprint>/#import`, µprint meldet `uprint-ready` mit Gerätetyp,
   µplot schickt `uplot-gcode`, µprint meldet nach dem Hochladen `uprint-uploaded`.
-- **µplot-Adresse** in µprint unter Einstellungen → µplot, Standard `https://uplot.dmy.work`. Der µplot-Server
+- **µplot-Adresse** in µprint unter Gerät → µplot, Standard `https://uplot.dmy.work`. Der µplot-Server
   speichert nichts (uplot#2): Dateien nur während einer Anfrage, Profile im Browser. Wer die SVG gar nicht aus dem
   Haus geben will, trägt eine eigene Instanz ein.
 - **2D/3D (#12):** `/api/files` liefert je Datei `kind` (`print`, `axidraw`, `pen`, `unknown`) aus den ersten
@@ -203,7 +203,7 @@ dort an µplot. Zusammenspiel (Branch `axidraw`, #12, #20, uplot#2, uplot#3):
 
 Bevor der Plotter-Modus entsteht, gibt es in µprint einen Test, der ein echtes Gerät kennenlernt:
 
-- Einstellungen → Gerätetyp „AxiDraw / NextDraw“. µprint verbindet neu, sendet kein `M110` und fragt nur `V` ab.
+- Gerät → Gerätetyp „AxiDraw / NextDraw“. µprint verbindet neu, sendet kein `M110` und fragt nur `V` ab.
   Drucken ist in diesem Modus gesperrt.
 - Karte „AxiDraw-Test“ → „Test starten“. Der Ablauf (etwa eine Minute) läuft in `main/axidraw.c`:
   1. Verbindung: 1 s auf unaufgeforderte Meldungen warten
@@ -221,7 +221,7 @@ Bevor der Plotter-Modus entsteht, gibt es in µprint einen Test, der ein echtes 
 Ablauf für einen Tester:
 
 1. ESP32-S3 über den Web-Flasher einrichten (Umschalter auf „Alpha“, neueste Version) und ins WLAN bringen. Ein schon
-   eingerichtetes Gerät bekommt die Alpha als `uprint-…-ota.bin` (Vorab-Release) unter Einstellungen → Firmware
+   eingerichtetes Gerät bekommt die Alpha als `uprint-…-ota.bin` (Vorab-Release) unter System → Firmware
 2. AxiDraw anschließen (USB und Netzteil), Gerätetyp umstellen, Test starten, den Anweisungen folgen
 3. Log herunterladen und schicken
 

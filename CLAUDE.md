@@ -11,10 +11,12 @@ AxiDraw/NextDraw (EiBotBoard) mode exists in alpha (see `docs/axidraw.md`).
 **Name:** always `µprint`, lowercase, with the micro sign `µ` (U+00B5, not the Greek `μ` U+03BC); `uprint` only where
 `µ` isn't possible (repo, hostname, file names, project name in the image).
 
-**Language convention:** the README is in English for an international audience. Code comments, log messages,
-commit messages and PR titles are written in German. Keep it that way. Commit subjects follow the pattern `Bereich: kurze Beschreibung`
-(e.g. `Einstellungen: …`, `CI: …`, `Web-UI: …`). Do not add `Co-Authored-By: Claude` trailers to commits or
-Claude attribution lines to PR descriptions; the Claude credit lives in the README only.
+**Language convention:** everything is English from 2026-10-23 on: commit messages, PR titles and descriptions,
+issues and comments on GitHub, new code comments, log messages and docs. Existing German comments, log messages and
+docs (e.g. `docs/axidraw.md`) are translated step by step, whenever a file is touched anyway; don't mix languages
+within a function or paragraph. The web UI stays bilingual via `i18n.js` (`de` and `en`). Commit subjects follow the
+pattern `Area: short description` (e.g. `Settings: …`, `CI: …`, `Web UI: …`). Do not add `Co-Authored-By: Claude`
+trailers to commits or Claude attribution lines to PR descriptions; the Claude credit lives in the README only.
 
 ## Build & flash
 
@@ -96,7 +98,11 @@ contracts and are the best entry point.
   `storage_wipe()` in storage.c (#14).
 - **variant.c** — writes a `uprint_desc_t` (magic `UPRINT1` + variant name) right after `esp_app_desc_t` in the
   image; OTA upload checks it so an image for one variant can't be flashed onto another.
-- **Web UI** — a single hand-written `index.html` (vanilla JS/CSS, no build step). All visible strings go
+- **Web UI** — a single hand-written `index.html` (vanilla JS/CSS, no build step). Settings live in three cards (#46):
+  Device (`#setBox`/`setForm`), Network (`#wifiBox`: Wi-Fi, `netForm` with the AP password, web UI password) and System
+  (`#hwBox`: firmware, `hwForm`, diagnostics incl. the AxiDraw self-test, reset). All three forms share `SET_KEYS` and
+  one save bar; elements with `data-dev="0|1"` only show for that device type. During captive-portal setup `#wifiBox`
+  moves into `#setupSlot` and `.no-setup` parts are hidden. All visible strings go
   through `i18n.js` (`de` and `en`; add keys to both).
 
 ## Planning & roadmap
